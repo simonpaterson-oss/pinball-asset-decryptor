@@ -2067,10 +2067,12 @@ def coop_into(result, game_elf, scratch, setting=0, only=False, stock_hud=b"", s
         return result
     result.lines.append("co-op play: %s" % CP.HOW)
     if setting:
-        # Simon (2026-11-27): the row is Off / On (coop.cfg `switch`); On is the card with no row, as HOW says
-        result.lines.append("co-op play: switched in the service menu (CO-OP PLAY: Off or On, On to start with); at "
-                            "Off the game is the stock game, with no co-op or team games; %s" % (
-            "at Off every game reports to Insider Connected as it always has" if only
+        # Simon (2026-11-27): the row is ALTERNATIVE MODES 0 Off / 1 On / 2 Enhanced (coop.cfg `switch`); 2 is the card
+        # with no row, as HOW says
+        result.lines.append("co-op play: switched in the service menu (ALTERNATIVE MODES: 0 Off, 1 On - the co-op and "
+                            "team games regular only, 2 Enhanced - everything, 2 to start with); at "
+                            "0 the game is the stock game, with no co-op or team games; %s" % (
+            "at 0 every game reports to Insider Connected as it always has" if only
             else "the card's modes keep its scores off Insider Connected either way"))
     got = [line.split(" ", 3)[3] for line in text.splitlines() if line.startswith("award ")]
     result.lines.append("co-op awards after each co-op game: %s" % (", ".join(got) if got else "none"))

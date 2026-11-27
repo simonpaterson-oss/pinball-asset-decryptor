@@ -22054,6 +22054,7 @@ static int sty_menu_go_style(int open, int shaping, int at, int taken)
 static unsigned sty_menu_kind(void)
 {
     if (!sty_wanted()) return 0u;
+    if (coop_alt_off()) return 0u;                            /* Simon: ALTERNATIVE MODES Off - no chooser */
     if (coop_regular_only() && !(tm.pending && (tm.kind == 3u || tm.kind == 4u || tm.kind == 5u ||
                                                 tm.kind == TEAM_TEAMS)))
         return 0u;                                            /* Simon: ALTERNATIVE MODES On - no version step */
@@ -22419,6 +22420,8 @@ static void sty_menu_frame(unsigned c, int teams, int ours, unsigned std_msg, un
     char key[32];
     act = smn.act;
     smn.act = 0;
+    if ((coop_alt_off() && (smn.taken || smn.team || smn.open)) || (coop_regular_only() && smn.taken > 1))
+        sty_menu_reset("ALTERNATIVE MODES changed");          /* Simon: a pick kept from before the row changed */
     if ((long)c != smn.entry) {                               /* the cursor moved (no step was up: it has the flippers) */
         if (smn.home_ms && smn.entry >= 0 && !smn.home_walk) {   /* round 6: a mode walked on the Home Team screen's
                                                               * mode list (its GAME MODE SELECT, or after the game's
@@ -29493,6 +29496,21 @@ static const char *team_kind_caption(unsigned k)
     return k == 1u || k == 6u ? team_cap_coop : k == 3u || k == 4u || k == 5u || k == TEAM_TEAMS ? team_cap_teams : 0;
 }
 
+/* Simon (2026-11-27, with Nathan Hestley): ALTERNATIVE MODES 0 Off - with no entries of ours the menu's frame does no
+ * more (team_menu_frame returns), so the words lettered while co-op was on go back now and a pick kept from before is
+ * forgotten (emulator: STANDARD still lettered TEAMS / START TO PLAY after On's TEAMS 2 VS 1, then Off) */
+static void sty_alt_off_tidy(void)
+{
+    if (!team_frame_msg && !team_frame_cap && !smn.msg && !sty_hint_on && !smn.taken && !smn.team && !tm.pending)
+        return;
+    team_frame_restore();
+    sty_menu_reset("ALTERNATIVE MODES Off");
+    sty_menu_letter(0, 0, 0);
+    sty_menu_hint(0);
+    tm.pending = 0;
+    team_frame_n = 0;
+}
+
 static void team_menu_frame(pm_reg *r)
 {
     unsigned char *sp = (unsigned char *)(r + 14);
@@ -29509,6 +29527,7 @@ static void team_menu_frame(pm_reg *r)
     unsigned n = *count + last, c, j, kinds[TEAM_KIND_LAST], nk = team_menu_kinds(kinds), was_kind = tm.kind;
     static int room_said;
     int was = tm.pending;
+    if (!nk && coop_alt_off()) sty_alt_off_tidy();     /* Simon: ALTERNATIVE MODES Off - the game's words back */
     if (creg > 12 || breg > 12 || !idx || !msg || n > cap || !nk) return;
     if ((unsigned long)sp != team_frame_sp || !team_frame_n || team_frame_at + team_frame_n > n
         || list[team_frame_at] != idx) {                                        /* a new menu */
