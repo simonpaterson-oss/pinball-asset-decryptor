@@ -18,7 +18,7 @@ def test_the_caption_is_marked_where_it_has_room():
     assert MS.shown_caption(MS.IMAGE_SET, 13) == "Image Set (*)"
     assert MS.shown_caption(MS.IMAGE_SET, 12) == "Image Set"     # no room for the mark: the plain caption
     assert MS.shown_caption(MS.EDITION, 40) == "Edition (*)"
-    assert MS.shown_caption(MS.COOP_PLAY, 40) == "Co-op Play"     # takes effect at once: no mark
+    assert MS.shown_caption(MS.COOP_PLAY, 40) == "Alternative Modes"     # takes effect at once: no mark
 
 
 def test_the_page_help_wording_is_simons_and_fits_godzillas_room():

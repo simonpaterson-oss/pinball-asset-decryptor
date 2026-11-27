@@ -50,7 +50,7 @@ def test_menu_done_names_the_rows_that_went_on():
     log = lambda *a, **k: None                                  # noqa: E731
     went, refused, ph = engine._CoopMenu(log), engine._HandicapMenu(log), engine._ImageSetMenu(["N1", "N2"], log)
     went.ok, refused.ok, ph.ok, ph.placeholder = True, False, True, True
-    assert engine._menu_done(engine._MenuJobs(went, refused, ph)) == [("CO-OP PLAY", False), ("IMAGE SET", True)]
+    assert engine._menu_done(engine._MenuJobs(went, refused, ph)) == [("ALTERNATIVE MODES", False), ("IMAGE SET", True)]
     assert engine._menu_done(None) == []
 
 
@@ -65,5 +65,5 @@ def test_summary_names_the_menu_rows():
 
 
 def test_caption_of():
-    assert menu_settings.caption_of("coop_play") == "CO-OP PLAY"
+    assert menu_settings.caption_of("coop_play") == "ALTERNATIVE MODES"     # Simon (2026-11-27)
     assert menu_settings.caption_of("something_new") == "SOMETHING NEW"

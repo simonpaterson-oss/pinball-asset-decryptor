@@ -81,7 +81,7 @@ def test_the_write_puts_the_row_and_its_file_on_the_card():
     from pinball_decryptor.plugins.stern import mode_write as MW
     src = inspect.getsource(E)
     assert "flip_menu = (_BootFlipMenu(log) if not _is_spike3(disk_f)" in src
-    assert "spk_menu, flip_menu,\n                                              show_menu, timer_menu], log)" in src
+    assert "spk_menu, flip_menu,\n                                              show_menu, timer_menu, online_menu], log)" in src
     assert "mode_plan.flip_file = flip_cfg" in src
     assert "settings_cfg or flip_cfg)):" in src                # the runtime's files go on for this row alone too
     assert "or flip_cfg):" in src
@@ -134,7 +134,7 @@ def test_it_plans_on_godzilla_116_with_the_other_rows():
     from pinball_decryptor.plugins.stern import service_menu as SM
     names = list(SM.PLACEHOLDER_NAMES)
     rows = [(k, len(names), names) for k in SM.OFF_KEYS]
-    rows += [("coop_play", CP.MENU_VALUES, (), {"default": CP.MENU_DEFAULT, "help_text": CP.MENU_HELP, "onoff": True}),
+    rows += [("coop_play", CP.MENU_VALUES, (), {"default": CP.MENU_DEFAULT, "help_text": CP.MENU_HELP, "from_zero": True}),
              ("handicap", HC.MENU_VALUES, (), {"default": 1, "help_text": HC.MENU_HELP, "onoff": True}), row]
     settings, _w, _c, refused = MS.plan_many(AdjustmentTable(_program(LE116)), rows)
     assert not refused, refused

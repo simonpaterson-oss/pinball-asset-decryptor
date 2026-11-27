@@ -132,7 +132,7 @@ def test_the_menu_and_the_app_name_classic():
     from pinball_decryptor.webui import help_content
     from pinball_decryptor.webui.tabs import modes as M
     # Simon (2026-11-27): the row the app writes is Off / On (an older card's three-value row still reads 1 as Classic)
-    assert CP.MENU_VALUES == 2 and CP.MENU_ON == 1
+    assert CP.MENU_VALUES == 3 and CP.MENU_ON == 1       # Simon (2026-11-27): ALTERNATIVE MODES 0 / 1 / 2
     assert len(CP.MENU_HELP) <= 63
     # PAD-1443: no row is written unless ticked; PAD-1449: a game picked on the
     # start menu asks NORMAL, CHARACTERS (Classic: a character, no ability) or ENHANCED

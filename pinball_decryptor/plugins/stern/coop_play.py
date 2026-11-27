@@ -69,13 +69,15 @@ NO_EDGE = ("The app cannot read %s's buttons as they are pressed yet, so a teamm
 #: Back as Off / On, ticked on the Service menu tab: On plays exactly as a card with no row (the start menu's own
 #: games and style step); Off, the game is the stock game and reports to Insider Connected as it always has. coop.cfg
 #: says ``switch`` so the runtime reads it so (coop_row_styles); a card of the old three-value row keeps its meaning.
-MENU_VALUES = 2
-MENU_OFF, MENU_ON = 0, 1
-#: On to start with, so a fresh card plays as one with no row until the operator says Off. menu_settings.plan counts an
-#: Off / On row's default from 1 (1 Off, 2 On): seen in the emulator as "Default Value = Off" with 1
-MENU_DEFAULT = MENU_ON + 1
-#: the help says what On does and costs (63 characters: the spare help lines' room)
-MENU_HELP = "On: co-op games on the start menu; they stay off Insider"
+#: Simon (2026-11-27, with Nathan Hestley, who made the styles): the row is ALTERNATIVE MODES - 0 Off (the stock
+#: game), 1 On (co-op and the team games, regular only: no version step, no characters), 2 Enhanced (everything, as a
+#: card with no row). Shown as numbers, the help line saying what each is (Simon: "Option 1 is fine")
+MENU_VALUES = 3
+MENU_OFF, MENU_ON, MENU_ENHANCED = 0, 1, 2
+#: Enhanced to start with, so a fresh card plays as one with no row. menu_settings.plan counts a row's default from 1
+MENU_DEFAULT = MENU_ENHANCED + 1
+#: what each value is (63 characters: the spare help lines' room)
+MENU_HELP = "0 Off. 1 On: co-op and teams, regular. 2 Enhanced: all"
 #: how a teammate joins, for the tab and the log. PAD-1443: the games are always on the start menu, no service row
 HOW = ("hold both flipper buttons in attract for the start menu: CO-OP PLAY (each Start in the first ball adds a "
        "teammate, 2-4 players share one game) and TEAM PLAY 2 VS 2, 2 VS 1 and 3 VS 1. With characters, a game "

@@ -873,7 +873,7 @@ def plan(project, stock_hud, stock_bank, game_elf, scratch, ffmpeg=None, sound_o
          attract=False, attract_prof=None, find_scene=None, coop=False, coop_prof=None, coop_setting=0, idle=False,
          idle_prof=None, handicap=False, handicap_prof=None, handicap_setting=0, cabs=None, cabs_prof=None,
          cabs_sids=None, comp=False, comp_prof=None, screen_times=None, screen_prof=None, score_feed="",
-         score_feed_prof=None, records=None, records_prof=None, code_ok=True, arch="arm", scenes=None,
+         score_feed_prof=None, online_setting=0, records=None, records_prof=None, code_ok=True, arch="arm", scenes=None,
          scenes_prof=None, saved=False, saved_setting=0, access=None, access_prof=None, menu_prof=None):
     """Build a project's modes against this card's STOCK scenes into *scratch* and say what
     goes where. ``None`` when the project has no modes. Raises :class:`ModeWriteError`.
@@ -1004,7 +1004,7 @@ def plan(project, stock_hud, stock_bank, game_elf, scratch, ffmpeg=None, sound_o
                 result = feed_plan(project, game_elf, score_feed_prof or screen_prof or comp_prof or handicap_prof
                                    or idle_prof or coop_prof or attract_prof or variants_prof or sound_modes_prof
                                    or picture_prof)
-            feed_into(result, game_elf, scratch, score_feed, only=True)
+            feed_into(result, game_elf, scratch, score_feed, only=True, online_setting=online_setting)
         if records:                                  # PAD-1280: the owner's records, alone or with the above
             if result is None:
                 result = records_plan(project, game_elf, records_prof or score_feed_prof or screen_prof or comp_prof
@@ -1124,7 +1124,7 @@ def plan(project, stock_hud, stock_bank, game_elf, scratch, ffmpeg=None, sound_o
     if screen_times:                                 # PAD-1115
         screen_into(result, os.path.join(scratch, "screens"), screen_times, only=False)
     if score_feed:                                   # PAD-1204
-        feed_into(result, game_elf, scratch, score_feed, only=False)
+        feed_into(result, game_elf, scratch, score_feed, only=False, online_setting=online_setting)
     if records:                                      # PAD-1280
         records_into(result, game_elf, scratch, records)
     if saved:                                        # PAD-1402
@@ -1267,9 +1267,10 @@ def feed_plan(project, game_elf, prof):
     return ModePlan(project=project, profile=prof, port=port, build=None)
 
 
-def feed_into(result, game_elf, scratch, url, only):
+def feed_into(result, game_elf, scratch, url, only, online_setting=0):
     """``scorefeed.cfg`` for *result*'s card: *url*, the game's name, the logins' tables read off *game_elf*; *only*
-    when the card carries no modes (the runtime then arms this alone)."""
+    when the card carries no modes (the runtime then arms this alone); *online_setting* the ONLINE CO-OP row's live
+    value (Simon, 2026-11-27; 0: no such row)."""
     from . import score_feed as SF
     why = SF.title_refusal(result.profile)
     if why:
@@ -1283,6 +1284,8 @@ def feed_into(result, game_elf, scratch, url, only):
     oc = OC.wanted(getattr(result, "project", "")) if getattr(result, "project", "") else None
     if oc and oc["url"].strip() == url.strip():
         text += "".join(l + "\n" for l in OC.cfg_lines(oc))
+        if online_setting:                          # Simon: the ONLINE CO-OP row switches it
+            text += "online_row 0x%08x\n" % online_setting
         result.lines.append("online co-op: %s" % (OC.HOW % (oc["campaign"], oc["team"], url)))
     os.makedirs(scratch, exist_ok=True)
     path = os.path.join(scratch, SF.CFG_NAME)

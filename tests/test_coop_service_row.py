@@ -1,9 +1,14 @@
-"""CO-OP PLAY back in the service menu as Off / On.
+"""CO-OP PLAY back in the service menu, as ALTERNATIVE MODES 0 Off / 1 On / 2 Enhanced.
 
 Simon (2026-11-27, agreed with daveyvandy): "PAD - Item for coop play in service menu OFF/ON. SERVICE MENU - if set to
 have the item on will be able to turn coop off/on.. thats it." PAD-1443 had taken the row away (co-op games always on
 the start menu). The row comes back unticked on the Service menu tab, so a project that does not tick it is exactly
 PAD-1443's card; ticked, the operator gets CO-OP PLAY Off / On, On being the card with no row.
+
+Simon (2026-11-27, with Nathan Hestley, who made the styles): "So the COOP menu in service should be called ALT MODES or
+ALTERNATIVE MODES. Then: OFF, ON, ENHANCED" - On the co-op and team games regular only (no version step, no
+characters; TEAMS keeps its team step), Enhanced everything (the card with no row). Only checks in front of the chooser:
+"As long as the code doesn't change anything - just basically "IF service menu item = this then.."".
 """
 import json
 import os
@@ -28,12 +33,15 @@ def _project(tmp_path, data):
     return p
 
 
-def test_the_row_is_off_on_and_on_to_start_with():
+def test_the_row_is_off_on_enhanced_and_enhanced_to_start_with():
+    from pinball_decryptor.plugins.stern import menu_settings as MS
     key, values, names, opts = E._CoopMenu(lambda *a: None).wanted()
-    assert key == "coop_play" and values == 2 and names == ()
-    assert opts == {"default": CP.MENU_DEFAULT, "help_text": CP.MENU_HELP, "onoff": True}
-    assert CP.MENU_DEFAULT == 2                                     # an Off / On row counts from 1: 2 is On
+    assert key == "coop_play" and values == 3 and names == ()
+    assert opts == {"default": CP.MENU_DEFAULT, "help_text": CP.MENU_HELP, "from_zero": True}
+    assert CP.MENU_DEFAULT == 3                                     # counted from 1: 3 is 2, Enhanced
+    assert CP.MENU_HELP == "0 Off. 1 On: co-op and teams, regular. 2 Enhanced: all"
     assert len(CP.MENU_HELP) <= 63                                  # the spare help lines' room
+    assert MS.SETTINGS["coop_play"][1:3] == ("ALTERNATIVE MODES", "Alternative Modes")
 
 
 def test_the_card_says_switch_only_with_a_spike2_row():
@@ -145,6 +153,15 @@ int main(void)
     printf(",%d%d", coop_switched_on(), coop_classic());
     coop.style = 2u;                                    /* the start menu's CHARACTERS pick, as with no row */
     printf(",%d", coop_classic());
+    row = 2;                                            /* Enhanced: the card with no row */
+    kinds("enh");
+    printf(",%d%d", coop_regular_only(), coop_alt_off());
+    row = 1;
+    printf(",%d%d", coop_regular_only(), coop_alt_off());
+    coop.teams_always = 3;                              /* a card of coop.cfg `teams 2v1` */
+    kinds("t1");
+    row = 0;                                            /* Off: no team game either */
+    kinds("t0");
     printf("\n");
     return 0;
 }
@@ -159,4 +176,42 @@ def test_an_off_on_row_gives_the_start_menu_of_a_card_with_no_row(tmp_path):
     R._cc()                                             # skips with no ELF toolchain (Windows, macOS)
     main = T.PRELUDE + SWITCH_MAIN.replace("@FNS@", T._fns(_src(), *T.ROW_FNS))
     out = R._host_run(tmp_path, main, flags=("-no-pie",)).strip()
-    assert out == "none:1435,0 off:,0 on:1435,10,1"
+    # Simon: 1 On and 2 Enhanced offer the same games (On plays them regular); 0 Off nothing - a `teams` card too
+    assert out == "none:1435,0 off:,0 on:1435,10,1 enh:1435,00,10 t1:3 t0:"
+
+
+def test_on_adds_only_checks_in_front_of_the_chooser():
+    """Simon, with Nathan: "IF service menu item = this then.." - each gate is a line before the chooser's own code."""
+    from tests import test_spike2_mode_roster as R
+    src = _src()
+    kind = R._lift(src, "static unsigned sty_menu_kind(void)\n{")
+    assert kind.index("if (!sty_wanted()) return 0u;") < kind.index("coop_regular_only()") < kind.index("if (tm.pending)")
+    frame = R._lift(src, "static void sty_menu_frame(unsigned c, int teams, int ours, unsigned std_msg, unsigned index)\n{")
+    assert frame.index("if (act && coop_regular_only() && smn.open && smn.shaping)") < frame.index("if (act) switch")
+    assert "if (coop_regular_only()) smn.go_style = 1;" in R._lift(src, "static void sty_menu_go(void)\n{")
+    begin = R._lift(src, "static void sty_begin(unsigned kind)\n{")
+    assert begin.index("if (coop_regular_only()) sty.preset = 1;") < begin.index("if (sty_default_normal(")
+    held = R._lift(src, "static void coop_style_held(void)\n{")
+    assert held.index("if (coop_regular_only())") < held.index("if (!coop.style_default || coop_row_styles()) return;")
+
+
+def test_the_online_coop_row(tmp_path):
+    """Simon: "Can we have online coop OFF as a seperate service menu item?" - ONLINE CO-OP Off / On, its word in
+    scorefeed.cfg; Off, a report carries no online fields."""
+    import inspect
+    from tests import test_spike2_mode_roster as R
+    from pinball_decryptor.plugins.stern import menu_settings as MS, mode_write as MW, online_coop as OC
+    from pinball_decryptor.plugins.stern import service_menu as SM
+    key, values, names, opts = E._OnlineCoopMenu(lambda *a: None).wanted()
+    assert (key, values, names) == ("online_coop", 2, ())
+    assert opts == {"default": 2, "help_text": OC.MENU_HELP, "onoff": True} and len(OC.MENU_HELP) <= 63
+    assert MS.SETTINGS["online_coop"][1:3] == ("ONLINE CO-OP", "Online Co-op")
+    assert "online_coop" in SM.TICK_KEYS
+    p = _project(tmp_path, {})
+    SM.save(p, {"on": ["online_coop"]})
+    assert "online_coop" not in [r[0] for r in SM.wanted(p)]        # ticked, but online co-op is not set up
+    src = _src()
+    assert 'str_starts(raw + i, "online_row ")' in src
+    into = R._lift(src, "static void feed_online_into(struct feed_report *r)\n{")
+    assert into.index("feed.online_row") < into.index("for (k = 0; k < sizeof r->campaign; k++)")
+    assert 'text += "online_row 0x%08x\\n" % online_setting' in inspect.getsource(MW.feed_into)

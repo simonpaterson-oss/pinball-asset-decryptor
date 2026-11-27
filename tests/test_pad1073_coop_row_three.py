@@ -19,6 +19,8 @@ def _fns(src, *sigs):
 
 ROW_FNS = ("static unsigned coop_row_mode(unsigned v)", "static int coop_switched_on(void)",
            "static int coop_row_styles(void)",           # Simon: an Off / On row (coop.cfg `switch`)
+           "static int coop_alt_value(void)", "static int coop_regular_only(void)",   # Simon: ALTERNATIVE MODES
+           "static int coop_alt_off(void)",
            "static int coop_classic(void)", "static unsigned team_menu_kinds(unsigned *kinds)\n{")
 
 PRELUDE = r"""
@@ -256,9 +258,10 @@ def test_the_app_says_off_classic_enhanced():
     from pinball_decryptor.webui import help_content
     from pinball_decryptor.webui.tabs import modes as M
     key, values, names, opts = E._CoopMenu(lambda *a: None).wanted()
-    assert (values, names, opts) == (2, (), {"default": 2, "help_text": CP.MENU_HELP, "onoff": True})      # 2: On (counted from 1)
-    assert (CP.MENU_OFF, CP.MENU_ON) == (0, 1)
-    assert len(CP.MENU_HELP) <= 63 and CP.MENU_HELP.startswith("On: co-op games on the start menu")
+    # Simon (2026-11-27, with Nathan Hestley): ALTERNATIVE MODES 0 Off / 1 On / 2 Enhanced, Enhanced (3 counted from 1)
+    assert (values, names, opts) == (3, (), {"default": 3, "help_text": CP.MENU_HELP, "from_zero": True})
+    assert (CP.MENU_OFF, CP.MENU_ON, CP.MENU_ENHANCED) == (0, 1, 2)
+    assert len(CP.MENU_HELP) <= 63 and CP.MENU_HELP.startswith("0 Off. 1 On: co-op and teams, regular")
     text = str(help_content.__dict__)                  # PAD-1443: no row - the start menu's games, named
     for entry in ("CO-OP PLAY", "TEAM PLAY 2 VS 2", "TEAM PLAY 2 VS 1"):
         assert "- **%s:**" % entry in text

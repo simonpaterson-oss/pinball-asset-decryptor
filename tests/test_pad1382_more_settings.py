@@ -23,7 +23,7 @@ def _wanted(music=False, edition=False):
     rows = [("music_mode", 3, ["Standard", "Orchestral", "Heisei"])] if music else []
     rows += [("edition", 2, ["One", "Two"])] if edition else []
     rows += [(k, PS.VALUES, (), {"default": PS.NORMAL, "help_text": PS.HELP[k]}) for k in PS.KEYS]
-    rows += [("coop_play", CP.MENU_VALUES, (), {"default": CP.MENU_DEFAULT, "help_text": CP.MENU_HELP, "onoff": True}),  # Simon
+    rows += [("coop_play", CP.MENU_VALUES, (), {"default": CP.MENU_DEFAULT, "help_text": CP.MENU_HELP, "from_zero": True}),  # Simon
              ("handicap", HC.MENU_VALUES, (), {"default": 1, "help_text": HC.MENU_HELP, "onoff": True})]
     return rows
 
@@ -64,7 +64,7 @@ def test_five_settings_on_three_spare_rows_share_two(card):
         s = by[key]
         assert s.live == MS.SHARED_BASE + 4 * k and s.shared == (k,) and MS.is_shared(s)
         assert s.id == value.id and s.where.endswith("MORE SETTINGS %d" % k)
-    assert (by["coop_play"].low, by["coop_play"].values) == (0, 2)                  # Simon: Off / On
+    assert (by["coop_play"].low, by["coop_play"].values) == (0, 3)                  # Simon: Off / On / Enhanced
     assert by["handicap"].kind == MS.onoff_kind(t) and by["brightness"].kind == MS.number_kind(t)
     # the runtime may write each one's words in the room the program has
     desc, help_va, help_room, row_va, row_room = value.shared[:5]

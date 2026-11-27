@@ -10249,6 +10249,10 @@ def _compute_patches_inner(disk_f, parts, assets_dir, log, progress, cancel,
                      else None)
         timer_menu = (_BootTimerMenu(log) if not _is_spike3(disk_f) and _SvM_f.TIMER_KEY in _SvM_f.on_keys(assets_dir)
                       else None)
+        # Simon (2026-11-27): ONLINE CO-OP, when ticked and the card's score feed carries online co-op
+        from . import online_coop as _OC_m
+        online_menu = (_OnlineCoopMenu(log) if not _is_spike3(disk_f) and feed_url
+                       and _SvM_f.ONLINE_KEY in _SvM_f.on_keys(assets_dir) and _OC_m.wanted(assets_dir) else None)
         # PAD-1382: the owner's own settings (Service menu tab) beside them, all in the owner's order
         from . import service_menu as _SvM
         if not _is_spike3(disk_f):
@@ -10263,11 +10267,12 @@ def _compute_patches_inner(disk_f, parts, assets_dir, log, progress, cancel,
                     image_menu = _ph
         _menu_list = _SvM.arrange(assets_dir, [music_menu, edition_menu, *picture_menus, coop_menu, hand_menu,
                                               image_menu, saved_menu, cvd_menu, spk_menu, flip_menu,
-                                              show_menu, timer_menu], log)
+                                              show_menu, timer_menu, online_menu], log)
         menu_job = _MenuJobs(*_menu_list) if _menu_list else None
         picture_cfg = ""
         settings_cfg = ""
         coop_setting = 0
+        online_setting = 0
         hand_setting = 0
         image_setting = 0
         saved_setting = 0
@@ -10295,6 +10300,8 @@ def _compute_patches_inner(disk_f, parts, assets_dir, log, progress, cancel,
                 _coop_on = False
             elif coop_menu is not None:
                 coop_setting = coop_menu.setting.live
+            if online_menu is not None and online_menu.ok:
+                online_setting = online_menu.setting.live           # Simon: ONLINE CO-OP, for scorefeed.cfg
             if image_menu is not None and image_menu.ok:
                 image_setting = image_menu.setting.live
             elif image_menu is not None:
@@ -10751,6 +10758,7 @@ def _compute_patches_inner(disk_f, parts, assets_dir, log, progress, cancel,
                     comp=_comp_on, comp_prof=comp_prof,               # PAD-1041
                     screen_times=stime_lines, screen_prof=stime_prof,  # PAD-1115
                     score_feed=feed_url, score_feed_prof=feed_prof,   # PAD-1204
+                    online_setting=online_setting,                     # Simon: ONLINE CO-OP
                     records=rec_list, records_prof=rec_prof,          # PAD-1280
                     saved=bool(_saved_modes), saved_setting=saved_setting,   # PAD-1402
                     scenes=scenes_staged, scenes_prof=scenes_prof,    # image sets
@@ -13048,22 +13056,52 @@ class _CoopMenu(_MusicModeMenu):
 
     def wanted(self):
         from . import coop_play as _CP
-        return self.KEY, _CP.MENU_VALUES, (), {"default": _CP.MENU_DEFAULT, "help_text": _CP.MENU_HELP, "onoff": True}
+        # Simon (2026-11-27, with Nathan Hestley): ALTERNATIVE MODES 0 Off / 1 On / 2 Enhanced, shown as numbers
+        return self.KEY, _CP.MENU_VALUES, (), {"default": _CP.MENU_DEFAULT, "help_text": _CP.MENU_HELP,
+                                              "from_zero": True}
 
     def done(self):
         self.ok = True
-        self.log("Co-op play: CO-OP PLAY is in the operator menu (%s), On to start with. On, the start menu (both "
-                 "flipper buttons in attract) offers the co-op and team games as it does on a card with no such row, "
-                 "and a game played as one of them stays off Insider Connected. Off, the game is the stock game: "
-                 "no co-op or team games, and it reports to Insider Connected as it always has (with no modes on "
-                 "the card)." % self.setting.where, "info")
+        self.log("Alternative modes: ALTERNATIVE MODES is in the operator menu (%s), 2 (Enhanced) to start with. 2 "
+                 "Enhanced: the start menu (both flipper buttons in attract) offers the co-op and team games with "
+                 "their versions, as on a card with no such row. 1 On: the co-op and team games, regular only (no "
+                 "version to choose, no characters). 0 Off: the stock game, reporting to Insider Connected as it "
+                 "always has (with no modes on the card). A co-op or team game stays off Insider Connected."
+                 % self.setting.where, "info")
 
     def fail(self, why):
         if self.why or self.ok:
             return
         self.why = str(why).rstrip(".") or "unknown"
-        self.log("Co-op play: CO-OP PLAY could not be added to the operator menu (%s), so co-op play is left out of "
-                 "this card." % self.why, "warning")
+        self.log("Alternative modes: ALTERNATIVE MODES could not be added to the operator menu (%s), so co-op play "
+                 "is left out of this card." % self.why, "warning")
+
+
+class _OnlineCoopMenu(_MusicModeMenu):
+    """Simon (2026-11-27): "Can we have online coop "OFF" as a seperate service menu item?" - ONLINE CO-OP, Off / On,
+    on a card whose score feed carries online co-op (PAD-1479): Off, its reports carry no online co-op fields."""
+
+    KEY = "online_coop"
+
+    def __init__(self, log):
+        super().__init__(2, (), log)
+
+    def wanted(self):
+        from . import online_coop as _OC
+        return self.KEY, 2, (), {"default": 2, "help_text": _OC.MENU_HELP, "onoff": True}
+
+    def done(self):
+        self.ok = True
+        self.log("Online co-op: ONLINE CO-OP is in the operator menu (%s), On to start with. Off, this machine's "
+                 "score feed reports carry no online co-op counts (the scores still go)." % self.setting.where,
+                 "info")
+
+    def fail(self, why):
+        if self.why or self.ok:
+            return
+        self.why = str(why).rstrip(".") or "unknown"
+        self.log("Online co-op: ONLINE CO-OP could not be added to the operator menu (%s); online co-op stays as "
+                 "set, always on." % self.why, "warning")
 
 
 def _picture_for_build(assets_dir, dest_is_device, log, ext4_available=None):

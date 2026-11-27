@@ -33,10 +33,10 @@ def test_the_apps_rows_go_on_a_page_of_their_own():
     assert menu["machine_list"] == MACHINE
     own = _page(menu, "Custom Code")
     assert (own["category"], own["rank"], own["path"]) == (15, 7, "Adjustments > Machine Settings > Custom Code")
-    assert [r["caption"] for r in own["rows"]] == ["Co-op Play", "Handicap"] and all(r["ours"] for r in own["rows"])
+    assert [r["caption"] for r in own["rows"]] == ["Alternative Modes", "Handicap"] and all(r["ours"] for r in own["rows"])
     by = {r["caption"]: r for r in own["rows"]}
     assert [v["text"] for v in by["Handicap"]["values"]] == ["Off", "On"]
-    assert [v["text"] for v in by["Co-op Play"]["values"]] == ["Off", "On"]      # Simon: Off / On now
+    assert [v["text"] for v in by["Alternative Modes"]["values"]] == ["0", "1", "2"]   # Simon: Off / On / Enhanced
     # the game's own pages stay as they were
     attract = _page(menu, "Attract Mode")
     assert [r["caption"] for r in attract["rows"]] == GAME_ROWS and not attract["ours"]
@@ -52,8 +52,8 @@ def test_shared_rows_are_drawn_as_the_machine_drew_them():
     assert [r["caption"] for r in own["rows"]] == ["More Settings", "Brightness"]
     more = own["rows"][0]
     assert more["key"] == MS.MORE_SELECT and [v["v"] for v in more["values"]] == [1, 2, 3, 4, 5]
-    assert [o["caption"] for o in more["options"]] == ["Brightness", "Contrast", "Saturation", "Co-op Play", "Handicap"]
-    assert more["options"][3]["help"].startswith("On: co-op games on the start menu")   # Simon: Off / On
+    assert [o["caption"] for o in more["options"]] == ["Brightness", "Contrast", "Saturation", "Alternative Modes", "Handicap"]
+    assert more["options"][3]["help"].startswith("0 Off. 1 On: co-op and teams")   # Simon: Off / On / Enhanced
     assert own["rows"][1]["shared_value"] and own["rows"][1]["value"] == "5"
 
 
