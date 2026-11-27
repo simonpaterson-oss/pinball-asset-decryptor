@@ -869,7 +869,7 @@ def test_screen_text_is_four_centred_lines_of_sixteen():
 def _through_send_image(monkeypatch, target):
     import contextlib
     monkeypatch.setattr(R, "open_target", lambda image, log: contextlib.nullcontext(target))
-    monkeypatch.setattr(R, "check_layout", lambda target, layout: None)
+    monkeypatch.setattr(R, "check_layout", lambda target, layout, *a: None)
 
 
 class HeldFull(FullScreenMachine):
