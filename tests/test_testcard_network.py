@@ -207,7 +207,8 @@ def test_send_builds_then_hands_the_card_to_the_apps_send(tmp_path, monkeypatch)
 def test_send_may_replace_a_multiboot_card_when_asked(tmp_path, monkeypatch):
     """Simon (2026-11-26): "create a card which is only a test card no multiboot (over the network)" - a machine
     running a PAD multi-boot card is asked about by name (its games are deleted), and the Send is told it may
-    replace it; a one-game card is still refused before anything is built."""
+    replace it; a one-game card too (Simon, 2026-11-27: "whatever they write it must be possible to change it to
+    anything else")."""
     from pinball_decryptor.core import remote_send as rs
     from pinball_decryptor.webui import compat
     from pinball_decryptor.webui.rpc import RpcError
@@ -231,10 +232,13 @@ def test_send_may_replace_a_multiboot_card_when_asked(tmp_path, monkeypatch):
     asked[:], sent[:] = [], []
     monkeypatch.setattr(compat.messagebox, "askyesno", lambda *a, **k: asked.append(a) and False)
     assert tab.send() is False and sent == []
-    # a one-game card: refused, nothing asked
+    # a one-game card: asked about by name too, and the Send may replace it
     monkeypatch.setattr(rs, "connect", lambda address: _Machine(""))
-    with pytest.raises(RpcError, match="its game would be deleted"):
-        tab.send()
+    monkeypatch.setattr(compat.messagebox, "askyesno", lambda *a, **k: asked.append(a) or True)
+    asked[:] = []
+    assert tab.send() is True
+    assert "Replace the game" in asked[0][1] and "Its game is deleted" in asked[0][1]
+    assert tab._replace_menu_card is True
 
 
 def test_send_takes_the_card_already_built_when_nothing_changed(tmp_path, monkeypatch):
@@ -344,14 +348,15 @@ def test_a_test_card_goes_only_to_a_machine_running_one():
     with pytest.raises(rs.SendError, match="asks before it replaces the multi-boot card"):
         rs.check_test_card_target(card, _Machine("PAD_MENU_CARD\n"))
     rs.check_test_card_target(card, _Machine("PAD_MENU_CARD\n"), replace_menu_card=True)
-    with pytest.raises(rs.SendError, match="its game would be deleted"):
-        rs.check_test_card_target(card, _Machine(""), replace_menu_card=True)
+    # Simon (2026-11-27): "whatever they write it must be possible to change it to anything else" - a one-game
+    # card too, once the user was asked
+    rs.check_test_card_target(card, _Machine(""), replace_menu_card=True)
     assert rs.machine_card_kind(_Machine("PAD_TESTCARD\n")) == "testcard"
     assert rs.machine_card_kind(_Machine("PAD_MENU_CARD\n")) == "menu"
     assert rs.machine_card_kind(_Machine("")) == "game"
     src = open(rs.__file__, encoding="utf-8").read()
-    assert ("check_layout(target, machine.layout())\n        check_test_card_target(target, machine, replace_menu_card)"
-            in src)
+    assert ("check_layout(target, machine.layout(), replace_menu_card)\n        "
+            "check_test_card_target(target, machine, replace_menu_card)" in src)
 
 
 def test_the_send_run_carries_the_permission(monkeypatch):
