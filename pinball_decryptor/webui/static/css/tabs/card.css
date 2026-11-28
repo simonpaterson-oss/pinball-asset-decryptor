@@ -84,3 +84,9 @@ html.bp-640 .c-page .c-ikv > .k { margin-top: 5px; }
 
 /* PAD-435: the open project is another card's (OtherCardNote) */
 .c-page .c-other { gap: 8px; white-space: normal; }
+
+/* the existing extraction (Simon, 2026-11-28): a viable folder says so in green, plainly */
+.c-page .c-existing { margin-top: 4px; }
+.c-page .c-viable { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: 6px;
+  background: var(--ok-soft); border: 1px solid var(--ok); line-height: 1.4; }
+.c-page .c-viable-hd { display: flex; gap: 8px; align-items: center; color: var(--ok); font-weight: 600; }

@@ -56,6 +56,19 @@ _EXPORTS = (
 )
 
 
+def _card_rel(card, folder, details):
+    """``card_relation``'s kind for the card and the extract in *folder* ("source", "build",
+    "other", "other_build"), ``""`` when there is nothing to compare."""
+    if not card or not details.get("baseline") or not details.get("source_name"):
+        return ""
+    from ...core.extract_source import card_relation
+    try:
+        rel = card_relation(card, folder, measure=True)
+    except Exception:                                   # noqa: BLE001
+        return ""
+    return (rel or {}).get("kind") or ""
+
+
 def _card_kind(card, folder, details):
     """How the Extract tab's card relates to the extract already in *folder* (PAD-421):
     ``"other"`` when the folder holds the extract of a different card, so the page can say
@@ -188,6 +201,7 @@ class ExtractTab(TabService):
         self._followed_card = ""      # PAD-421: the last card whose project was opened
         self._stats_pair = None       # PAD-435: (folder, card) the last stats described
         self._offered = set()         # PAD-435: the (folder, card) pairs already offered
+        self._existing_seq = 0        # the "Existing extraction" box's last check (Simon)
         self._stats_after = None
         self._stats_thread = None
         self._info_seq = 0
@@ -1531,7 +1545,9 @@ class ExtractTab(TabService):
             except Exception:                           # noqa: BLE001
                 details = None
             if details is not None:
-                details["card_kind"] = _card_kind(card, folder, details)
+                details["card_rel"] = _card_rel(card, folder, details)
+                details["card_kind"] = ("other" if details["card_rel"]
+                                        in ("other", "other_build") else "")
                 try:
                     details["card_project"] = _card_project(card, folder, candidates)
                 except Exception:                       # noqa: BLE001
@@ -1568,6 +1584,7 @@ class ExtractTab(TabService):
                           "rows": [[str(a), str(b)] for a, b in rows],
                           "details": details})
         prev, self._stats_pair = self._stats_pair, (_same(folder), _same(card))
+        self._existing_follow(folder, card, details)
         self._follow_card_project(details)
         self._offer_card_project(prev, details)
 
@@ -1694,6 +1711,131 @@ class ExtractTab(TabService):
         if not folder or not os.path.isdir(folder):
             return False
         return self._open_folder(folder)
+
+    # ------------------------------------------------------------------
+    # The Select card tab's "Existing extraction" box.  Simon (DragonRR), 2026-11-28:
+    # "Below the path for the selected card there should be another path box ... Already
+    # have this card extracted? Select the folder and PAD will use it if it is viable", and
+    # "Make it clear - if the user has a viable extraction that it is viable after he is
+    # returned to the select card tab."  A viable folder is opened as the project; any other
+    # leaves the open project alone and says why (core/existing_extract.py).
+    # ------------------------------------------------------------------
+    def _card_path(self):
+        card = (self.extract_input_var.get() or "").strip()
+        return card if card and os.path.isfile(card) else ""
+
+    @rpc
+    def browse_existing(self):
+        card = self._card_path()
+        if not card or self.window._is_running():
+            return False
+        path = self.window.ask_folder(
+            "extract_existing", "Select the folder holding this card's extraction",
+            initialdir=self.window._initialdir_for(self._project_folder(), card))
+        if not path:
+            return False
+        return self.check_existing(path)
+
+    @rpc
+    def check_existing(self, folder):
+        """Check *folder* against the picked card on a worker; a viable one is opened."""
+        folder = (folder or "").strip().strip('"')
+        card = self._card_path()
+        if not folder or not card or self.window._is_running():
+            return False
+        folder = os.path.normpath(folder)
+        self._existing_seq += 1
+        seq = self._existing_seq
+        self.set(existing={"card": card, "folder": folder, "state": "checking",
+                           "text": "Checking the folder…", "changes": ""})
+        mfrs = list(self.window.manufacturers)
+        mfr = self.mfr
+        caption = (self.get("detected") or {}).get("caption") or ""
+
+        def _game_of(f):
+            return (H.project_details(f, mfrs, mfr) or {}).get("game") or ""
+
+        def _work():
+            from ...core import existing_extract as EE
+            try:
+                verdict = EE.check(card, folder, _game_of)
+            except Exception:                           # noqa: BLE001
+                log.exception("existing extraction: check")
+                verdict = {"kind": EE.NONE, "folder": folder}
+            self.ctx.loop.post(self._existing_checked, seq, card, folder, verdict,
+                               EE.message(verdict, caption))
+
+        threading.Thread(target=_work, daemon=True, name="extract-existing").start()
+        return True
+
+    def _existing_checked(self, seq, card, picked, verdict, text):
+        from ...core import existing_extract as EE
+        if seq != self._existing_seq or _same(self._card_path()) != _same(card):
+            return
+        if verdict.get("kind") not in EE.VIABLE:
+            self.set(existing={"card": card, "folder": picked, "state": "bad",
+                               "text": text, "changes": ""})
+            return
+        folder = verdict.get("folder") or picked
+        if _same(self._project_folder()) != _same(folder):
+            self._followed_card = card            # PAD-421's follow is answered
+            if not self._open_folder(folder):
+                self.set(existing={"card": card, "folder": folder, "state": "bad",
+                                   "text": "PAD is busy; try again when it has finished.",
+                                   "changes": ""})
+                return
+            if (self.extract_input_var.get() or "").strip() != card:
+                self.extract_input_var.set(card)
+            self.window.append_log("Using the extraction in %s for %s."
+                                   % (folder, os.path.basename(card)), "info")
+        self._existing_viable(card, folder, text)
+
+    def _existing_viable(self, card, folder, text):
+        prev = self.get("existing") or {}
+        keep = (prev.get("state") == "viable" and _same(prev.get("folder")) == _same(folder)
+                and _same(prev.get("card")) == _same(card))
+        self.set(existing={"card": card, "folder": folder, "state": "viable", "text": text,
+                           "changes": prev.get("changes") if keep and prev.get("changes")
+                           else "Counting changes…"})
+        self._existing_seq += 1
+        seq = self._existing_seq
+
+        def _work():
+            from ...core import existing_extract as EE
+            try:
+                line = EE.changes_line(EE.changes(folder))
+            except Exception:                           # noqa: BLE001
+                log.exception("existing extraction: changes")
+                line = ""
+            self.ctx.loop.post(self._existing_counted, seq, folder, line)
+
+        threading.Thread(target=_work, daemon=True, name="extract-existing-count").start()
+
+    def _existing_counted(self, seq, folder, line):
+        cur = self.get("existing") or {}
+        if seq != self._existing_seq or _same(cur.get("folder")) != _same(folder):
+            return
+        self.set(existing=dict(cur, changes=line))
+
+    def _existing_follow(self, folder, card, details):
+        """The project's stats came in: the box says the open project is this card's
+        extraction whichever way it was opened (the box, Project > Open, PAD-421's follow),
+        and forgets an answer about another card or another project."""
+        from ...core import existing_extract as EE
+        d = details or {}
+        cur = self.get("existing") or {}
+        if card and d.get("card_rel") in EE.VIABLE:
+            verdict = {"kind": d.get("card_rel"), "game": d.get("game") or "",
+                       "source_name": d.get("source_name") or "",
+                       "extracted": d.get("extracted") or ""}
+            self._existing_viable(card, folder, EE.message(verdict))
+            return
+        if not cur:
+            return
+        if (_same(cur.get("card")) != _same(card)
+                or (cur.get("state") == "viable" and _same(cur.get("folder")) != _same(folder))):
+            self._existing_seq += 1
+            self.set(existing=None)
 
     def _open_folder(self, folder):
         """Switch to the project in *folder*: opened as a recent project when it has its
