@@ -86,6 +86,15 @@ class FakeExt4Reader:
             raise ValueError("file offset not allocated")
         return [(off + file_off, length)]
 
+    def place(self, inode, file_off, data):
+        """Ext4Reader.place over the fake: every fake file is one contiguous
+        run with no holes, so all of *data* is written and nothing is held."""
+        writes, pos = [], 0
+        for doff, n in self.disk_ranges(inode, file_off, len(data)):
+            writes.append((doff, data[pos:pos + n]))
+            pos += n
+        return writes, []
+
     def read_inode(self, ino):
         return self._inodes[ino]
 
