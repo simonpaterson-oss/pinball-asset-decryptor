@@ -205,8 +205,8 @@ class Ed {
     const v = this.view;
     gl.setView(v.k * dpr, v.ox * dpr, v.oy * dpr, cw, ch, this.bgRGB);
     if (this.needSync) { this.sync(); this.needSync = false; }
-    if (this.packOk && this.syncOk) {
-      if (this.preview) {
+    if (this.packOk) {          // a newer pack on its way: the last one stays drawn meanwhile, never a blank stage
+      if (this.preview && this.syncOk) {
         for (const [i, pl] of this.preview) {
           this.e.placeSet(this.place0[this.ph] + i, pl.x, pl.y, pl.scale == null ? 1 : pl.scale, pl.turn || 0,
             pl.depth == null ? null : pl.depth, !!pl.hidden);
@@ -776,21 +776,38 @@ class Ed {
     this.notify.panels();
   }
   // one change: shown at once, then checked and saved by Python as one undo step; refused: put back
+  // Changes are saved one after another. A nudge made while the last nudge is still waiting its turn joins it: a
+  // run of arrow presses is one step, as in other editors, and never a queue of dozens.
   commit(doc, label, sel) {
     const before = this.doc;
     this.setDoc(doc, sel);
+    const tail = this.tail;
+    if (label === "Nudge" && tail && !tail.started && tail.label === "Nudge") { tail.doc = doc; return this.queue; }
+    const job = { doc, label, started: false };
+    this.tail = job;
+    this.pending = (this.pending || 0) + 1;
     this.status = { kind: "busy", text: "Saving…" }; this.notify.panels();
     this.queue = this.queue.then(async () => {
+      job.started = true;
       let r;
-      try { r = await call("vmodes.edit_commit", doc, label); } catch (err) { r = { ok: false, problems: [String(err && err.message || err)] }; }
+      try { r = await call("vmodes.edit_commit", job.doc, job.label); } catch (err) { r = { ok: false, problems: [String(err && err.message || err)] }; }
       if (!r || !r.ok) {
-        this.status = { kind: "err", text: "Not kept", why: (r && r.problems) || [] };
-        if (this.doc === doc) this.setDoc(r && r.doc ? r.doc : before);
-        this.notify.panels();
+        this.failed = { why: (r && r.problems) || [] };
+        if (this.doc === job.doc) this.setDoc(r && r.doc ? r.doc : before);
         return;
       }
-      this.status = { kind: "ok", text: "Saved" };
-      await this.applyReply(r, doc);
+      await this.applyReply(r, job.doc);
+    }).catch((err) => {
+      // a fault here must never stop the changes after it from being saved: say so and carry on
+      this.errors = (this.errors || []).concat(String(err && err.stack || err)).slice(-5);
+      this.failed = { why: [String(err && err.message || err)] };
+      this.needSync = true;
+    }).then(() => {
+      // "Saved" only once every change made has been saved; a refusal stays on show until the next change
+      this.pending--;
+      if (this.failed) { this.status = { kind: "err", text: "Not kept", why: this.failed.why }; if (!this.pending) this.failed = null; }
+      else if (!this.pending) this.status = { kind: "ok", text: "Saved" };
+      this.dirty(true); this.notify.panels();
     });
     return this.queue;
   }

@@ -68,6 +68,8 @@ def open_editor(pg, url, slug):
 
 
 def doc(pg):
+    pg.evaluate("window.__vmEditor.settled()")       # every change saved first
+    time.sleep(0.2)
     return pg.evaluate("window.__vmEditor.doc()")
 
 
@@ -110,7 +112,14 @@ def new_mode_with_art(url, title, slug):
 
 def checks_after(pg, url, out):
     res = {"play_from_editor": _PLAY[:]}
+    only_keys = "--only-keys" in sys.argv
     # --- the 300-thing desk: drag one thing for 3 s, frame times from requestAnimationFrame
+    if not only_keys:
+        stage_and_mouse(pg, url, res)
+    keys_only(pg, url, res, out)
+
+
+def stage_and_mouse(pg, url, res):
     open_editor(pg, url, "stage-300")
     pg.evaluate("window.__vmEditor.selectIndex(0)")
     p0 = pg.evaluate("window.__vmEditor.centreOf(0)")
@@ -158,6 +167,9 @@ def checks_after(pg, url, out):
     pg.click(".vme-top button:has-text('Done')")
     time.sleep(0.5)
 
+
+
+def keys_only(pg, url, res, out):
     # --- the same with the keyboard only: the command palette adds, Tab picks, arrows nudge, fields take numbers
     new_mode_with_art(url, "Keys only", "keys-only")
     open_editor(pg, url, "keys-only")
@@ -187,6 +199,8 @@ def checks_after(pg, url, out):
     pg.keyboard.press("Enter")
     time.sleep(0.4)
     res["keys_only"] = doc(pg)["phases"][0].get("place", [])
+    res["keys_gl"] = pg.evaluate("""() => { const c = document.querySelector('.vme-gl'); const gl = c.getContext('webgl2') || c.getContext('webgl');
+        return { lost: gl.isContextLost(), canvases: document.querySelectorAll('canvas').length, drawn: window.__vmEditor.ed.drawn, ok: window.__vmEditor.ed.packOk, sync: window.__vmEditor.ed.syncOk, errs: window.__vmEditor.ed.errors, st: window.__vmEditor.ed.status, pc: window.__vmEditor.ed.packCounts, dc: window.__vmEditor.ed.counts(window.__vmEditor.ed.doc) }; }""")
     shot(pg, "vmodes_editor_keys")
     pg.keyboard.press("Escape")
 
@@ -246,7 +260,7 @@ def main():
             b = p.chromium.launch(channel="msedge", args=["--mute-audio"])
             pg = b.new_page(viewport={"width": 1600, "height": 1000})
             pg.on("pageerror", lambda e: print("PAGE ERROR:", e))
-            pg.on("console", lambda m: m.type == "error" and "Failed to load resource" not in m.text and print("CONSOLE:", m.text))
+            pg.on("console", lambda m: m.type in ("error", "warning") and "Failed to load resource" not in m.text and print("CONSOLE:", m.text[:200]))
             pg.on("response", lambda r: r.status >= 400 and print("HTTP", r.status, r.url[:160]))
             pg.goto(url)
             pg.wait_for_function("window.__padReady === true", timeout=90000)
@@ -262,6 +276,9 @@ def main():
             if not after:
                 for name in ("vmodes_editor", "vmodes_editor_multi", "vmodes_editor_empty"):
                     shot(pg, name)
+                return
+            if "--only-keys" in sys.argv:
+                checks_after(pg, url, out)
                 return
             sfx = "_light" if light else ""
             open_editor(pg, url, "night-harbour")
