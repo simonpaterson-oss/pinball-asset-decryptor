@@ -144,8 +144,8 @@ the mode's end is the game's own screen (the pairs at the gate).
 
 ## Budgets for Spike 2 (measured in the emulator)
 
-These replace the Spike 2 column's placeholders in `video_mode_maker.md` section 5 (PAD-1654's
-branch; it says this ticket replaces them).
+These are the Spike 2 column of `video_mode_maker.md` section 5, the epic's budget table
+(copied in by PAD-1679 and PAD-1680); `budgets.py` carries the ones the cost report reads.
 
 | Budget | Spike 2, measured | How |
 |---|---|---|
