@@ -125,6 +125,9 @@ pyinstaller \
     `# the official Stern stock fingerprints (PAD-426): data, not code` \
     --add-data "$ROOT_DIR/pinball_decryptor/plugins/stern/data/stock_prints.json.xz:pinball_decryptor/plugins/stern/data" \
     --add-data "$ROOT_DIR/pinball_decryptor/core/video_mode/video_mode.schema.json:pinball_decryptor/core/video_mode" \
+    `# the video mode player (PAD-1659): the engine built for the browser, loaded by the page` \
+    --add-data "$ROOT_DIR/pinball_decryptor/core/video_mode/engine/vm_engine.wasm:pinball_decryptor/core/video_mode/engine" \
+    --add-data "$ROOT_DIR/pinball_decryptor/core/video_mode/engine/vm_engine.js:pinball_decryptor/core/video_mode/engine" \
     `# Spike 3 LUKS2 verifier/decryptor: stern/spike3.py loads it by path at run` \
     `# time (_luks_otp(), four parents up from the plugin then` \
     `# stern-spike-3/tools/luks_otp.py), so the whole Spike 3 key/decrypt path` \
@@ -174,6 +177,7 @@ pyinstaller \
     --hidden-import "pinball_decryptor.plugins.dp" \
     --hidden-import "pinball_decryptor.plugins.stern" \
     --hidden-import "pinball_decryptor.plugins.stern.engine" \
+    --hidden-import "pinball_decryptor.plugins.stern.gfx_set" \
     --hidden-import "pinball_decryptor.plugins.stern.online_coop" \
     --hidden-import "pinball_decryptor.plugins.stern.emulator_log" \
     --hidden-import "pinball_decryptor.plugins.stern.cards" \

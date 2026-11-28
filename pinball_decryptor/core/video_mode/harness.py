@@ -41,7 +41,10 @@ def native_runner(cache=None):
     build = _engine_build_dir()
     if not build.native_cc():
         return None
-    d = os.path.join(cache or os.path.join(tempfile.gettempdir(), "pad_vmrun"), build.source_hash()[:16])
+    import hashlib
+    with open(os.path.join(ENGINE_DIR, "vm_cli.c"), "rb") as f:     # vmrun's own file is not the wasm's (PAD-1659)
+        cli = hashlib.sha256(f.read().replace(b"\r\n", b"\n")).hexdigest()[:8]
+    d = os.path.join(cache or os.path.join(tempfile.gettempdir(), "pad_vmrun"), build.source_hash()[:16] + cli)
     exe = os.path.join(d, "vmrun.exe" if os.name == "nt" else "vmrun")
     if not os.path.exists(exe):
         build.build_native(d)

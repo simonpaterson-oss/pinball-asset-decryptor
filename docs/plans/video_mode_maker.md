@@ -695,6 +695,43 @@ harness; a million steps of random buttons (and the bot with one step in four ra
 so every phase is reached) never leave bounds, under the address and undefined-behaviour
 sanitizers on Linux; 120 broken packs are refused or played safely, never crash.
 
+### The player in the app (PAD-1659)
+
+**Play** on the Video modes tab opens the player (`webui/static/js/tabs/vmodes_play.js`; its Python half is
+`vmodes.py` `play_open` / `play_save` / `play_recording`). `play_open` compiles the document and hands the page the
+pack, the engine's two files (`vm_engine.js` is imported and `vm_engine.wasm` fetched through the app's own file
+route), and each picture, font, sound and clip by the index the engine names it. The page is the WebGL backend of
+section 4: it draws the draw list in order into one vertex buffer per frame, one draw call per run of the same
+texture and blend, premultiplied (`UNPACK_PREMULTIPLY_ALPHA_WEBGL`), shake and flash as the rules say, on the stage
+fitted to the pane at the screen's own pixels. Until PAD-1658's atlases are loaded by the app, a quad's `atlas` is
+the picture's index and its source box is in the picture's sheet, so each sheet is its own texture; a picture with
+no file yet is a team-coloured placeholder of the compiler's size, and the placeholder font's glyph grid is drawn
+by the page. The cadence is rule 8: steps as wall time passes, at most 4 a frame, the newest list drawn; the
+**machine rate** draws on a 29-a-second schedule while the engine keeps its 60 steps.
+
+Buttons: Left Shift / Right Shift / Space / Enter, a gamepad's LB / RB / A / Start (triggers too), and on-screen
+buttons. Start begins again when the play is over, or ends a clip (the host's `VM_IN_CLIP_DONE`); a clip with a
+file plays as video over the stage, one without stands 2 s as a card. Sounds go through Web Audio, off until turned
+on: `music` cues loop (from `loop_start_s`), effects play once and `duck_music` dips the music under them.
+
+Every play keeps its input word a step. **Replay** plays them again from the same card and seed and must end on the
+same draw list hash; **Save** keeps them as `<mode>/replays/<time>.inputs` with a `.json` (seed, card, steps, hash).
+**Start here** starts the engine at any card of the flow: `vmw_start_at` in `vm_wasm.c` and `--card` in `vmrun` and
+`vm_run.mjs`, which set the start card for that one `vm_start` (the engine's own C is unchanged). **Hit boxes** (H)
+come from `vmw_hits`, the collisions' own boxes. The budgets panel meters quads, things and picture memory against
+the machine picked, and counts draw calls as the machine makes them, from where PAD-1658's packer puts each frame.
+
+**Proved by** `tests/test_video_mode_player.py` (every card of Night Harbour started natively and on WebAssembly
+gives the same lines; the player's calls on `vm_engine.js` and a recorded play give the native hash; 300 things
+with their hit boxes; the tab's calls; the Modes tab's video rows and wizard) and `scripts/shot_pad1659.py` in Edge
+on David's PC (WebGL2 on the RTX 5090): a 283-step play from the chase, its replay in the player and the native
+build on the same buttons all ended on one hash; the intro clip played and 13 effects and the chase music played
+through Web Audio (Edge muted); the machine rate drew 29 frames a second at 60 steps; the 300-thing desk took
+0.044 ms a step and 0.16 ms to draw a frame (about 1% of a 60 fps frame).
+
+The Modes tab lists video modes with the rest (a Video pill; picking one opens it on the Video modes tab), and the
+New mode wizard has a fourth way, **Video mode**, that needs a project but no card.
+
 ## 5 Budgets per machine
 
 **Spike 2 is measured** (PAD-1655 in the emulator, `video_mode_spike2_drawing.md`; checked
@@ -868,7 +905,7 @@ Status is kept current here as tickets land.
 | 1 | PAD-1656 | Mode SDK: held buttons, mash and alternate rates; screen-game state | - | queued |
 | 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | on its branch |
 | 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | this branch |
-| 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | queued |
+| 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | on its branch |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
 | 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | queued |
 | 3 | PAD-1667 | Sound: music per phase, effects on events | PAD-1659 | queued |

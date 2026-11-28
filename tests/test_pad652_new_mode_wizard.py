@@ -26,7 +26,8 @@ def test_every_call_the_wizard_makes_is_one_the_tab_answers():
     calls = set(re.findall(r'call\("modes\.([a-z_]+)"', js))
     assert calls == {"new", "example", "new_blocks_mode", "new_code_mode", "blocks_example",   # PAD-658
                      "open_sdk_doc", "open_limits_doc",                                   # PAD-691: no C examples
-                     "open_mpf_doc"}, calls                                                 # PAD-1410
+                     "open_mpf_doc",                                                        # PAD-1410
+                     "new_video_mode"}, calls                                               # PAD-1659
     for name in calls:
         fn = getattr(M.ModesTab, name, None)
         assert callable(fn), name
@@ -36,7 +37,7 @@ def test_the_ways_in_their_order_with_their_words():
     js = _read("modes_new.js")
     keys = re.findall(r'^  \{ key: "([a-z]+)", icon: "[a-z]+", title: "([^"]+)", badge: "([^"]+)"', js, re.M)
     assert keys == [("blocks", "Blocks", "Recommended"), ("c", "C", "Best with an AI agent"),
-                    ("form", "Form", "Playground")], keys
+                    ("form", "Form", "Playground"), ("video", "Video mode", "New")], keys          # PAD-1659
     # the agent's brief names the mode's file and the SDK's guide to read first
     assert "Its file is ${file}" in js and "Read ${sdkDoc} top to bottom first" in js
 

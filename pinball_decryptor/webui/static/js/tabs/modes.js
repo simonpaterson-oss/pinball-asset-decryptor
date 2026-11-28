@@ -167,7 +167,8 @@ function Num({ k, value, disabled, width = 64, title }) {
 function Head({ s }) {
   const proj = s.project || "";
   const nForm = s.n_form || 0;
-  const counts = `${nForm} mode${nForm === 1 ? "" : "s"}${s.n_blocks ? ` + ${s.n_blocks} from blocks` : ""}${s.n_code ? ` + ${s.n_code} in C` : ""}`;
+  const nVideo = (s.rows || []).filter((r) => r.kind === "video").length;      // PAD-1659
+  const counts = `${nForm} mode${nForm === 1 ? "" : "s"}${s.n_blocks ? ` + ${s.n_blocks} from blocks` : ""}${s.n_code ? ` + ${s.n_code} in C` : ""}${nVideo ? ` + ${nVideo} video` : ""}`;
   const modesDir = proj ? proj.replace(/[\\/]+$/, "").split(/[\\/]/).pop() + (proj.includes("\\") ? "\\" : "/") + "modes" : "";
   // one line: the card's game and version (its full words in the tooltip), the counts, the folder
   const compact = proj && (s.title_label || s.card_label) && (s.title_text || "").startsWith("Card:");
@@ -229,6 +230,7 @@ function ReadingPanel({ r }) {
 function ListRow({ r, i, selIdx, isSel }) {
   const where = r.blocks ? "modes/" + r.slug + " (made of blocks)"
     : r.kind === "code" ? "modes/" + r.slug + "/" + r.slug + ".c"
+    : r.kind === "video" ? "modes/" + r.slug + "/video_mode.json"
     : r.kind === "game" ? "One of the game's own modes: its timers and awards" : "modes/" + r.slug;
   return html`<button type="button" role="option" key=${r.kind + r.slug}
       aria-selected=${isSel(r)} tabindex=${i === Math.max(0, selIdx) ? 0 : -1}
@@ -238,6 +240,7 @@ function ListRow({ r, i, selIdx, isSel }) {
       <span class="ellip">${r.name}</span>
       ${r.blocks ? html`<span class="r pill bk-pill" title="Made of blocks">Blocks</span>`
         : r.kind === "code" ? html`<span class="r pill" title="Written in C">C</span>`
+        : r.kind === "video" ? html`<span class="r pill vm-pill" title="A video mode: opens on the Video modes tab">${r.chip ? r.chip : "Video"}</span>`
         : r.kind === "game" ? (r.chip ? html`<span class="r chip acc sm">${r.chip}</span>` : null)
         : r.chip === "ready" ? html`<span class="r chip ok sm">ready</span>`
         : r.chip ? html`<span class="r chip warn sm">${r.chip}</span>` : null}
@@ -277,7 +280,7 @@ function ModeList({ s, onNew, onAllNumbers, onSheet, onCoopAwards, onCoopChars, 
   };
   return html`<section class="card modes-list">
     <div class="hd"><span class="h2">Modes</span><span class="sp"></span>
-      <${Button} kind="primary" size="sm" icon="plus" title="Make a new mode: from blocks, in C, or with the form" onClick=${() => onNew("")}>New mode<//></div>
+      <${Button} kind="primary" size="sm" icon="plus" title="Make a new mode: from blocks, in C, with the form, or a video mode" onClick=${() => onNew("")}>New mode<//></div>
     <div class="bd modes-list-bd">
       ${rows.length || allGame.length ? html`<div class="list" role="listbox" aria-label="Modes in this project" onKeyDown=${onKey} ref=${listRef}>
         ${allGame.length ? html`<div class="modes-list-grp" role="presentation">Yours</div>` : null}

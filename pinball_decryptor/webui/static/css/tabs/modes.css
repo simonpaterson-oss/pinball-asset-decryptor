@@ -106,9 +106,12 @@ button.modes-list-grp:hover { color: var(--ink-2); background: var(--panel-2); }
 .nmw-blocks { --kc: #8a63e6; }
 .nmw-c { --kc: var(--info); }
 .nmw-form { --kc: var(--ink-3); }
+.nmw-video { --kc: #2bb3a3; }   /* PAD-1659: its own hue, as blocks has (the accent means selected) */
 .nmw-intro { display: flex; flex-direction: column; gap: 4px; }
 .nmw-lead { font-size: 17px; font-weight: 600; color: var(--ink); }
 .nmw-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.nmw-tiles.n4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.modes-list .vm-pill { color: #2bb3a3; }
 .nmw-tile { display: flex; flex-direction: column; gap: 12px; text-align: left; padding: 16px; min-width: 0; cursor: pointer;
   color: var(--ink); font: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
   border-top: 4px solid var(--kc); transition: border-color .12s, transform .12s, box-shadow .12s, background .12s; }

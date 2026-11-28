@@ -3,12 +3,14 @@
 // own alpha); each is a sprite with frames, a frame rate, loop or once, an anchor point and a hit box, both dragged
 // on the frame here. Backgrounds are a phase's layers (still, tiled, scrolling, each at its own speed), previewed
 // moving. Pack for the machine trims, packs and premultiplies them and says what the mode costs before anything
-// is written. Python half: webui/tabs/vmodes.py; the rules: core/video_mode/art.py and pack.py.
+// is written. Play (PAD-1659) plays the mode in the app: vmodes_play.js. Python half: webui/tabs/vmodes.py; the rules:
+// core/video_mode/art.py and pack.py.
 
 import { html, useEffect, useMemo, useRef, useState, PageHead, Card, Button, Field, Select, Seg, Chip, Note, Icon,
          Empty, Spinner, Modal, tip, call, cx, mediaUrl, fmtBytes } from "../core/ui.js";
 import { useNs } from "../core/store.js";
 import { PixelEditor } from "./pixel_edit.js";
+import { VideoModePlayer } from "./vmodes_play.js";
 
 export const css = true;
 
@@ -518,9 +520,16 @@ function Pack({ s }) {
 export default function VideoModesTab() {
   const s = useNs("vmodes");
   const [pick, setPick] = useState(null);
+  const [playing, setPlaying] = useState(false);
   const pics = s.pictures || [];
   const sel = pics.find((p) => p.id === pick) || pics[0];
+  const canPlay = s.available && s.slug && !(s.problems || []).length;
+  useEffect(() => { if (!canPlay) setPlaying(false); }, [canPlay, s.slug]);
+  if (playing && canPlay) return html`<div class="page vm-page vm-playing"><${VideoModePlayer} s=${s} onClose=${() => setPlaying(false)} /></div>`;
   const head = html`<${PageHead} title="Video modes" sub=${s.intro}>
+    ${canPlay ? html`<${Button} kind="primary" icon="play" disabled=${s.running}
+      title="Play this video mode here, with the keyboard, a gamepad or the mouse: the machine's own engine, built for the browser"
+      onClick=${() => setPlaying(true)}>Play<//>` : null}
     ${s.available ? html`<${NewMode} />` : null}
     <${Button} icon="refresh" onClick=${() => call("vmodes.refresh")}>Read again<//>
   <//>`;

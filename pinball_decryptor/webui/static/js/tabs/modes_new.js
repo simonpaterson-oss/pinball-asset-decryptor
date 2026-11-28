@@ -3,6 +3,8 @@
 // Blocks (recommended), C (recommended to hand to an AI agent) and the form (a playground).
 // The second step is that way's own: a name for blocks; a name, an optional brief for an
 // agent and the SDK's guide for C; a blank form or the form example (PAD-691: TARGET RUSH on every game).
+// PAD-1659: a fourth way, Video mode: a short game on the screen while the ball is held, made and played on the
+// Video modes tab (modes.new_video_mode makes it there).
 // The first-mode page shows the same tiles in place, and a tile there opens the wizard at
 // its second step. Python makes the mode (modes.new / example / new_blocks_mode /
 // new_code_mode / blocks_example); this only asks.
@@ -34,6 +36,14 @@ export const KINDS = [
           "Its screen, clip, sounds and lights"],
     cant: ["Rules of your own: no counters, no If, no phases"],
     workIn: "Boxes to fill in; nothing to learn." },
+  { key: "video", icon: "play", title: "Video mode", badge: "New", badgeKind: "",
+    pitch: "A short video game on the screen, played with the flipper buttons and Action while the ball is held.",
+    level: 2, levelWords: "No coding",
+    can: ["Phases of ready-made game kinds: chase, boss, mash, thrust…",
+          "Its own pictures, animations and scrolling backgrounds",
+          "Played right here with the keyboard, a gamepad or the mouse"],
+    cant: ["Shots and lights on the playfield: it plays while the ball is held"],
+    workIn: "Made and played on the Video modes tab." },
 ];
 
 const KIND = Object.fromEntries(KINDS.map((k) => [k.key, k]));
@@ -41,6 +51,7 @@ const KIND = Object.fromEntries(KINDS.map((k) => [k.key, k]));
 // why a way can't be used here, or ""
 export function kindOff(s, key) {
   if (!s.project) return s.project_label || "Pick a project first.";
+  if (key === "video") return "";
   if (key === "form") return s.new_ok || s.ex_ok ? "" : (s.cap_text || s.ex_tip || s.project_label);
   return s.no_port || "";
 }
@@ -77,7 +88,7 @@ export function Tile({ k, off, onPick, compact }) {
 // The three tiles: the wizard's first step, and the first-mode page's choice. PAD-1384: the JJP tab
 // passes its own three (kinds) and says itself why one can't be used (offOf).
 export function KindTiles({ s, onPick, compact, kinds = KINDS, offOf = kindOff }) {
-  return html`<div class=${cx("nmw-tiles", compact && "compact")}>
+  return html`<div class=${cx("nmw-tiles", compact && "compact", kinds.length === 4 && "n4")}>
     ${kinds.map((k) => html`<${Tile} key=${k.key} k=${k} off=${offOf(s, k.key)} onPick=${onPick} compact=${compact} />`)}
   </div>`;
 }
@@ -154,6 +165,17 @@ function BlocksStep({ s, name, setName, onExample }) {
   </div>`;
 }
 
+function VideoStep({ name, setName }) {
+  return html`<div class="nmw-step">
+    <${NameField} id="nmw-video-name" name=${name} setName=${setName} />
+    <div class="nmw-how">
+      <div class="nmw-how-row"><span class="nmw-num">1</span><span>It starts empty in this project's modes folder and opens on the Video modes tab.</span></div>
+      <div class="nmw-how-row"><span class="nmw-num">2</span><span>Bring its pictures in there: sprites, sprite sheets, GIFs, backgrounds.</span></div>
+      <div class="nmw-how-row"><span class="nmw-num">3</span><span>Play tries it right there, with the flipper buttons on Left and Right Shift and Action on Space.</span></div>
+    </div>
+  </div>`;
+}
+
 function CStep({ s, name, setName, brief, setBrief, mpf, setMpf }) {
   return html`<div class="nmw-step">
     <div class="nmw-cols">
@@ -211,6 +233,7 @@ export function NewModeWizard({ s, start = "", onClose }) {
   const named = !!name.trim();
   const make = async (agent) => {
     if (kind === "blocks" && named) { call("modes.new_blocks_mode", name.trim()); onClose(); return; }
+    if (kind === "video" && named) { call("modes.new_video_mode", name.trim()); onClose(); return; }
     if (kind !== "c" || !named) return;
     const file = await call("modes.new_code_mode", name.trim());
     if (agent && file) {
@@ -225,6 +248,8 @@ export function NewModeWizard({ s, start = "", onClose }) {
   const footer = !k ? html`${limits}<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//>`
     : kind === "blocks" ? html`${back}<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//>
         <${Button} kind="primary" icon="blocks" disabled=${!named} onClick=${() => make(false)}>Make it<//>`
+    : kind === "video" ? html`${back}<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//>
+        <${Button} kind="primary" icon="play" disabled=${!named} onClick=${() => make(false)}>Make it<//>`
     : kind === "c" ? html`${back}<span class="grow"></span>${copied ? html`<span class="small warn-ink">${copied}</span>` : null}
         <${Button} onClick=${onClose}>Cancel<//>
         <${Button} icon="copy" disabled=${!named} onClick=${() => make(true)}
@@ -244,6 +269,7 @@ export function NewModeWizard({ s, start = "", onClose }) {
         <span class="nmw-pitch">${k.pitch}</span></div>
       ${kind === "blocks" ? html`<${BlocksStep} s=${s} name=${name} setName=${setName}
             onExample=${(n) => { call("modes.blocks_example", n); onClose(); }} />`
+        : kind === "video" ? html`<${VideoStep} name=${name} setName=${setName} />`
         : kind === "c" ? html`<${CStep} s=${s} name=${name} setName=${setName} brief=${brief} setBrief=${setBrief} mpf=${mpf} setMpf=${setMpf} />`
         : html`<${FormStep} s=${s} onBlank=${() => { call("modes.new"); onClose(); }}
             onExample=${(n) => { call("modes.example", n); onClose(); }} />`}`}

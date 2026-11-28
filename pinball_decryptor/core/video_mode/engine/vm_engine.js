@@ -22,6 +22,21 @@ export class VideoModeEngine {
   }
   errAt() { return this.x.vmw_err_at(); }
   start(seed, level = 0) { this.x.vmw_start(seed >>> 0, level | 0); }
+  // PAD-1659: start at another card (the player's "Start here"); false when there is no such card
+  startAt(seed, level, card) { return this.x.vmw_start_at(seed >>> 0, level | 0, card | 0) !== 0; }
+  card() { return this.x.vmw_card(); }
+  phase() { return this.x.vmw_phase(); }
+  phaseT() { return this.x.vmw_phase_t(); }
+  phaseLen() { return this.x.vmw_phase_len(); }
+  stepNo() { return this.x.vmw_step_no() >>> 0; }
+  dropped() { return this.x.vmw_dropped() >>> 0; }
+  health() { return this.x.vmw_health(); }
+  things() { return this.x.vmw_things(); }
+  // every live thing's hit box: [team, shape (0 box, 1 circle), x, y, w, h] * n, stage px 16.16 (a copy)
+  hitBoxes() {
+    const n = this.x.vmw_hits();
+    return new Int32Array(this.mem(), this.x.vmw_hits_buf(), n * 6).slice();
+  }
   step(input) { return this.x.vmw_step(input >>> 0) !== 0; }
   // the draw list's canonical words (header 8, quad 12, box 6): a copy
   drawWords() {
