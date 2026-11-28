@@ -1,6 +1,9 @@
 /* Plugins tab (js/tabs/plugins.js, PAD-1554): one card a plugin, what is installed on this computer beside
    whether this project's cards carry it. */
 .plg-page { gap: 16px; }
+/* PAD-1653: .page scrolls as a flex column and .card has min-height 0, so a plugin card taller than the window
+   shrank to fit it and its instructions spilled past the border. Keep every block its full height; the page scrolls. */
+.plg-page > * { flex-shrink: 0; }
 .plg-card .bd { display: flex; flex-direction: column; gap: 12px; }
 .plg-what { margin: 0; color: var(--ink-2); line-height: 1.45; max-width: 90ch; }
 .plg-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; color: var(--ink-3); }
