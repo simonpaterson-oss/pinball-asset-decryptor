@@ -239,7 +239,7 @@ class TestCardTab(TabService):
             raise RpcError("Send to machine is not available here")
         # Simon (2026-11-26): "create a card which is only a test card no multiboot (over the network)" - what the
         # machine runs is read first: a test card is updated, a PAD multi-boot card may be replaced (asked), a
-        # one-game card is refused (its game would be deleted)
+        # one-game card too (Simon, 2026-11-27), each asked about first (its games are deleted)
         from ...core import remote_send as rs
         try:
             machine = rs.connect(address)
@@ -249,8 +249,6 @@ class TestCardTab(TabService):
                 machine.close()
         except rs.SendError as e:
             raise RpcError(str(e)) from None
-        if kind == "game":
-            raise RpcError(rs.TESTCARD_ONLY)
         ready = tc.built_card(lst)
         out = lst.out if lst.out and os.path.isdir(os.path.dirname(os.path.abspath(lst.out))) and \
             os.path.normcase(os.path.abspath(lst.out)) != os.path.normcase(os.path.abspath(lst.source)) else ""
@@ -266,15 +264,22 @@ class TestCardTab(TabService):
                    "PAD multi-boot card. Its menu and every game on it are deleted: afterwards the machine has only "
                    "the test card. Its remote access and settings are kept. Only the files that differ are copied, "
                    "then the machine restarts into the test card menu; leave it switched on until then.\n\nTo "
-                   "have the games again, build the multi-boot card and write it to an SD card.\n\n%s"
+                   "have the games again, build the multi-boot card and send it from the Network tab.\n\n%s"
                    % (address, first))
+        elif kind == "game":
+            # Simon (2026-11-27): "whatever they write it must be possible to change it to anything else"
+            ask = ("Replace the game on the machine at %s with this test card?\n\nThe machine runs a one-game "
+                   "card. Its game is deleted: afterwards the machine has only the test card. Its remote access and "
+                   "settings are kept. Only the files that differ are copied, then the machine restarts into the "
+                   "test card menu; leave it switched on until then.\n\nTo have the game again, send its card image "
+                   "from the Network tab.\n\n%s" % (address, first))
         else:
             ask = ("Send the test card to the machine at %s?\n\n%s\n\nThe machine runs a PAD test card. Only the "
                    "files that differ are copied, then the machine restarts into the test card menu; leave it "
                    "switched on until then." % (address, first))
         if not compat.messagebox.askyesno("Send test card to machine", ask, icon="warning"):
             return False
-        self._replace_menu_card = kind == "menu"
+        self._replace_menu_card = kind in ("menu", "game")
         if ready:
             self._send_to = address
             self._finish(True, "", ready)

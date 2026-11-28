@@ -790,6 +790,25 @@ class NetworkTab(TabService):
             return False
         game = self.get('machine_game')
         which = ('%s (at %s)' % (game, address)) if game else ('the machine at %s' % address)
+        # Simon (2026-11-27): "whatever they write it must be possible to change it to anything else" - a Send that
+        # changes what kind of card the machine runs (deleting its games, or laying the card out for a multi-boot
+        # image) asks that instead
+        if _maker(self.mfr) != 'jjp':
+            from ...core import remote_send
+            try:
+                machine = remote_send.connect(address)
+                try:
+                    ask = remote_send.replace_question(path, machine)
+                finally:
+                    machine.close()
+            except remote_send.SendError as e:
+                compat.messagebox.showerror('Send to machine', str(e))
+                return False
+            if ask:
+                if not compat.messagebox.askyesno('Send to machine', ask, icon='warning'):
+                    return False
+                fn(path, address, replace_menu_card=True)
+                return True
         if not compat.messagebox.askyesno(
                 'Send to machine',
                 "Make %s run %s?\n\nA game being played on it ends: its screen shows PAD updating it until "
