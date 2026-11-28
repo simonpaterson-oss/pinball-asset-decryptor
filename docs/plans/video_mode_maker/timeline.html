@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Video mode editor: the timeline (PAD-1654 mock-up)</title>
+<link rel="stylesheet" href="../../../pinball_decryptor/webui/static/css/app.css">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+<script>if (location.hash === '#light') document.documentElement.classList.add('light');</script>
+</head><body>
+<div class="vm tall-tl">
+  <div class="vm-top">
+    <span class="name">Night Harbour</span><span class="crumb">video mode</span>
+    <span class="vsep"></span>
+    <span class="phase-pick"><span class="k">Phase</span> 2 · Warship <span class="chip sm">boss</span> <span class="kbd">Ctrl P</span></span>
+    <button class="btn ghost">Storyboard</button>
+    <span class="vsep"></span>
+    <button class="btn ghost icon">↶</button><button class="btn ghost icon">↷</button>
+    <span class="sp"></span>
+    <span class="chip ok sm">Saved</span>
+    <span class="vsep"></span>
+    <div class="seg sm"><button class="on">Fit</button><button>100%</button></div>
+    <span class="vsep"></span>
+    <button class="btn">Try on the machine</button>
+    <button class="btn primary">▶ Play</button>
+  </div>
+
+  <div class="dock left">
+    <div class="dock-h"><span class="t">Layers</span><span class="sp"></span><span class="chip sm">6 things</span></div>
+    <div class="dock-b">
+      <div class="layers">
+        <div class="lay grp"><span class="ic">▸</span><span class="nm">HUD</span><span class="d">100</span></div>
+        <div class="lay"><span class="team t-scenery"></span><span class="nm">sight · sweeps</span><span class="d">20</span></div>
+        <div class="lay"><span class="team t-player"></span><span class="nm">player_boat</span><span class="d">10</span></div>
+        <div class="lay on"><span class="team t-enemy"></span><span class="nm">warship · 3 weak points</span><span class="d">2</span></div>
+        <div class="lay"><span class="team t-shot"></span><span class="nm">shell · every 3 s</span><span class="d">0</span></div>
+        <div class="lay dim"><span class="team t-scenery"></span><span class="nm">skyline</span><span class="ic">🔒</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage" style="width:780px;height:440px"></div>
+    <div class="zoom-chip"><span class="chip sm acc">Scrubbing · step 720</span></div>
+  </div>
+
+  <div class="dock right">
+    <div class="dock-h"><span class="kf on" style="position:static;margin:0 4px 0 2px;display:inline-block"></span><span class="t">Keyframe</span><span class="chip sm">warship · y · 12.0 s</span></div>
+    <div class="dock-b">
+      <div class="group"><span class="lab">Value</span>
+        <div class="row2"><div class="nf focus"><span class="l">Y</span>300<span class="u">px</span></div><div class="nf"><span class="l">At</span>12.00<span class="u">s</span></div></div>
+      </div>
+      <div class="group"><span class="lab">Easing into the next keyframe</span>
+        <div class="presets" id="presets"></div>
+        <div class="curve"><svg viewBox="0 0 268 120" preserveAspectRatio="none">
+          <path d="M0 30H268M0 60H268M0 90H268M67 0V120M134 0V120M201 0V120" stroke="var(--line)" stroke-width="1"/>
+          <path d="M14 106 C 80 106, 150 -10, 254 14" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+          <line x1="14" y1="106" x2="80" y2="106" stroke="var(--ink-3)" stroke-width="1"/><line x1="254" y1="14" x2="150" y2="-4" stroke="var(--ink-3)" stroke-width="1"/>
+          <circle cx="80" cy="106" r="5" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/><circle cx="150" cy="-4" r="5" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>
+          <circle cx="14" cy="106" r="4" fill="var(--accent)"/><circle cx="254" cy="14" r="4" fill="var(--accent)"/>
+        </svg></div>
+        <div class="row2"><div class="nf"><span class="l">In</span>0.25, 0.00</div><div class="nf"><span class="l">Out</span>0.55, 1.10</div></div>
+      </div>
+      <div class="group"><span class="lab">Weak point 2</span>
+        <div class="row3"><div class="nf"><span class="l">Open</span>2.0<span class="u">s</span></div><div class="nf"><span class="l">Shut</span>1.5<span class="u">s</span></div><div class="nf"><span class="l">Offset</span>0.7</div></div>
+        <div class="row2"><div class="nf"><span class="l">Hits</span>2</div><div class="nf"><span class="l">R</span>34<span class="u">px</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tl">
+    <div class="tl-h"><span class="t">Timeline</span><span class="chip sm">Warship · 40 s</span><span class="chip sm info">Loop 8 s – 16 s</span>
+      <span style="flex:1"></span><div class="seg sm"><button>Snap off</button><button class="on">Snap to 0.25 s</button><button>Beats</button></div>
+      <button class="btn ghost xs">+ Spawn wave</button><button class="btn ghost xs">+ Keyframe <span class="kbd">K</span></button><button class="btn ghost xs">+ Marker</button></div>
+    <div class="tl-names">
+      <div style="height:20px;border-bottom:1px solid var(--line)"></div>
+      <div class="tl-name">Markers</div>
+      <div class="tl-name"><span class="team t-enemy"></span>warship</div>
+      <div class="tl-name sub">x</div>
+      <div class="tl-name sub on">y</div>
+      <div class="tl-name sub">turn</div>
+      <div class="tl-name"><span class="team t-enemy"></span>weak point 1 · open</div>
+      <div class="tl-name"><span class="team t-enemy"></span>weak point 2 · open</div>
+      <div class="tl-name"><span class="team t-enemy"></span>weak point 3 · open</div>
+      <div class="tl-name"><span class="team t-shot"></span>shell · every 3 s</div>
+      <div class="tl-name"><span class="team t-scenery"></span>boss_music</div>
+    </div>
+    <div class="tl-area" id="tl"></div>
+  </div>
+
+  <div class="pb">
+    <button class="btn ghost">▶</button><button class="btn ghost">⏭</button><button class="btn ghost">⏮</button>
+    <span class="time">00:12.00</span><span class="dim">/ 00:40.00 · step 720 · scrubbing replays from the start, instantly</span>
+    <span class="sp"></span>
+    <span class="meter">Things <span class="bar"><i style="width:5%;background:var(--ok)"></i></span><b>14/300</b></span>
+    <span class="meter">Quads <span class="bar"><i style="width:14%;background:var(--ok)"></i></span><b>212/1500</b></span>
+    <span class="meter">Pictures <span class="bar"><i style="width:21%;background:var(--ok)"></i></span><b>10.1/48 MB</b></span>
+  </div>
+</div>
+<script>
+  document.getElementById('stage').innerHTML = VM.scene('boss', { sx: 680, sy: 270, callout: '' }) + `<svg class="ov" viewBox="0 0 1360 768">
+    <path d="M200 300 C 420 200, 940 200, 1160 300" fill="none" stroke="var(--info)" stroke-width="2" stroke-dasharray="7 6"/>
+    ${[[200,300],[680,225],[1160,300]].map(p=>`<rect x="${p[0]-6}" y="${p[1]-6}" width="12" height="12" transform="rotate(45 ${p[0]} ${p[1]})" fill="var(--panel)" stroke="var(--info)" stroke-width="2"/>`).join('')}
+    <circle cx="680" cy="330" r="22" fill="none" stroke="var(--accent)" stroke-dasharray="4 4" stroke-width="2"/>
+    ${VM.selection(310, 60, 740, 400, { anchor: [680, 330] })}
+  </svg>`;
+  const P = { linear: 'M3 27 L37 3', in: 'M3 27 C 20 27, 30 20, 37 3', out: 'M3 27 C 10 10, 20 3, 37 3', in_out: 'M3 27 C 20 27, 20 3, 37 3',
+    back_out: 'M3 27 C 14 -6, 24 0, 37 3', bounce_out: 'M3 27 L20 3 L26 11 L31 3 L34 6 L37 3', elastic_out: 'M3 27 L14 0 L19 8 L24 1 L29 5 L37 3', step: 'M3 27 H20 V3 H37' };
+  document.getElementById('presets').innerHTML = Object.entries(P).map(([k, d]) => `<div class="preset${k === 'back_out' ? ' on' : ''}" title="${k}"><svg viewBox="0 0 40 30"><path d="${d}" fill="none" stroke="${k === 'back_out' ? 'var(--accent)' : 'var(--ink-2)'}" stroke-width="2"/></svg></div>`).join('');
+  const tl = document.getElementById('tl'), W = tl.clientWidth || 1340, x = (s) => 10 + s / 40 * (W - 30);
+  let h = '<div class="tl-ruler">';
+  for (let s = 0; s <= 40; s += 2) h += `<span style="position:absolute;left:${x(s)}px;top:3px">${s % 4 ? '·' : s + 's'}</span>`;
+  h += `<div class="loopreg" style="left:${x(8)}px;width:${x(16) - x(8)}px"></div></div>`;
+  const row = (inner, on) => `<div class="tl-row${on ? ' on' : ''}">${inner}</div>`;
+  h += row(`<span class="marker" style="left:${x(0)}px">Open fire</span><span class="marker" style="left:${x(20)}px">Stage 2 · faster</span><span class="marker" style="left:${x(34)}px">Last chance</span>`);
+  h += row(`<span class="span" style="left:${x(0)}px;width:${x(40) - x(0)}px;background:var(--err-soft)"></span>`);
+  const kfs = (list, on) => list.map((s, i) => `<span class="kf${on === i ? ' on' : ''}" style="left:${x(s)}px"></span>`).join('');
+  const curve = (pts) => { let d = ''; pts.forEach((p, i) => { d += (i ? ' L' : 'M') + x(p[0]) + ' ' + p[1]; }); return `<svg style="position:absolute;inset:0;width:100%;height:100%;overflow:visible"><path d="${d}" fill="none" stroke="var(--ink-3)" stroke-width="1.2"/></svg>`; };
+  h += row(curve([[0, 18], [6, 8], [20, 18], [28, 8], [40, 18]]) + kfs([0, 6, 20, 28, 40]));
+  h += row(curve([[0, 20], [12, 6], [24, 20], [36, 8]]) + kfs([0, 12, 24, 36], 1), true);
+  h += row(kfs([0, 20]));
+  const opens = (off) => { let r = ''; for (let t = off; t < 40; t += 3.5) r += `<span class="span" style="left:${x(t)}px;width:${x(Math.min(t + 2, 40)) - x(t)}px;background:color-mix(in srgb, var(--err) 55%, transparent)"></span>`; return r; };
+  h += row(opens(0)) + row(opens(0.7)) + row(opens(1.4));
+  let sh = ''; for (let t = 3; t < 40; t += 3) sh += `<span class="kf" style="left:${x(t)}px;background:var(--warn);border-color:var(--warn)"></span>`;
+  h += row(sh);
+  let wv = ''; for (let i = 0; i < 300; i++) wv += `<i style="height:${3 + Math.abs(Math.sin(i * .21) * Math.cos(i * .053)) * 15}px"></i>`;
+  h += row(`<div class="wave" style="left:${x(0)}px">${wv}</div>`);
+  h += `<div class="playhead" style="left:${x(12)}px"></div>`;
+  tl.innerHTML = h;
+</script>
+</body></html>

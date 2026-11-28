@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Video mode editor: storyboard and phase picker (PAD-1654 mock-up)</title>
+<link rel="stylesheet" href="../../../pinball_decryptor/webui/static/css/app.css">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+<script>if (location.hash === '#light') document.documentElement.classList.add('light');</script>
+<style>
+  .pg { display: grid; height: 100vh; grid-template-rows: 44px minmax(0, 1fr) 36px; grid-template-columns: minmax(0, 1fr) 540px; }
+  .sheet { background: var(--panel); border-left: 1px solid var(--line-2); box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+  .sheet .hd { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .sheet .hd .t { font-family: var(--cond); font-weight: 600; font-size: 17px; }
+  .sheet .kinds { grid-template-columns: 1fr 1fr; padding: 2px 16px 8px; gap: 5px; flex: 0 0 auto; align-content: start; }
+  .sheet .kind .kd { line-height: 1.35; }
+  .grp-h { grid-column: 1 / -1; font-family: var(--cond); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 6px 2px 0; display: flex; gap: 6px; }
+  .grp-h span { color: var(--ink-3); opacity: .7; }
+  .sheet .kind { min-height: 0; padding: 4px 10px 5px; gap: 1px; border-radius: 8px; }
+  .sheet .kind .kicon { width: 24px; height: 24px; }
+  .sheet .kind .kicon svg { width: 16px; height: 16px; }
+  .sheet .kind .kd { font-size: 11.5px; padding-left: 32px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet .kind .kb { margin: 0 0 0 auto; }
+  .sheet .ft { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+  .sheet .ft .sp { flex: 1; }
+  .ins { position: absolute; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-weight: 600; box-shadow: 0 0 0 4px var(--accent-soft); }
+  .wl { font-family: var(--cond); font-size: 11.5px; font-weight: 600; }
+</style>
+</head><body>
+<div class="pg">
+  <div class="vm-top" style="grid-column:1/-1">
+    <span class="name">Night Harbour</span><span class="crumb">video mode</span>
+    <span class="vsep"></span>
+    <span class="phase-pick"><span class="k">Storyboard</span> 3 phases · 3 clips</span>
+    <div class="seg sm"><button class="on">Board</button><button>Strip</button></div>
+    <span class="sp"></span>
+    <span class="chip ok sm">Every card leads to an end</span>
+    <span class="vsep"></span>
+    <button class="btn">Try on the machine</button>
+    <button class="btn primary">▶ Play from the start</button>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <div class="sheet">
+    <div class="hd"><span class="t">Add a phase</span><span class="chip acc sm">after Chase, when won</span><span style="flex:1"></span><button class="btn ghost xs">✕</button></div>
+    <div style="padding:10px 16px 0"><div class="field sm"><span style="color:var(--ink-3)">⌕</span><input value="" placeholder="Find a game kind: boss, rhythm, hold…"></div></div>
+    <div class="kinds" id="kinds"></div>
+    <div class="ft"><span style="font-size:12px;color:var(--ink-3)">Opens playable, with placeholder art to swap.</span><span class="sp"></span><button class="btn sm">Cancel</button><button class="btn primary sm">Add Boss</button></div>
+  </div>
+
+  <div class="pb" style="grid-column:1/-1">
+    <span class="dim">Click a card to open its phase on the stage · drag from a card's edge to wire it · </span><span class="kbd">Ctrl P</span><span class="dim">finds a phase</span>
+    <span class="sp"></span>
+    <span class="meter">Card <span class="bar"><i style="width:34%;background:var(--ok)"></i></span><b>43/128 MB</b></span>
+  </div>
+</div>
+<script>
+  const B = document.getElementById('board');
+  const X = [32, 292, 552, 812], Y1 = 44, Y2 = 336, CH = 196;
+  const card = (x, y, kind, title, chip, ob, res, on) => `<div class="sb-card${on ? ' on' : ''}" style="left:${x}px;top:${y}px">
+      <div class="th">${VM.scene(kind)}</div>
+      <div class="bd"><div class="tt">${title}<span class="chip sm${chip === 'clip' ? '' : ' info'}">${chip}</span></div><div class="ob">${ob}</div>${res ? `<div class="res">${res}</div>` : ''}</div></div>`;
+  let h = '';
+  h += card(X[0], Y1, 'intro', 'Intro', 'clip', 'intro.mp4 · 6.0 s · skippable');
+  h += card(X[1], Y1, 'chase', 'Chase', 'chase', 'Reach the warship · 45 s', '<span class="chip ok sm">won: 45 s or 10 drones</span>', true);
+  h += card(X[2], Y1, 'boss', 'Warship', 'boss', 'Hit the weak spots · 2 tries', '<span class="chip ok sm">won: boss down</span>');
+  h += card(X[3], Y1, 'charge', 'Full speed', 'alternate', 'Left, right, left, right!', '<span class="chip ok sm">won: meter 100</span>');
+  h += card(X[3], Y2, 'won', 'Won', 'clip', 'won.mp4 · pays a jackpot');
+  h += card(X[1] + 130, Y2, 'lost', 'Lost', 'clip', 'lost.mp4');
+  h += `<div class="sb-end won" style="left:${X[3] + 50}px;top:${Y2 + 236}px">Won</div>`;
+  h += `<div class="sb-end lost" style="left:${X[1] + 180}px;top:${Y2 + 236}px">Lost</div>`;
+  // wires: card centre-right (x+196, y+70) -> next card left
+  const ok = 'var(--ok)', err = 'var(--err)', ink = 'var(--ink-3)';
+  const w = (d, col, dash) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="2" ${dash ? 'stroke-dasharray="5 5"' : ''} marker-end="url(#ar-${col === ok ? 'ok' : col === err ? 'err' : 'ink'})"/>`;
+  let s = `<svg class="wires"><defs>${['ok', 'err', 'ink'].map(n => `<marker id="ar-${n}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--${n === 'ink' ? 'ink-3' : n})"/></marker>`).join('')}</defs>`;
+  const cy = Y1 + 70;
+  s += w(`M${X[0] + CH} ${cy} H${X[1] - 4}`, ink);
+  s += w(`M${X[1] + CH} ${cy} H${X[2] - 4}`, ok);
+  s += w(`M${X[2] + CH} ${cy} H${X[3] - 4}`, ok);
+  s += w(`M${X[3] + 98} ${Y1 + 214} V${Y2 - 4}`, ok);
+  s += w(`M${X[3] + 160} ${Y1 + 214} C ${X[3] + 160} ${Y1 + 250}, ${X[3] + 160} ${Y1 + 250}, ${X[3] + 160} ${Y2 - 4}`, err, true);
+  s += w(`M${X[1] + 98} ${Y1 + 214} C ${X[1] + 98} ${Y1 + 260}, ${X[1] + 200} ${Y1 + 250}, ${X[1] + 200} ${Y2 - 4}`, err);
+  s += w(`M${X[2] + 98} ${Y1 + 214} C ${X[2] + 98} ${Y1 + 260}, ${X[1] + 260} ${Y1 + 250}, ${X[1] + 260} ${Y2 - 4}`, err);
+  s += w(`M${X[3] + 98} ${Y2 + 214} V${Y2 + 232}`, ok);
+  s += w(`M${X[1] + 228} ${Y2 + 214} V${Y2 + 232}`, err);
+  s += `<path d="M${X[2] + 20} ${Y1 - 14} q 60 -26 120 0" fill="none" stroke="var(--info)" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#ar-ink)"/>`;
+  s += '</svg>';
+  h = s + h;
+  h += `<span class="wl" style="position:absolute;left:${X[1] + CH + 10}px;top:${cy - 22}px;color:var(--ok)">WON</span>`;
+  h += `<span class="wl" style="position:absolute;left:${X[2] + CH + 10}px;top:${cy - 22}px;color:var(--ok)">WON</span>`;
+  h += `<span class="wl" style="position:absolute;left:${X[1] + 108}px;top:${Y1 + 236}px;color:var(--err)">LOST</span>`;
+  h += `<span class="wl" style="position:absolute;left:${X[3] + 168}px;top:${Y1 + 236}px;color:var(--err)">LOST · pays less</span>`;
+  h += `<span class="wl" style="position:absolute;left:${X[2] + 40}px;top:${Y1 - 32}px;color:var(--info)">RETRY ONCE</span>`;
+  h += `<div class="ins" style="left:${X[1] + CH + 23}px;top:${cy - 13}px">+</div>`;
+  h += `<div style="position:absolute;left:32px;bottom:20px;display:flex;gap:8px;align-items:center"><span class="lab">Storyboard</span><span class="chip sm">Start: Intro</span><span class="chip sm">2 ends</span><span class="chip sm">Pays: add-a-ball, jackpot, extra ball</span></div>`;
+  B.innerHTML = h;
+
+  const ic = {
+    chase: '<path d="M3 17h18M6 17l2-5h8l2 5M12 12V4"/>',
+    thrust: '<path d="M4 18c4-1 6-6 8-10s4-5 8-5M8 20l-2 2M12 10l3 3"/>',
+    aim: '<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>',
+    boss: '<path d="M3 15h18l-2 4H5zM6 15l2-6h8l2 6"/><circle cx="12" cy="12" r="1.5"/>',
+    defend: '<path d="M12 4v16M4 12h4M16 12h4M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
+    catch: '<path d="M5 14h14l-2 5H7zM12 3v6M9 6l3 3 3-3"/>',
+    runner: '<circle cx="14" cy="4.5" r="2"/><path d="M8 21l3-6 3 2v4M11 15l1-6 4 3 3-1M7 10l4-1"/>',
+    lander: '<path d="M8 13h8l-1-5H9zM9 13l-3 5M15 13l3 5M3 20h6M15 20h6M12 13v3"/>',
+    route: '<path d="M12 21v-7M12 14l-6-6M12 14l6-6M6 8V3M18 8V3"/>',
+    mash: '<circle cx="12" cy="12" r="5"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3"/>',
+    alternate: '<path d="M4 12l5-5v10zM20 12l-5-5v10z"/>',
+    tug: '<path d="M2 12h20M7 8l-4 4 4 4M17 8l4 4-4 4"/><path d="M12 9v6"/>',
+    rhythm: '<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
+    sequence: '<rect x="2" y="9" width="5" height="6" rx="1"/><rect x="9.5" y="9" width="5" height="6" rx="1"/><rect x="17" y="9" width="5" height="6" rx="1"/>',
+    timing: '<rect x="2" y="9" width="20" height="6" rx="2"/><path d="M14 7v10M11 9v6"/>',
+    dodge: '<path d="M4 12h12M12 6l6 6-6 6"/><path d="M4 6v12"/>',
+    shield: '<path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z"/>',
+    pick: '<rect x="3" y="5" width="5" height="14" rx="1"/><rect x="9.5" y="5" width="5" height="14" rx="1"/><rect x="16" y="5" width="5" height="14" rx="1"/><path d="M12 10v2"/>',
+    custom: '<path d="M4 6h16M4 12h10M4 18h7M17 15l3 3-3 3"/>',
+  };
+  const groups = [
+    ['Move and shoot', [
+      ['chase', 'Chase', 'Steer lanes, fire, dodge, grab pickups', ['◄', '●', '►']],
+      ['thrust', 'Thrust flight', 'Hold to rise, fly the gaps, fire', ['●', '►']],
+      ['aim', 'Aim and fire', 'Sweep or steer a sight; ammo or heat', ['◄', '●', '►']],
+      ['boss', 'Boss', 'Hit weak points as they open', ['●']],
+      ['defend', 'Defend', 'Each flipper strikes its own side', ['◄', '►']],
+      ['catch', 'Catch', 'Move to catch what falls', ['◄', '►']],
+      ['runner', 'Runner', 'Short jump, long jump with both', ['◄', '►']],
+      ['lander', 'Lander', 'Side thrusters; land on a pad', ['◄', '●', '►']],
+      ['route', 'Route', 'Pick the way at each fork', ['◄', '►']],
+    ]],
+    ['Button skill', [
+      ['mash', 'Mash', 'Fill a meter, or race a rival', ['●']],
+      ['alternate', 'Alternate', 'Left, right, left, right', ['◄', '►']],
+      ['tug', 'Tug of war', 'Hold one flipper, mash Action', ['◄', '●', '►']],
+      ['rhythm', 'Rhythm', 'Hit prompts on the beat', ['◄', '●', '►']],
+      ['sequence', 'Button sequence', 'Enter a run, shown or remembered', ['◄', '●', '►']],
+      ['timing', 'Timing', 'Press or release in the window', ['●']],
+      ['dodge', 'Quick dodge', 'Press the way the tell shows', ['◄', '►']],
+      ['shield', 'Hold shield', 'Hold until the danger passes', ['●']],
+    ]],
+    ['Choice and freedom', [
+      ['pick', 'Pick', 'Doors, cards, double or nothing', ['◄', '●', '►']],
+      ['custom', 'Empty phase', 'Things and rule cards only', []],
+    ]],
+  ];
+  document.getElementById('kinds').innerHTML = groups.map(([g, ks]) => `<div class="grp-h">${g}<span>${ks.length}</span></div>` + ks.map(([k, t, d, b]) => `<div class="kind${k === 'boss' ? ' on' : ''}">
+      <div class="kt"><span class="kicon"><svg viewBox="0 0 24 24">${ic[k]}</svg></span>${t}<span class="kb">${b.map(g => `<span class="glyph${g === '●' ? ' a' : ''}">${g}</span>`).join('')}</span></div>
+      <div class="kd">${d}</div></div>`).join('')).join('');
+</script>
+</body></html>

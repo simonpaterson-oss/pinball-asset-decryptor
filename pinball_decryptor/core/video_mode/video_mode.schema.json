@@ -1,0 +1,2655 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pad.local/schema/video_mode/1",
+  "title": "PAD video mode document, format 1",
+  "description": "One file: <project>/modes/<slug>/video_mode.json. The plan (docs/plans/video_mode_maker.md) explains every field. The app (pinball_decryptor/core/video_mode/document.py) and the tests both load this file; nothing else describes the format.",
+  "type": "object",
+  "required": [
+    "format",
+    "kind",
+    "id",
+    "title",
+    "stage",
+    "assets",
+    "things",
+    "phases",
+    "flow"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": 1,
+      "description": "The document's format number. A later PAD migrates an older number step by step; an older PAD refuses a newer one."
+    },
+    "kind": {
+      "const": "pad-video-mode"
+    },
+    "id": {
+      "$ref": "#/$defs/slug"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "default": 1
+    },
+    "stage": {
+      "$ref": "#/$defs/stage"
+    },
+    "assets": {
+      "$ref": "#/$defs/assets"
+    },
+    "values": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/value"
+      }
+    },
+    "things": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/thing"
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/phase"
+      }
+    },
+    "flow": {
+      "$ref": "#/$defs/flow"
+    },
+    "hud": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/hud_part"
+      }
+    },
+    "cues": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/cue"
+      }
+    },
+    "style": {
+      "$ref": "#/$defs/style"
+    },
+    "pays": {
+      "$ref": "#/$defs/pays"
+    },
+    "editor": {
+      "type": "object",
+      "description": "The editor's own state (zoom, guides, open panels). Kept and written back; the engine never reads it."
+    },
+    "entry": {
+      "$ref": "#/$defs/entry"
+    },
+    "levels": {
+      "$ref": "#/$defs/levels"
+    },
+    "operator": {
+      "$ref": "#/$defs/operator"
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+    },
+    "file": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?!.*\\.\\.)(?![/\\\\])[A-Za-z0-9_ ./()-]+$"
+    },
+    "colour": {
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+    },
+    "px": {
+      "type": "number",
+      "minimum": -4096,
+      "maximum": 4096
+    },
+    "size": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 4096
+    },
+    "seconds": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 600
+    },
+    "unit": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "turn": {
+      "type": "number",
+      "minimum": -360,
+      "maximum": 360
+    },
+    "point": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/px"
+      }
+    },
+    "button": {
+      "enum": [
+        "left",
+        "right",
+        "action"
+      ]
+    },
+    "easing": {
+      "enum": [
+        "linear",
+        "in",
+        "out",
+        "in_out",
+        "back_out",
+        "bounce_out",
+        "elastic_out",
+        "step"
+      ]
+    },
+    "box": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/px"
+        },
+        "y": {
+          "$ref": "#/$defs/px"
+        },
+        "w": {
+          "$ref": "#/$defs/size"
+        },
+        "h": {
+          "$ref": "#/$defs/size"
+        }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "required": [
+        "width",
+        "height",
+        "steps_per_second"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "const": 1360
+        },
+        "height": {
+          "const": 768
+        },
+        "steps_per_second": {
+          "const": 60
+        },
+        "background": {
+          "$ref": "#/$defs/colour"
+        },
+        "safe": {
+          "$ref": "#/$defs/box"
+        },
+        "dots": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Dot-matrix screens: the 4:1 band of the stage they show (1360x340 from band_top).",
+          "properties": {
+            "band_top": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 428
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pictures": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/picture"
+          }
+        },
+        "sounds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/sound"
+          }
+        },
+        "fonts": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/font"
+          }
+        },
+        "clips": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/clip"
+          }
+        }
+      }
+    },
+    "picture": {
+      "type": "object",
+      "required": [
+        "id",
+        "file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "frame_w": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "frame_h": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "anchor": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/unit"
+          }
+        },
+        "hitbox": {
+          "$ref": "#/$defs/hitbox"
+        },
+        "animations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/animation"
+          }
+        }
+      }
+    },
+    "animation": {
+      "type": "object",
+      "required": [
+        "id",
+        "frames",
+        "fps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "frames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1023
+          }
+        },
+        "fps": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 60
+        },
+        "loop": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "hitbox": {
+      "type": "object",
+      "required": [
+        "shape"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "shape": {
+          "enum": [
+            "box",
+            "circle"
+          ]
+        },
+        "x": {
+          "$ref": "#/$defs/px"
+        },
+        "y": {
+          "$ref": "#/$defs/px"
+        },
+        "w": {
+          "$ref": "#/$defs/size"
+        },
+        "h": {
+          "$ref": "#/$defs/size"
+        },
+        "r": {
+          "$ref": "#/$defs/size"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "shape": {
+                "const": "box"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "w",
+              "h"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "shape": {
+                "const": "circle"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "r"
+            ]
+          }
+        }
+      ]
+    },
+    "sound": {
+      "type": "object",
+      "required": [
+        "id",
+        "file",
+        "role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "role": {
+          "enum": [
+            "music",
+            "effect",
+            "callout"
+          ]
+        },
+        "volume": {
+          "$ref": "#/$defs/unit"
+        },
+        "loop": {
+          "type": "boolean"
+        },
+        "loop_start_s": {
+          "$ref": "#/$defs/seconds"
+        }
+      }
+    },
+    "font": {
+      "type": "object",
+      "required": [
+        "id",
+        "face",
+        "size"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "face": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "The card's own font name, or a font file in the mode folder."
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "size": {
+          "type": "number",
+          "minimum": 6,
+          "maximum": 200
+        }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "required": [
+        "id",
+        "file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "skippable": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "value": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "start"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "enum": [
+            "meter",
+            "counter"
+          ]
+        },
+        "start": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "drain_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      }
+    },
+    "thing": {
+      "type": "object",
+      "required": [
+        "id",
+        "picture",
+        "team"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "picture": {
+          "$ref": "#/$defs/id"
+        },
+        "animation": {
+          "$ref": "#/$defs/id"
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 16
+        },
+        "team": {
+          "enum": [
+            "player",
+            "enemy",
+            "enemy_shot",
+            "player_shot",
+            "pickup",
+            "health",
+            "scenery"
+          ]
+        },
+        "health": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "hitbox": {
+          "$ref": "#/$defs/hitbox"
+        },
+        "blend": {
+          "enum": [
+            "normal",
+            "add"
+          ]
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "mover": {
+          "$ref": "#/$defs/mover"
+        }
+      }
+    },
+    "mover": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "none",
+            "straight",
+            "lanes",
+            "free",
+            "thrust",
+            "path",
+            "home",
+            "scroll",
+            "orbit"
+          ]
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 8000
+        },
+        "direction": {
+          "$ref": "#/$defs/turn"
+        },
+        "path": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        },
+        "easing": {
+          "$ref": "#/$defs/easing"
+        },
+        "loop": {
+          "type": "boolean"
+        },
+        "target": {
+          "$ref": "#/$defs/id"
+        },
+        "turn_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "radius": {
+          "$ref": "#/$defs/size"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "path"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "home"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "target"
+            ]
+          }
+        }
+      ]
+    },
+    "place": {
+      "type": "object",
+      "required": [
+        "thing",
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "thing": {
+          "$ref": "#/$defs/id"
+        },
+        "x": {
+          "$ref": "#/$defs/px"
+        },
+        "y": {
+          "$ref": "#/$defs/px"
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 16
+        },
+        "turn": {
+          "$ref": "#/$defs/turn"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "spawn": {
+      "type": "object",
+      "required": [
+        "thing",
+        "at_s"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "thing": {
+          "$ref": "#/$defs/id"
+        },
+        "at_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "every_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        },
+        "x": {
+          "$ref": "#/$defs/px"
+        },
+        "y": {
+          "$ref": "#/$defs/px"
+        },
+        "spread": {
+          "$ref": "#/$defs/size"
+        },
+        "lane": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "mover": {
+          "$ref": "#/$defs/mover"
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "required": [
+        "when"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "enum": [
+            "time_up",
+            "survive_s",
+            "score",
+            "kills",
+            "pickups",
+            "goal",
+            "health_gone",
+            "misses",
+            "boss_down",
+            "hits",
+            "accuracy",
+            "ammo_out",
+            "landed",
+            "crashed",
+            "cashed_out",
+            "busted"
+          ]
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0
+        },
+        "of": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "required": [
+        "picture"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "picture": {
+          "$ref": "#/$defs/id"
+        },
+        "speed": {
+          "type": "number",
+          "minimum": -8000,
+          "maximum": 8000
+        },
+        "y": {
+          "$ref": "#/$defs/px"
+        },
+        "tile": {
+          "type": "boolean"
+        },
+        "alpha": {
+          "$ref": "#/$defs/unit"
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "required": [
+        "when",
+        "then"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "type": "object",
+          "required": [
+            "event"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "event": {
+              "enum": [
+                "touch",
+                "value_crosses",
+                "timer_ends",
+                "pressed",
+                "held",
+                "mashed",
+                "released",
+                "leaves_screen",
+                "phase_starts"
+              ]
+            },
+            "a": {
+              "$ref": "#/$defs/id"
+            },
+            "b": {
+              "$ref": "#/$defs/id"
+            },
+            "button": {
+              "$ref": "#/$defs/button"
+            },
+            "value": {
+              "type": "number"
+            }
+          }
+        },
+        "then": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "do"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "do": {
+                "enum": [
+                  "add_health",
+                  "score",
+                  "spawn",
+                  "remove",
+                  "animate",
+                  "sound",
+                  "shake",
+                  "flash",
+                  "change_value",
+                  "set_value",
+                  "go_to",
+                  "win",
+                  "lose"
+                ]
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "settings",
+        "win",
+        "lose"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "chase",
+            "thrust",
+            "aim",
+            "boss",
+            "mash",
+            "alternate",
+            "tug",
+            "rhythm",
+            "sequence",
+            "dodge",
+            "shield",
+            "timing",
+            "defend",
+            "catch",
+            "runner",
+            "lander",
+            "route",
+            "pick",
+            "custom"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "objective": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "length_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "music": {
+          "$ref": "#/$defs/id"
+        },
+        "background": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/layer"
+          }
+        },
+        "settings": {
+          "type": "object"
+        },
+        "place": {
+          "type": "array",
+          "maxItems": 300,
+          "items": {
+            "$ref": "#/$defs/place"
+          }
+        },
+        "spawns": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/spawn"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "win": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        },
+        "lose": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        },
+        "layout": {
+          "enum": [
+            "per_play",
+            "fixed"
+          ],
+          "description": "per_play: spawns and choices drawn from a new seed each play; fixed: the same every time, so it can be learned."
+        },
+        "ramp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "speed_from": {
+              "type": "number",
+              "maximum": 10,
+              "exclusiveMinimum": 0.1
+            },
+            "speed_to": {
+              "type": "number",
+              "maximum": 10,
+              "exclusiveMinimum": 0.1
+            }
+          }
+        },
+        "bomb": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "button": {
+              "$ref": "#/$defs/button"
+            },
+            "uses": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9
+            }
+          },
+          "required": [
+            "button"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "chase"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_chase"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "thrust"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_thrust"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "aim"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_aim"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "boss"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_boss"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "mash"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_mash"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "alternate"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_alternate"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "tug"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_tug"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "rhythm"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_rhythm"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "sequence"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_sequence"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "dodge"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_dodge"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "shield"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_shield"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "timing"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_timing"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "defend"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_defend"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "catch"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_catch"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "runner"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_runner"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "lander"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_lander"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "route"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_route"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "pick"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_pick"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "custom"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/k_custom"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "k_chase": {
+      "type": "object",
+      "required": [
+        "player"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "player": {
+          "$ref": "#/$defs/id"
+        },
+        "steer": {
+          "enum": [
+            "lanes",
+            "free",
+            "hold"
+          ],
+          "default": "lanes"
+        },
+        "lanes": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 7,
+          "default": 3
+        },
+        "steer_speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 8000
+        },
+        "fire": {
+          "enum": [
+            "action",
+            "none"
+          ],
+          "default": "action"
+        },
+        "shot": {
+          "$ref": "#/$defs/id"
+        },
+        "fire_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "scroll_speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 8000
+        },
+        "health": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        },
+        "hurt_blink_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "ammo": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999
+        },
+        "gears": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "gear_button": {
+          "$ref": "#/$defs/button"
+        }
+      }
+    },
+    "k_thrust": {
+      "type": "object",
+      "required": [
+        "player"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "player": {
+          "$ref": "#/$defs/id"
+        },
+        "thrust_button": {
+          "$ref": "#/$defs/button"
+        },
+        "fire_button": {
+          "enum": [
+            "left",
+            "right",
+            "action",
+            "none"
+          ]
+        },
+        "shot": {
+          "$ref": "#/$defs/id"
+        },
+        "gravity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 20000
+        },
+        "thrust": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 20000
+        },
+        "max_fall": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 8000
+        },
+        "scroll_speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 8000
+        },
+        "health": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        },
+        "ammo": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999
+        }
+      }
+    },
+    "k_aim": {
+      "type": "object",
+      "required": [
+        "sight"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sight": {
+          "$ref": "#/$defs/id"
+        },
+        "move": {
+          "enum": [
+            "sweep",
+            "steer"
+          ],
+          "default": "sweep"
+        },
+        "sweep_path": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        },
+        "sweep_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 60
+        },
+        "steer_speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 8000
+        },
+        "fire": {
+          "enum": [
+            "press",
+            "hold",
+            "auto"
+          ],
+          "default": "press"
+        },
+        "heat": {
+          "$ref": "#/$defs/id"
+        },
+        "heat_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "cool_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "overheat_lock_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "ammo": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999
+        }
+      }
+    },
+    "k_boss": {
+      "type": "object",
+      "required": [
+        "boss",
+        "weak_points"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "boss": {
+          "$ref": "#/$defs/id"
+        },
+        "hit_with": {
+          "enum": [
+            "sight",
+            "shots"
+          ],
+          "default": "sight"
+        },
+        "sight": {
+          "$ref": "#/$defs/id"
+        },
+        "weak_points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": [
+              "x",
+              "y",
+              "r"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "$ref": "#/$defs/px"
+              },
+              "y": {
+                "$ref": "#/$defs/px"
+              },
+              "r": {
+                "$ref": "#/$defs/size"
+              },
+              "hits": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "open_s": {
+                "$ref": "#/$defs/seconds"
+              },
+              "closed_s": {
+                "$ref": "#/$defs/seconds"
+              },
+              "offset_s": {
+                "$ref": "#/$defs/seconds"
+              }
+            }
+          }
+        },
+        "attacks": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "thing",
+              "every_s"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "thing": {
+                "$ref": "#/$defs/id"
+              },
+              "every_s": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 60
+              },
+              "aim": {
+                "enum": [
+                  "player",
+                  "straight"
+                ]
+              }
+            }
+          }
+        },
+        "stages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        }
+      }
+    },
+    "k_mash": {
+      "type": "object",
+      "required": [
+        "meter"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "meter": {
+          "$ref": "#/$defs/id"
+        },
+        "button": {
+          "$ref": "#/$defs/button"
+        },
+        "per_press": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "drain_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "goal": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rival_per_s": {
+          "type": "number",
+          "maximum": 1000,
+          "minimum": 0
+        }
+      }
+    },
+    "k_alternate": {
+      "type": "object",
+      "required": [
+        "meter"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "meter": {
+          "$ref": "#/$defs/id"
+        },
+        "per_pair": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "drain_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "start_side": {
+          "enum": [
+            "left",
+            "right",
+            "either"
+          ]
+        },
+        "goal": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "k_tug": {
+      "type": "object",
+      "required": [
+        "meter"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "meter": {
+          "$ref": "#/$defs/id"
+        },
+        "hold": {
+          "enum": [
+            "left",
+            "right",
+            "shown"
+          ]
+        },
+        "switch_every_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60
+        },
+        "per_press": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "pull_back_per_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "shake_every_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60
+        },
+        "shake_pairs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50
+        },
+        "goal": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "k_rhythm": {
+      "type": "object",
+      "required": [
+        "music",
+        "tempo_bpm",
+        "chart"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "music": {
+          "$ref": "#/$defs/id"
+        },
+        "tempo_bpm": {
+          "type": "number",
+          "minimum": 30,
+          "maximum": 300
+        },
+        "offset_ms": {
+          "type": "number",
+          "minimum": -2000,
+          "maximum": 2000
+        },
+        "travel_beats": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 16
+        },
+        "chart": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2000,
+          "items": {
+            "type": "object",
+            "required": [
+              "beat",
+              "button"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "beat": {
+                "type": "number",
+                "minimum": 0
+              },
+              "button": {
+                "$ref": "#/$defs/button"
+              },
+              "hold_beats": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 64
+              }
+            }
+          }
+        },
+        "perfect_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "good_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        }
+      }
+    },
+    "k_sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "buttons": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/button"
+          }
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "shown": {
+          "type": "boolean",
+          "default": true
+        },
+        "per_press_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "flash_s": {
+          "type": "number",
+          "maximum": 30,
+          "minimum": 0
+        }
+      }
+    },
+    "k_dodge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "buttons": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/button"
+          }
+        },
+        "tell_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "window_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        }
+      }
+    },
+    "k_shield": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "$ref": "#/$defs/button"
+        },
+        "tell_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "hold_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 30
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        }
+      }
+    },
+    "k_custom": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "flow": {
+      "type": "object",
+      "required": [
+        "start",
+        "cards"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/id"
+        },
+        "cards": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/card"
+          }
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "required": [
+        "id",
+        "card"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "card": {
+          "enum": [
+            "clip",
+            "phase",
+            "end"
+          ]
+        },
+        "clip": {
+          "$ref": "#/$defs/id"
+        },
+        "phase": {
+          "$ref": "#/$defs/id"
+        },
+        "then": {
+          "$ref": "#/$defs/id"
+        },
+        "won": {
+          "$ref": "#/$defs/id"
+        },
+        "lost": {
+          "$ref": "#/$defs/id"
+        },
+        "tries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "outcome": {
+          "enum": [
+            "won",
+            "lost"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "card": {
+                "const": "clip"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "clip",
+              "then"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "card": {
+                "const": "phase"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "phase",
+              "won",
+              "lost"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "card": {
+                "const": "end"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome"
+            ]
+          }
+        }
+      ]
+    },
+    "hud_part": {
+      "type": "object",
+      "required": [
+        "id",
+        "part",
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "part": {
+          "enum": [
+            "health",
+            "meter",
+            "score",
+            "combo",
+            "timer",
+            "lives",
+            "progress",
+            "prompts",
+            "callout",
+            "counter",
+            "text"
+          ]
+        },
+        "x": {
+          "$ref": "#/$defs/px"
+        },
+        "y": {
+          "$ref": "#/$defs/px"
+        },
+        "w": {
+          "$ref": "#/$defs/size"
+        },
+        "h": {
+          "$ref": "#/$defs/size"
+        },
+        "value": {
+          "$ref": "#/$defs/id"
+        },
+        "look": {
+          "enum": [
+            "bar",
+            "pips",
+            "hearts",
+            "ring",
+            "number",
+            "glyphs"
+          ]
+        },
+        "font": {
+          "$ref": "#/$defs/id"
+        },
+        "colour": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent": {
+          "$ref": "#/$defs/colour"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "phases": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      }
+    },
+    "cue": {
+      "type": "object",
+      "required": [
+        "on",
+        "sound"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "enum": [
+            "fire",
+            "hit",
+            "kill",
+            "pickup",
+            "hurt",
+            "prompt_good",
+            "prompt_perfect",
+            "prompt_miss",
+            "phase_start",
+            "phase_won",
+            "phase_lost",
+            "won",
+            "lost"
+          ]
+        },
+        "sound": {
+          "$ref": "#/$defs/id"
+        },
+        "duck_music": {
+          "type": "boolean"
+        }
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preset": {
+          "enum": [
+            "clean",
+            "arcade",
+            "comic",
+            "retro_pixel"
+          ]
+        },
+        "shake": {
+          "type": "boolean"
+        },
+        "flash": {
+          "type": "boolean"
+        },
+        "particles": {
+          "type": "boolean"
+        },
+        "hit_stop": {
+          "type": "boolean"
+        },
+        "crt": {
+          "type": "boolean"
+        },
+        "transition": {
+          "enum": [
+            "cut",
+            "fade",
+            "white_flash",
+            "wipe",
+            "iris"
+          ]
+        }
+      }
+    },
+    "pays": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "multiplier_in": {
+          "type": "boolean",
+          "description": "A multiplier earned in the pinball game before the video mode starts scales its score."
+        },
+        "awards": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": [
+              "when",
+              "award"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "when": {
+                "enum": [
+                  "won",
+                  "lost",
+                  "phase_won",
+                  "each_kill",
+                  "pickups_reach",
+                  "start",
+                  "flawless",
+                  "collected"
+                ]
+              },
+              "phase": {
+                "$ref": "#/$defs/id"
+              },
+              "at": {
+                "type": "number",
+                "minimum": 0
+              },
+              "award": {
+                "enum": [
+                  "score",
+                  "add_a_ball",
+                  "extra_ball",
+                  "light_jackpot",
+                  "multiplier",
+                  "saved_value"
+                ]
+              },
+              "amount": {
+                "type": "number",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "of": {
+                "$ref": "#/$defs/id"
+              },
+              "per": {
+                "type": "string",
+                "pattern": "^([a-z][a-z0-9_]{0,39}|time_left_s|health_left|ammo_left)$"
+              }
+            }
+          }
+        },
+        "start_score": {
+          "type": "number",
+          "maximum": 1000000000000.0,
+          "minimum": 0
+        },
+        "floor": {
+          "type": "number",
+          "maximum": 1000000000000.0,
+          "minimum": 0
+        },
+        "score_scale": {
+          "type": "number",
+          "maximum": 1000000.0,
+          "minimum": 0
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "declinable": {
+          "type": "boolean",
+          "description": "Offer the player a choice: play it or take decline_score (ST:TNG Holodeck)."
+        },
+        "decline_score": {
+          "type": "number",
+          "maximum": 1000000000000.0,
+          "minimum": 0
+        },
+        "skip_clips": {
+          "enum": [
+            "none",
+            "double_flip",
+            "action"
+          ]
+        },
+        "from_attract": {
+          "type": "boolean",
+          "description": "Also playable on its own from attract mode (Stern's challenge menus, Jaws Shark Hunter)."
+        }
+      }
+    },
+    "levels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "carry": {
+          "enum": [
+            "none",
+            "player",
+            "game"
+          ]
+        },
+        "max_level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "speed_step_pct": {
+          "type": "number",
+          "maximum": 200,
+          "minimum": 0
+        },
+        "pay_step_pct": {
+          "type": "number",
+          "maximum": 1000,
+          "minimum": 0
+        }
+      }
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "can_turn_off": {
+          "type": "boolean"
+        },
+        "length_pct_min": {
+          "type": "number",
+          "maximum": 100,
+          "minimum": 25
+        },
+        "length_pct_max": {
+          "type": "number",
+          "maximum": 400,
+          "minimum": 100
+        }
+      }
+    },
+    "k_timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "enum": [
+            "press",
+            "hold_release"
+          ]
+        },
+        "button": {
+          "$ref": "#/$defs/button"
+        },
+        "sweep_s": {
+          "type": "number",
+          "maximum": 30,
+          "exclusiveMinimum": 0
+        },
+        "window_from": {
+          "$ref": "#/$defs/unit"
+        },
+        "window_to": {
+          "$ref": "#/$defs/unit"
+        },
+        "shrink_pct": {
+          "type": "number",
+          "maximum": 90,
+          "minimum": 0
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      }
+    },
+    "k_defend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enemy": {
+          "$ref": "#/$defs/id"
+        },
+        "from": {
+          "enum": [
+            "sides",
+            "top"
+          ]
+        },
+        "speed": {
+          "type": "number",
+          "maximum": 8000,
+          "minimum": 0
+        },
+        "every_s": {
+          "type": "number",
+          "maximum": 60,
+          "exclusiveMinimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        },
+        "reach": {
+          "$ref": "#/$defs/size"
+        },
+        "let_through": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99
+        }
+      },
+      "required": [
+        "enemy"
+      ]
+    },
+    "k_catch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "catcher": {
+          "$ref": "#/$defs/id"
+        },
+        "move": {
+          "enum": [
+            "lanes",
+            "free"
+          ]
+        },
+        "lanes": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 7
+        },
+        "speed": {
+          "type": "number",
+          "maximum": 8000,
+          "minimum": 0
+        },
+        "misses_allowed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99
+        }
+      },
+      "required": [
+        "catcher"
+      ]
+    },
+    "k_runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runner": {
+          "$ref": "#/$defs/id"
+        },
+        "jump": {
+          "$ref": "#/$defs/button"
+        },
+        "long_jump": {
+          "enum": [
+            "both_flippers",
+            "left",
+            "right",
+            "action",
+            "none"
+          ]
+        },
+        "jump_px": {
+          "$ref": "#/$defs/size"
+        },
+        "long_jump_px": {
+          "$ref": "#/$defs/size"
+        },
+        "scroll_speed": {
+          "type": "number",
+          "maximum": 8000,
+          "minimum": 0
+        },
+        "waves": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "runner"
+      ]
+    },
+    "k_lander": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ship": {
+          "$ref": "#/$defs/id"
+        },
+        "gravity": {
+          "type": "number",
+          "maximum": 20000,
+          "minimum": 0
+        },
+        "side_thrust": {
+          "type": "number",
+          "maximum": 20000,
+          "minimum": 0
+        },
+        "up": {
+          "enum": [
+            "action",
+            "both_flippers"
+          ]
+        },
+        "up_thrust": {
+          "type": "number",
+          "maximum": 20000,
+          "minimum": 0
+        },
+        "fuel_s": {
+          "type": "number",
+          "maximum": 600,
+          "minimum": 0
+        },
+        "max_land_speed": {
+          "type": "number",
+          "maximum": 8000,
+          "minimum": 0
+        },
+        "pads": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "$ref": "#/$defs/px"
+              },
+              "w": {
+                "$ref": "#/$defs/size"
+              },
+              "points": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100000000
+              }
+            },
+            "required": [
+              "x",
+              "w"
+            ]
+          }
+        }
+      },
+      "required": [
+        "ship",
+        "pads"
+      ]
+    },
+    "k_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vehicle": {
+          "$ref": "#/$defs/id"
+        },
+        "forks": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "enum": [
+              "left",
+              "right"
+            ]
+          }
+        },
+        "fork_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "speed": {
+          "type": "number",
+          "maximum": 8000,
+          "minimum": 0
+        },
+        "speed_up_pct": {
+          "type": "number",
+          "maximum": 100,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "vehicle"
+      ]
+    },
+    "k_pick": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 3
+        },
+        "outcomes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 30
+              },
+              "weight": {
+                "type": "number",
+                "maximum": 1000,
+                "exclusiveMinimum": 0
+              },
+              "result": {
+                "enum": [
+                  "prize",
+                  "double",
+                  "bust"
+                ]
+              },
+              "amount": {
+                "type": "number",
+                "maximum": 1000000000000.0,
+                "minimum": 0
+              }
+            },
+            "required": [
+              "result"
+            ]
+          }
+        },
+        "bank_start": {
+          "type": "number",
+          "maximum": 1000000000000.0,
+          "minimum": 0
+        },
+        "cash_out": {
+          "enum": [
+            "left",
+            "right",
+            "action",
+            "none"
+          ]
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "outcomes"
+      ]
+    }
+  }
+}
