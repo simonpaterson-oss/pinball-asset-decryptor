@@ -235,8 +235,9 @@ function glyphSheet(f) {
 // stop fades it out; from quiet a bed fades in; a looping bed goes back to its loop point. A ducking sound (a callout,
 // or one a cue says duck_music for) takes the music 28 steps of 1/3 dB down (150 ms) while it plays, back over 400 ms.
 // Effects and callouts share ONE voice, as a mode's calls share the voice bus: a new one fades the one still sounding
-// (30 ms) and starts 70 ms later; an effect whose previous play still sounds is skipped; a callout starts over.
-const SND = { DUCK: Math.pow(10, -28 / 3 / 20), DUCK_DOWN: 0.15, DUCK_UP: 0.4, VOICE_FADE: 0.03, VOICE_WAIT: 0.07,
+// (30 ms) and starts once it is gone (167 ms, as measured in the emulator); an effect whose previous play still
+// sounds is skipped; a callout starts over.
+const SND = { DUCK: Math.pow(10, -28 / 3 / 20), DUCK_DOWN: 0.15, DUCK_UP: 0.4, VOICE_FADE: 0.03, VOICE_WAIT: 0.167,
   QUIET: 0.0316, START_GAP: 0.06 };
 class Sounds {
   constructor(list) {

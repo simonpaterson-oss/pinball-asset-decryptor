@@ -759,7 +759,7 @@ machine (`pad_mode_assets.h`), so what the editor plays is what the machine play
   `duck_music` (the machine ducks per call, not per event): 28 volume steps of 1/3 dB (about 9.3 dB), down over
   150 ms, back over 400 ms, the machine's own dip.
 - **One voice for effects and callouts**, as a mode's calls share the voice bus: a new one fades the one still
-  sounding (30 ms) and starts 70 ms later; an effect (a priority 3 call) whose previous play still sounds is
+  sounding (30 ms) and starts once it is gone (167 ms, the emulator's median); an effect (a priority 3 call) whose previous play still sounds is
   skipped; a callout (priority 4) played again starts over. `sound.cue_log` is this rule in step time, and
   the player's log and the rig's are held to it.
 - **Volumes** are each sound's `volume`; on the machine it is baked into the sound's file.
@@ -780,7 +780,7 @@ the mode's own music plus 6 more beds**; Night Harbour uses 5 and 2. No cap was 
 told so (cue fewer sounds, let phases share music) - one sound can serve several events. `sound.machine_files`
 writes the machine's 48 kHz WAVs and the code mode's `assets.json` sound fields; because the machine loops a record
 from its start, each bed is baked: the whole file once, then its loop body again and again until it outlasts every
-phase that plays it, each try with its cards (`sound.bed_seconds`, 300 s at most). `engine/vm_sound.h` plays each
+phase that plays it, each try with its cards (`sound.bed_seconds`, 150 s at most, the build's own cap on a bed). `engine/vm_sound.h` plays each
 step's cues: `pa_call` for a sound, `pa_music_change` for the music. `pad_mode_assets.h` gained `pa_music_change`
 (fade out, then the new bed in; or quiet without giving the game's music back, which `pa_end` does) and a call line's
 `noduck` (the build writes it for a sound that does not duck; every other call ducks the music, as before).

@@ -798,6 +798,7 @@ The mode reads it with `pad_mode_assets.h` (a header, nothing added to the runti
 | every tick, running or not | `pa_tick(&own)` (an end call outlives the mode; the game's music comes back after) |
 | the mode starts | `pa_start(&own)`: the carriers' priorities, the music (the game's fades out 250 ms first), the start clip half a second later |
 | an event | `pa_call(&own, "sever")`: 1 if the card carries that cue, else 0 (play the game's own call then) |
+| another bed, with a fade | `pa_music_change(&own, "swamp", 1500)` (PAD-1667): the bed playing fades out over the ms, then this one starts and fades in over the same; `"music"` is its own first bed; `NULL` fades the music out and keeps it quiet while the mode plays on (the game's music comes back only at `pa_end`); the same bed again plays on. A video mode's music changes this way (`vm_sound.h`) |
 | the mode ends | `pa_end(&own)`: the music fades (400 ms), the carrier's list is put back, the game's music plays again |
 
 It follows mode_file.c's rules (the section above): no steal flag on any carrier, the game's lower
@@ -806,7 +807,8 @@ speech faded before a call, a call the bus refuses waits (1.5 s, 0.8 s at priori
 mode's own that still sounds is faded (30 ms) for the next one (the newest event speaks), and a
 priority-4 call played again while its previous play still sounds starts over (the sound engine
 does not restart a request that is still playing; without the fade the second event is silent).
-It logs every play, and what holds the music bus
+A call ducks the mode's music while it plays unless its line in the file ends `noduck` (PAD-1667: a
+code mode's `assets.json` call with `"duck": false`; a video mode's effects that do not duck). It logs every play, and what holds the music bus
 whenever that changes and a second after the end (`own sound: the music bus now holds: 125`).
 
 On the card the files sit beside `mode.so` in `/usr/local/padmode` (`mode_install.py --asset`); a

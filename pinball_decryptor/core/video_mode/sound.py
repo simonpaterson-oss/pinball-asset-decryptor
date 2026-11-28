@@ -16,7 +16,8 @@ the editor plays is what the machine plays:
   ``duck_music``: :data:`DUCK_STEPS` volume steps of 1/3 dB (the machine's own dip,
   ``PA_MUSIC_DUCK_STEPS``), down over :data:`DUCK_DOWN_S` and back over :data:`DUCK_UP_S`.
 * **One voice for effects and callouts.**  Every call of a mode takes the voice bus: a new one
-  fades out the one still sounding (30 ms: the newest event speaks); an effect (priority 3, a call
+  fades out the one still sounding (30 ms: the newest event speaks) and starts once it is gone (about
+  :data:`VOICE_WAIT_S`, measured on the emulator); an effect (priority 3, a call
   that repeats) whose own previous play still sounds is skipped; a callout (priority 4) played
   again starts over.
 * **Volumes** are each sound's ``volume`` (0..1; the machine plays its own WAV at the level the
@@ -46,6 +47,8 @@ DUCK_DOWN_S = 0.15
 DUCK_UP_S = 0.40
 #: a call of the mode's own fades the one still sounding over this (pad_mode_assets.h pa_try)
 VOICE_FADE_S = 0.03
+#: ...and the new one starts this long after (PAD-1667's rig run: 13 waits of 84 to 168 ms, 167 the median)
+VOICE_WAIT_S = 0.167
 #: the voice bus priority of each role's call (pad_mode_assets.h: 3 = a call that repeats)
 PRIORITY = {"effect": 3, "callout": 4}
 #: what each machine's mode sound route carries for one mode
@@ -429,7 +432,7 @@ def beat_of(path):
 # ---- the machine's files --------------------------------------------------------------------------
 #: a phase with no length plays this long for a bed's baking
 OPEN_PHASE_S = 120.0
-BED_MAX_S = 300.0
+BED_MAX_S = 150.0                # the build repeats a bed to outlast its mode up to this (mode_sounds.bed_min_frames)
 
 
 def bed_seconds(doc, sid):

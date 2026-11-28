@@ -186,6 +186,11 @@ def check(log, assets_txt, native, names):
             calls[p[1]] = int(p[2])
         if p[:1] == ["music"] and len(p) >= 2:
             calls["(music)"] = int(p[1])
+    for m in re.finditer(r"own sound: call (\w+) \((\d+)\) played", log):     # the carriers, as the mode says
+        calls.setdefault(m.group(1), int(m.group(2)))
+    m = re.search(r"own sound: music (\d+) ", log)
+    if m:
+        calls.setdefault("(music)", int(m.group(1)))
     same = [c[:5] for c in rig_cues] == native
     t0 = rig_cues[0][5] - rig_cues[0][0] * 1000 / 60.0 if rig_cues else 0
     rows, late = [], []
@@ -194,7 +199,7 @@ def check(log, assets_txt, native, names):
         name = names[snd] if 0 <= snd < len(names) else ""
         req = calls.get(name) if op == 0 else calls.get("(music)")
         want = t0 + step * 1000 / 60.0
-        hit = next((t for t, r in heard if r == req and want - 40 <= t <= want + 400), None) if req else None
+        hit = next((t for t, r in heard if r == req and want - 40 <= t <= want + 400), None) if req and op == 0 else None
         rows.append({"step": step, "sound": name, "op": op, "ms": ms, "drift_ms": round(ms - want, 1), "request": req,
                      "heard_ms": hit, "heard_after_ms": None if hit is None else round(hit - want, 1), "said": said})
         if abs(ms - want) > 20:
@@ -299,5 +304,24 @@ def main():
         print("rig after:", rig("ps")[1].strip() or "(nothing running)", flush=True)
 
 
+def recheck(out_dir, native_json):
+    """The check again on a saved run: <out_dir>/mode.log against the native cues in an after_cues.json."""
+    with open(os.path.join(out_dir, "mode.log"), encoding="utf-8") as f:
+        log = f.read()
+    with open(native_json, encoding="utf-8") as f:
+        nat = json.load(f)
+    from pinball_decryptor.core.video_mode import document as D, sound as SND
+    doc = D.load(os.path.join(REPO, "pinball_decryptor", "core", "video_mode", "examples", "night_harbour.json"))
+    names = SND.machine_names(doc, SND.machine_plan(doc))
+    res = check(log, "", nat["native"], names)
+    with open(os.path.join(out_dir, "rig_cues.json"), "w", encoding="utf-8") as f:
+        json.dump(res, f, indent=1)
+    return res
+
+
 if __name__ == "__main__":
+    if "--recheck" in sys.argv:
+        r = recheck(sys.argv[1], sys.argv[sys.argv.index("--recheck") + 1])
+        print(json.dumps({k: r[k] for k in ("same_cues_as_native", "rig_cues", "native_cues", "steps_off_the_60hz_clock", "calls")}))
+        sys.exit(0)
     sys.exit(main() or 0)

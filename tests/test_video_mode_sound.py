@@ -300,8 +300,11 @@ int pm_sound_priority_stock(unsigned r) { (void)r; return 4 << 8; }
 int pm_sound_playing(unsigned *reqs, unsigned *buses, int max) { int n = 0; unsigned r; for (r = 0; r < 4096 && n < max; r++) if (active[r]) { reqs[n] = r; buses[n++] = r == 125 ? 1 : 2; } return n; }
 int pm_in_game(void) { return 1; }
 int pm_backdrop(const char *n) { (void)n; return 1; }
+int pm_backdrop_once(const char *n) { (void)n; return 1; }
+int pm_block_rules_keep(const unsigned char *ns, int n) { (void)ns; (void)n; return 1; }
+void pm_callout(unsigned id) { (void)id; }
+unsigned pm_callout_id(const char *role) { (void)role; return 0; }
 int pm_clip(const char *n) { (void)n; return 1; }
-int pm_end(void) { return 1; }
 '''
 
 
@@ -311,10 +314,6 @@ def test_sdk_music_change_and_noduck_on_the_desk(tmp_path):
     gcc = shutil.which("gcc") or shutil.which("cc")
     if not gcc or sys.platform == "win32":
         pytest.skip("gcc on Linux")
-    head = open(os.path.join(SDK, "pad_mode_assets.h"), encoding="utf-8").read()
-    names = sorted(set(re.findall(r"\b(pm_[a-z_]+)\s*\(", head)))
-    stubbed = set(re.findall(r"\b(pm_[a-z_]+)\(", SDK_HARNESS))
-    extra = "".join("int %s() { return 0; }\n" % n for n in names if n not in stubbed)
     main = r'''
 #include "pad_mode_assets.h"
 static struct pa_assets own = { .folder = "t" };
@@ -341,13 +340,8 @@ int main(void) {
 '''
     c = tmp_path / "t.c"
     c.write_text(SDK_HARNESS + "\n" + main, encoding="utf-8")
-    hdr = tmp_path / "pad_mode.h"
-    sdk_h = open(os.path.join(SDK, "pad_mode.h"), encoding="utf-8").read()
-    hdr.write_text(sdk_h, encoding="utf-8")
-    stub = tmp_path / "stubs.c"
-    stub.write_text("#include <stddef.h>\n" + extra, encoding="utf-8")
     exe = tmp_path / "t"
-    r = subprocess.run([gcc, "-std=gnu17", "-w", "-I", str(tmp_path), "-I", SDK, str(c), "-o", str(exe)],
+    r = subprocess.run([gcc, "-std=gnu17", "-w", "-I", SDK, str(c), "-o", str(exe)],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-2000:]
     got = subprocess.run([str(exe)], capture_output=True, text=True)
