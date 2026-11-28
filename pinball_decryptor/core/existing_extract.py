@@ -25,6 +25,30 @@ NONE, ARCHIVED, OTHER, SOURCE, BUILD = "none", "archived", "other", "source", "b
 VIABLE = (SOURCE, BUILD)
 
 
+#: ``fn(card, folder)`` -> True / False / None: does the card hold what the folder was
+#: extracted from, by content (a manufacturer registers one; Stern's reads the card's files).
+_contents_checks = []
+
+
+def register_contents_check(fn):
+    """Simon, 2026-11-28 ("Yes, tighten it"): a folder matched to the card by its file name
+    and size alone - every card for a machine is the same size - is checked by content."""
+    if fn not in _contents_checks:
+        _contents_checks.append(fn)
+
+
+def contents_match(card, folder):
+    """The first registered check's answer, or ``None`` when none can tell."""
+    for fn in list(_contents_checks):
+        try:
+            got = fn(card, folder)
+        except Exception:                               # noqa: BLE001
+            got = None
+        if got is not None:
+            return bool(got)
+    return None
+
+
 def _has_baseline(folder):
     return bool(folder) and os.path.isfile(os.path.join(folder, ".checksums.md5"))
 
@@ -101,7 +125,21 @@ def check(card, folder, game_of=None):
         rel = None
     kind = (rel or {}).get("kind")
     out["kind"] = kind if kind in VIABLE else OTHER
+    if kind == SOURCE and not _by_fingerprint(card, folder):
+        # matched by the folder's record of the card's name and size: check the content
+        if contents_match(card, folder) is False:
+            out["kind"] = OTHER
+            out["same_name"] = True
     return out
+
+
+def _by_fingerprint(card, folder):
+    """Did the project's own history (PAD-427 lineage) place the card by its fingerprint?"""
+    try:
+        hit = extract_source._lineage_hit(folder, card, measure=True)
+    except Exception:                                   # noqa: BLE001
+        hit = None
+    return bool(hit) and hit[0] in ("source", "rev")
 
 
 def changes(folder):
@@ -128,6 +166,10 @@ def message(verdict, card_caption=""):
         return ("The selected folder is an archived project: its extraction was removed. "
                 "Please select another folder, or extract into it again.")
     if kind == OTHER:
+        if verdict.get("same_name"):
+            return ("The selected folder was extracted from a card with this card's file name "
+                    "and size (%s), but its files are not this card's. Please select a valid "
+                    "folder." % name)
         if not name:
             return ("The selected folder holds an extraction, but it does not say which card "
                     "it came from. Please select a valid folder.")

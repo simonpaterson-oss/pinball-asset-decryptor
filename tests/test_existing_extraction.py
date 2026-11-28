@@ -129,3 +129,49 @@ def test_extract_service_rpcs():
     for name in ("browse_existing", "check_existing"):
         assert getattr(getattr(X.ExtractTab, name), "_rpc", None) or callable(
             getattr(X.ExtractTab, name))
+
+
+# -- "Yes, tighten it" (Simon): a name-and-size match is checked by content -----------
+
+def test_same_name_and_size_but_other_contents_is_not_viable(tmp_path, monkeypatch):
+    card = _card(tmp_path)
+    folder = _extract(str(tmp_path / "proj"), card)
+    # the folder's record names a card at another path with this card's name and size
+    other_dir = tmp_path / "elsewhere"
+    other_dir.mkdir()
+    twin = str(other_dir / "godzilla.raw")
+    open(twin, "wb").write(b"\1" * 4096)
+    monkeypatch.setattr(EE, "_contents_checks", [lambda c, f: os.path.samefile(c, card)])
+    assert EE.check(card, folder)["kind"] == EE.SOURCE
+    v = EE.check(twin, folder)
+    assert v["kind"] == EE.OTHER and v.get("same_name")
+    assert "file name and size" in EE.message(v)
+
+
+def test_no_contents_check_keeps_the_name_and_size_match(tmp_path, monkeypatch):
+    card = _card(tmp_path)
+    folder = _extract(str(tmp_path / "proj"), card)
+    monkeypatch.setattr(EE, "_contents_checks", [lambda c, f: None])
+    assert EE.check(card, folder)["kind"] == EE.SOURCE
+
+
+def test_stern_registers_its_contents_check():
+    import pinball_decryptor.plugins.stern.manufacturer  # noqa: F401
+    from pinball_decryptor.plugins.stern.stock_prints import card_matches_project
+    assert card_matches_project in EE._contents_checks
+
+
+def _cards_dir():
+    d = os.environ.get("PAD494_CARDS") or ""
+    return d if os.path.isdir(d) else ""
+
+
+def test_real_card_contents(tmp_path):
+    import pytest
+    d = _cards_dir()
+    card = os.path.join(d, "godzilla_le-1_16_0_spike2.Release.8G.sdcard.raw") if d else ""
+    folder = os.path.join(d, "Godzilla PREMIUM ORIGINAL V1.16 EXTRACTION") if d else ""
+    if not (os.path.isfile(card) and os.path.isfile(os.path.join(folder, ".checksums.md5"))):
+        pytest.skip("Godzilla 1.16 card and its extraction not found (PAD494_CARDS)")
+    from pinball_decryptor.plugins.stern.stock_prints import card_matches_project
+    assert card_matches_project(card, folder) is True

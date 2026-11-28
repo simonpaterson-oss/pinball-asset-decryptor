@@ -125,6 +125,11 @@ from ...core import lineage as _lineage  # noqa: E402
 _lineage.register_printer(_spike2_print)
 _lineage.register_off_stock(_spike2_off_stock)
 
+# the Select card tab's Existing extraction box checks a name-and-size match by content
+from ...core import existing_extract as _existing  # noqa: E402
+from .stock_prints import card_matches_project as _card_matches  # noqa: E402
+_existing.register_contents_check(_card_matches)
+
 # My machines' daily game-code check (PAD-783): Stern's public page
 from ...core import code_watch as _code_watch  # noqa: E402
 from .machine_info import GAME_CODE_PAGE as _GAME_CODE_PAGE  # noqa: E402
