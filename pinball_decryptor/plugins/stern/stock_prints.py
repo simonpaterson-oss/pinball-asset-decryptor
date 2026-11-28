@@ -819,3 +819,66 @@ def off_stock_words(got):
         " and ".join(bits), "differs" if sum(
             (got["videos"], got["pictures"])) == 1 else "differ",
         got["label"])
+
+
+# ---------------------------------------------------------------------------
+# Is this card's CONTENT the project's?  (Simon, 2026-11-28, the Select card
+# tab's "Existing extraction" box: "Yes, tighten it" - a folder matched by the
+# card's file name and size alone is checked against what is on the card.)
+# ---------------------------------------------------------------------------
+
+def card_matches_project(card_path, assets_dir):
+    """Does the card at *card_path* hold the files the project at *assets_dir*
+    was extracted from?  ``True`` / ``False``, or ``None`` when there is
+    nothing to compare (not a Spike 2 card, or a project with no manifests).
+
+    One metadata walk of the card plus its ``.sidx`` (as :func:`card_print`):
+    every clip and loose picture the extract copied (``video/manifest.txt``,
+    ``images/manifest.txt``) must be on the card at the size the extract
+    recorded, with the card's own record of its MD5 the one the extract's
+    baseline took of the copy.  The release index must be the one the extract
+    stamped, when it stamped one.  Opens the image: call off the UI thread."""
+    from ...core.checksums import read_baseline_any
+    from ...core.extract_source import read_extract_source
+    from .explorer import CardImage
+    rows = [("video/" + o, c, s) for o, c, s in
+            _manifest_rows(assets_dir, "video/manifest.txt")]
+    rows += [("images/" + o, c, s) for o, c, s in
+             _manifest_rows(assets_dir, "images/manifest.txt")]
+    if not rows:
+        return None
+    rec = read_extract_source(assets_dir) or {}
+    stamped = (rec.get("stock") or {}).get("sidx") if isinstance(
+        rec.get("stock"), dict) else None
+    base = read_baseline_any(assets_dir) or {}
+    with CardImage(card_path) as card:
+        parts = [pt for pt in card.partitions() if pt.browsable]
+        parts.sort(key=lambda pt: pt.size, reverse=True)
+        for pt in parts:
+            reader = card.reader(pt.index)
+            nodes = _file_nodes(reader)
+            from .info import index_name
+            name = index_name(p[len("spk/index/"):] for p in nodes
+                              if p.startswith("spk/index/")
+                              and p.count("/") == 2)
+            if not name:
+                continue
+            if stamped and os.path.basename(stamped).lower() != name.lower():
+                return False
+            try:
+                manifest = sidx_mod.manifest_files(
+                    reader.read_file_bytes(nodes["spk/index/" + name]))
+            except Exception:                             # noqa: BLE001
+                manifest = {}
+            for rel, path, size in rows:
+                node = nodes.get(path)
+                if node is None:
+                    return False
+                if size is not None and int(node["size"]) != int(size):
+                    return False
+                got, md5 = manifest.get(path), base.get(rel)
+                if (got is not None and md5 and int(got[0]) == int(node["size"])
+                        and md5[:FILE_DIGITS] != got[1][:FILE_DIGITS]):
+                    return False
+            return True
+    return None
