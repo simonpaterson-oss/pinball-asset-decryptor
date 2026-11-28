@@ -11,6 +11,7 @@ import { html, useEffect, useMemo, useRef, useState, PageHead, Card, Button, Fie
 import { useNs } from "../core/store.js";
 import { PixelEditor } from "./pixel_edit.js";
 import { VideoModePlayer } from "./vmodes_play.js";
+import { VideoModeEditor } from "./vmodes_edit.js";
 
 export const css = true;
 
@@ -521,15 +522,26 @@ export default function VideoModesTab() {
   const s = useNs("vmodes");
   const [pick, setPick] = useState(null);
   const [playing, setPlaying] = useState(false);
+  const [editing, setEditing] = useState(false);     // PAD-1661: the editor; Play from it opens the player on its phase
   const pics = s.pictures || [];
   const sel = pics.find((p) => p.id === pick) || pics[0];
   const canPlay = s.available && s.slug && !(s.problems || []).length;
-  useEffect(() => { if (!canPlay) setPlaying(false); }, [canPlay, s.slug]);
-  if (playing && canPlay) return html`<div class="page vm-page vm-playing"><${VideoModePlayer} s=${s} onClose=${() => setPlaying(false)} /></div>`;
+  useEffect(() => { if (!canPlay) { setPlaying(false); setEditing(false); } }, [canPlay, s.slug]);
+  if (playing && canPlay) {
+    return html`<div class="page vm-page vm-playing"><${VideoModePlayer} s=${s} startCard=${playing.card || null}
+      onClose=${() => { setPlaying(false); if (playing.from === "edit") setEditing(true); }} /></div>`;
+  }
+  if (editing && canPlay) {
+    return html`<div class="page vm-page vm-editing"><${VideoModeEditor} s=${s} onClose=${() => setEditing(false)}
+      onPlay=${(card) => { setEditing(false); setPlaying({ card, from: "edit" }); }} /></div>`;
+  }
   const head = html`<${PageHead} title="Video modes" sub=${s.intro}>
-    ${canPlay ? html`<${Button} kind="primary" icon="play" disabled=${s.running}
+    ${canPlay ? html`<${Button} kind="primary" icon="edit" disabled=${s.running}
+      title="Lay out its phases on the stage: drag things on, move, scale and turn them, with layers and an inspector"
+      onClick=${() => setEditing(true)}>Edit<//>` : null}
+    ${canPlay ? html`<${Button} icon="play" disabled=${s.running}
       title="Play this video mode here, with the keyboard, a gamepad or the mouse: the machine's own engine, built for the browser"
-      onClick=${() => setPlaying(true)}>Play<//>` : null}
+      onClick=${() => setPlaying({})}>Play<//>` : null}
     ${s.available ? html`<${NewMode} />` : null}
     <${Button} icon="refresh" onClick=${() => call("vmodes.refresh")}>Read again<//>
   <//>`;
