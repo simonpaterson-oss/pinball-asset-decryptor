@@ -161,8 +161,14 @@ def test_compiler_codes_match_the_engine(first, prefix, names):
 
 
 def test_fixed_strings_match_the_engine():
-    assert header_enum("VM_S_CLEAR")[:-1] == ["VM_S_%s" % n for n in (
+    names = header_enum("VM_S_CLEAR")[:-1]
+    assert names[:11] == ["VM_S_%s" % n for n in (
         "CLEAR", "FAILED", "TRY_AGAIN", "STEER", "FIRE", "LEFT", "RIGHT", "ACTION", "MASH", "BOSS_DOWN", "HOLD")]
+    k = names.index("VM_S_PERFECT")     # the button kinds' words (PAD-1663), in compiler.FIXED_STRINGS' order
+    assert names[k:k + 19] == ["VM_S_%s" % n for n in (
+        "PERFECT", "GOOD", "EARLY", "LATE", "MISS", "SHAKE", "DODGE", "BLOCK", "TOO_EARLY", "HIT", "DODGED",
+        "BLOCKED", "WATCH", "GO", "GLYPH_L", "GLYPH_R", "GLYPH_A", "ALTERNATE", "PULL")]
+    assert compiler.FIXED_STRINGS[k:k + 3] == ["PERFECT", "GOOD", "EARLY"]
     assert len(compiler.FIXED_STRINGS) == len(header_enum("VM_S_CLEAR")) - 1
 
 
@@ -228,7 +234,8 @@ def test_compiler_notes_what_does_not_play_yet():
     assert not probs, probs
     res = compiler.compile_doc(d)
     assert res.ok, res.problems
-    assert any("'accuracy' never ends the phase" in n for n in res.notes)
+    assert any("'accuracy' is judged when a rhythm, sequence, dodge or shield run is over, so it never ends a custom phase" in n
+               for n in res.notes)
     assert any("rule cards are kept but not played yet (PAD-1665)" in n for n in res.notes)
 
 
@@ -301,7 +308,7 @@ def test_night_harbour_plays_start_to_finish_in_the_text_harness():
     at = [out.find(s) for s in order]
     assert all(x >= 0 for x in at) and at == sorted(at), list(zip(order, at))
     assert "Chase | Reach the warship" in out          # the title card, read back off the glyph quads
-    assert re.search(r"CRATES [1-4] ", out) and "BOSS DOWN!" in out and "LEFT | RIGHT" in out
+    assert re.search(r"CRATES [1-4] ", out) and "BOSS DOWN!" in out and "LEFT RIGHT LEFT RIGHT" in out and "| L |" in out  # the glyphs and their caption (PAD-1663)
     assert "Warship | Hit the weak spots" in out and "Full speed | Left, right, left, right!" in out
     assert "outcome won" in out
 

@@ -8,6 +8,15 @@
 #include "vm_engine.h"
 #include "vm_tables.h"
 
+struct vm_engine;
+static int check_kinds2(const vm_doc *d, int32_t kind, const int32_t *s);   /* vm_kinds2.c (PAD-1663) */
+static void bk_begin(struct vm_engine *e);
+static void bk_tick(struct vm_engine *e);
+static void play_kinds2(struct vm_engine *e);
+static void draw_kinds2(struct vm_engine *e);
+static void bk_prompts(struct vm_engine *e, int32_t cx, int32_t y);
+static int bk_kind(int32_t k);
+
 #define ONE      65536
 #define NONE     ((int32_t)0x80000000)
 #define DEG(n)   ((int32_t)(n) * ONE)
@@ -251,6 +260,7 @@ static int check_doc(const vm_doc *d)
             break;
         default: break;
         }
+        if (check_kinds2(d, d->phase[i].kind, s)) return 1;
     }
     return 0;
 }
@@ -304,6 +314,7 @@ int vm_load(vm_engine *e, const uint8_t *pack, uint32_t len)
     d->ncard = table(&r, d->card, VM_MAX_CARDS, 6);
     d->nhud = table(&r, d->hud, VM_MAX_HUD, 12);
     d->ncue = table(&r, d->cue, VM_MAX_CUES, 3);
+    d->nnote = table(&r, d->note, VM_MAX_NOTES, 3);
     if (!r.err && (uint32_t)word(&r) != 0x21444e45u) r.err = VM_ERR_SHORT;   /* "END!" */
     if (!r.err && r.at != len) r.err = VM_ERR_SHORT;
     if (!r.err && check_doc(d)) r.err = VM_ERR_INDEX;
@@ -568,6 +579,7 @@ static void phase_begin(vm_engine *e)
         e->lane = best;
     }
     if (p->kind == VM_K_MASH || p->kind == VM_K_ALTERNATE) e->values[s[0]] = e->doc.value[s[0]].start;
+    bk_begin(e);
 }
 static void go_card(vm_engine *e, int32_t c);
 static void phase_start(vm_engine *e, int32_t phase, int32_t try_no)
@@ -579,6 +591,7 @@ static void phase_start(vm_engine *e, int32_t phase, int32_t try_no)
     e->state = VM_ST_TITLE; e->state_t = 0;
     e->callout = p->title; e->callout_t = TITLE_STEPS;
     emit(e, VM_EV_PHASE_START, phase, try_no, 0);
+    e->song_steps = 0;
     if (p->music >= 0) sound(e, p->music, VM_SND_MUSIC, 0);
 }
 static void phase_end(vm_engine *e, int won)
@@ -665,6 +678,7 @@ static void play_kind(vm_engine *e)
     vm_thing *pl = e->player >= 0 ? &e->th[e->player] : 0;
     int32_t i;
     if (e->fire_cd > 0) e->fire_cd--;
+    bk_tick(e);
     switch (p->kind) {
     case VM_K_CHASE: {
         int32_t target;
@@ -776,6 +790,9 @@ static void play_kind(vm_engine *e)
         if (e->values[s[0]] >= s[4]) e->goal_hit = 1;
         break;
     }
+    case VM_K_TUG: case VM_K_RHYTHM: case VM_K_SEQUENCE: case VM_K_DODGE: case VM_K_SHIELD:
+        play_kinds2(e);
+        break;
     default:
         steer_x(e, FREE_STEER);
         break;
@@ -959,7 +976,9 @@ static int cond_met(const vm_engine *e, const vm_cond *c)
         for (i = 0, n = 0; i < VM_MAX_THINGS; i++) if (e->th[i].alive && e->th[i].team == VM_TEAM_PLAYER_SHOT) n++;
         return n == 0;
     case VM_W_CRASHED: return e->crashed;
-    default: return 0;    /* accuracy, landed, cashed_out, busted: their kinds come with PAD-1662/1663 */
+    case VM_W_ACCURACY:   /* judged once the kind's run is over: good presses out of all it asked for */
+        return e->bk_done && e->hits + e->misses > 0 && (int64_t)e->hits * 100 >= (int64_t)c->value * (e->hits + e->misses);
+    default: return 0;    /* landed, cashed_out, busted: their kinds come with PAD-1662 */
     }
 }
 static void judge(vm_engine *e)
@@ -967,6 +986,8 @@ static void judge(vm_engine *e)
     const vm_phase *p = &e->doc.phase[e->phase];
     int32_t i;
     for (i = 0; i < p->nwin; i++) if (cond_met(e, &e->doc.cond[p->win0 + i])) { phase_end(e, 1); return; }
+    if (e->kind_won) { phase_end(e, 1); return; }
+    if (e->kind_lost || e->bk_done) { phase_end(e, 0); return; }   /* a button kind's run is over and nothing asked of it was met */
     if (p->kind == VM_K_MASH && S(e)[5] > 0 && e->rival >= S(e)[4]) { phase_end(e, 0); return; }
     for (i = 0; i < p->nlose; i++) if (cond_met(e, &e->doc.cond[p->lose0 + i])) { phase_end(e, 0); return; }
     if (p->length > 0 && e->t >= p->length) phase_end(e, 0);   /* the clock ran out: nothing was won */
@@ -1064,6 +1085,8 @@ static int32_t font_line(const vm_engine *e, int32_t font)
     return font < e->doc.nfont ? e->doc.font[font].line_h : DEG(32);
 }
 
+#include "vm_kinds2.c"
+
 static void draw_bar(vm_engine *e, const vm_hud *h, int32_t frac, uint32_t colour)
 {
     int32_t w = h->w > 0 ? h->w : DEG(200), hh = h->h > 0 ? h->h : DEG(12);
@@ -1157,7 +1180,8 @@ static void draw_hud(vm_engine *e)
         case VM_HUD_PROMPTS: {
             int32_t cx = h->x + (h->w > 0 ? h->w : DEG(e->doc.stage_w)) / 2, y = h->y + DEG(4), gapx = DEG(160);
             if (e->state != VM_ST_PLAY) break;
-            if (p->kind == VM_K_ALTERNATE) {
+            if (bk_kind(p->kind)) bk_prompts(e, cx, h->y + (h->h > 0 ? h->h : DEG(40)));
+            else if (p->kind == VM_K_ALTERNATE) {
                 int32_t next = e->alt_last < 0 ? -1 : 1 - e->alt_last;
                 text_str(e, h->font, VM_S_LEFT, cx - gapx, y, 0, col, next == 1 ? 90 : 255, ONE);
                 text_str(e, h->font, VM_S_RIGHT, cx + gapx, y, 0, col, next == 0 ? 90 : 255, ONE);
@@ -1270,6 +1294,7 @@ static void build_list(vm_engine *e)
         const vm_particle *q = &e->pt[i];
         if (q->alive) box(e, q->x - DEG(3), q->y - DEG(3), DEG(6), DEG(6), with_alpha((uint32_t)q->colour, (q->life * 255) / 30), PM_BLEND_ADD);
     }
+    draw_kinds2(e);
     draw_hud(e);
     draw_callout(e);
     if (e->state == VM_ST_TITLE && e->state_t < TRANS_STEPS) {   /* the phase's opening transition */
@@ -1354,7 +1379,7 @@ int vm_step(vm_engine *e, uint32_t input)
 {
     int32_t i;
     if (!e->loaded) return 0;
-    if (!e->held_events) { e->nevents = 0; e->ncues = 0; e->events_dropped = 0; }
+    if (!e->held_events) { e->nevents = 0; e->ncues = 0; e->events_dropped = 0; e->song_steps++; }
     e->held_events = 0;
     e->in_prev = e->in; e->in = input;
     e->pressed = e->in & ~e->in_prev; e->released = e->in_prev & ~e->in;
@@ -1386,7 +1411,8 @@ int vm_step(vm_engine *e, uint32_t input)
         collide(e);
         for (i = 0; i < e->doc.nvalue; i++) {   /* meters drain by themselves, but not one a kind drives */
             const vm_value *v = &e->doc.value[i];
-            int driven = (e->doc.phase[e->phase].kind == VM_K_MASH || e->doc.phase[e->phase].kind == VM_K_ALTERNATE) && S(e)[0] == i;
+            int driven = (e->doc.phase[e->phase].kind == VM_K_MASH || e->doc.phase[e->phase].kind == VM_K_ALTERNATE
+                          || e->doc.phase[e->phase].kind == VM_K_TUG) && S(e)[0] == i;
             if (v->type == 0 && v->drain > 0 && !driven) e->values[i] = clampi(e->values[i] - v->drain, v->min, v->max);
         }
         if (e->combo_t > 0 && --e->combo_t == 0) e->combo = 0;

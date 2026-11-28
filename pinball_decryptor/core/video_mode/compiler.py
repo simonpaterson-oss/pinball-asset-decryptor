@@ -24,7 +24,7 @@ ONE = 65536
 SPS = 60
 NONE = -0x80000000
 PACK_MAGIC = 0x31504D56
-PACK_VERSION = 1
+PACK_VERSION = 3   # 3: the notes table (PAD-1663)
 END_MAGIC = 0x21444E45
 FONT_ATLAS_BASE = 1000      # placeholder glyph atlases sit after the pictures' (PAD-1658 packs both)
 GLYPHS = 95
@@ -48,9 +48,16 @@ CUE_ON = ["fire", "hit", "kill", "pickup", "hurt", "prompt_good", "prompt_perfec
 SKIP_CLIPS = ["none", "double_flip", "action"]
 # the fixed strings, in the engine's VM_S_* order
 FIXED_STRINGS = ["CLEAR!", "FAILED", "TRY AGAIN", "< STEER >", "ACTION  FIRE", "LEFT", "RIGHT",
-                 "ACTION", "MASH ACTION!", "BOSS DOWN!", "HOLD ACTION"]
-PLAYED_KINDS = {"chase", "thrust", "boss", "mash", "alternate", "custom"}
-UNPLAYED_WHENS = {"accuracy", "landed", "cashed_out", "busted"}
+                 "ACTION", "MASH ACTION!", "BOSS DOWN!", "HOLD ACTION",
+                 # the button kinds (PAD-1663)
+                 "PERFECT", "GOOD", "EARLY", "LATE", "MISS", "SHAKE IT OFF!", "DODGE!", "BLOCK!",
+                 "TOO EARLY", "HIT!", "DODGED", "BLOCKED", "WATCH", "GO!", "L", "R",
+                 "A", "LEFT  RIGHT  LEFT  RIGHT", "MASH TO PULL"]
+PLAYED_KINDS = {"chase", "thrust", "boss", "mash", "alternate", "custom",
+                "tug", "rhythm", "sequence", "dodge", "shield"}
+UNPLAYED_WHENS = {"landed", "cashed_out", "busted"}
+TITLE_MS = 1500          # the title card the engine opens every phase with (TITLE_STEPS)
+BUTTON_KINDS = {"tug", "rhythm", "sequence", "dodge", "shield"}
 
 # ---- the engine's table sizes (vm_engine.h VM_MAX_*) ----
 LIMITS = {
@@ -58,7 +65,7 @@ LIMITS = {
     "frames": 2048, "values": 48, "things": 96, "movers": 192, "path_points": 1024,
     "phases": 32, "layers": 128, "places": 1024, "spawns": 256, "conditions": 256,
     "weak_points": 64, "attacks": 64, "cards": 96, "hud": 64, "cues": 64, "sounds": 64,
-    "clips": 32,
+    "clips": 32, "notes": 2048, "run": 48,
 }
 LIMIT_WORDS = {
     "strings": "texts", "string_bytes": "bytes of text", "fonts": "fonts", "pictures": "pictures",
@@ -67,7 +74,7 @@ LIMIT_WORDS = {
     "layers": "background layers", "places": "placed things", "spawns": "spawns",
     "conditions": "win and lose conditions", "weak_points": "weak points", "attacks": "boss attacks",
     "cards": "storyboard cards", "hud": "HUD parts", "cues": "sound cues", "sounds": "sounds",
-    "clips": "clips",
+    "clips": "clips", "notes": "rhythm notes and button runs", "run": "buttons in one run",
 }
 
 
@@ -233,6 +240,7 @@ class _Compiler:
         pics, anims, frames = self.build_pictures()
         values = self.build_values()
         kinds = self.build_kinds()
+        self.chart = []
         phases, layers, places, spawns, conds, settings, weak, atk = self.build_phases()
         cards = self.build_cards()
         hud, callout_font, title_font = self.build_hud(fonts)
@@ -267,7 +275,7 @@ class _Compiler:
             for g in f["glyphs"]:
                 p.put(*g)
         for t in (pics, anims, frames, values, kinds, self.movers, self.path, phases, layers, places,
-                  spawns, conds, settings, weak, atk, cards, hud, cues):
+                  spawns, conds, settings, weak, atk, cards, hud, cues, self.chart):
             p.table(t)
         p.put(END_MAGIC)
         p.w[2] = len(p.w)
@@ -422,6 +430,9 @@ class _Compiler:
                 self.note(where + ["bomb"], "the screen-clear bomb is not played yet (PAD-1662)")
             for side in ("win", "lose"):
                 for j, c in enumerate(ph.get(side, [])):
+                    if c["when"] == "accuracy" and kind not in ("rhythm", "sequence", "dodge", "shield"):
+                        self.note(where + [side, j], "'accuracy' is judged when a rhythm, sequence, dodge or shield run is over, "
+                                                     "so it never ends a %s phase" % kind)
                     if c["when"] in UNPLAYED_WHENS:
                         self.note(where + [side, j], "'%s' never ends the phase until its game kind lands" % c["when"])
             rec = [0] * 32
@@ -500,6 +511,8 @@ class _Compiler:
                     rec[2] = per_step(drain)
                     rec[3] = ["left", "right", "either"].index(s.get("start_side", "either"))
                     rec[4] = goal
+            if kind in BUTTON_KINDS:
+                self.button_kind(kind, s, rec, where)
             settings.append(rec)
             bg0 = len(layers)
             for l in ph.get("background", []):
@@ -525,11 +538,92 @@ class _Compiler:
                 conds.append(self.cond(c))
             ramp = ph.get("ramp", {})
             phases.append([KINDS.index(kind), self.string(ph.get("title", ph["id"])), self.string(ph.get("objective", "")),
-                           steps(ph.get("length_s", 0)), self.sound_ix.get(ph.get("music"), -1),
+                           steps(ph.get("length_s", 0)),
+                           self.sound_ix.get(ph.get("music", s.get("music") if kind == "rhythm" else None), -1),
                            bg0, len(layers) - bg0, pl0, len(places) - pl0, sp0, len(spawns) - sp0,
                            w0, l0 - w0, l0, len(conds) - l0, 1 if ph.get("layout") == "fixed" else 0,
                            fx(ramp.get("speed_from", 1)), fx(ramp.get("speed_to", ramp.get("speed_from", 1))), i])
         return phases, layers, places, spawns, conds, settings, weak, atk
+
+    # ---- the button kinds (PAD-1663): their settings words are vm_kinds2.c's ----
+    def button_kind(self, kind, s, rec, where):
+        if kind == "tug":
+            m = self.value_ix.get(s.get("meter"), -1)
+            if m < 0:
+                self.problem(where + ["settings", "meter"], "names no value")
+                m = 0
+            v = self.values[m] if self.values else {}
+            rec[0] = m
+            rec[1] = ["left", "right", "shown"].index(s.get("hold", "shown"))
+            rec[2] = steps(s.get("switch_every_s", 4))
+            rec[3] = fx(s.get("per_press", 4))
+            rec[4] = per_step(s.get("pull_back_per_s", v.get("drain_per_s", 12)))
+            rec[5] = steps(s.get("shake_every_s", 6))
+            rec[6] = int(s.get("shake_pairs", 4))
+            rec[7] = fx(s.get("goal", v.get("max", 100)))
+            if v and float(v.get("start", 0)) <= float(v.get("min", 0)):
+                self.problem(where + ["settings", "meter"], "the meter starts empty, so the tug of war would be lost at once: "
+                                                            "start it part way up (its start above its min)")
+        elif kind == "rhythm":
+            snd = next((x for x in self.doc.get("assets", {}).get("sounds", []) if x.get("id") == s.get("music")), {})
+            tempo = s.get("tempo_bpm", snd.get("tempo_bpm"))
+            if not tempo:
+                self.problem(where + ["settings", "tempo_bpm"], "a rhythm phase needs a tempo: set one, or tap it in on its music")
+                tempo = 120
+            tempo = float(tempo)
+            offset = float(s["offset_ms"]) if "offset_ms" in s else 1000.0 * float(snd.get("beat_offset_s", 0))
+            beat_ms = 60000.0 / tempo
+            good = float(s.get("good_ms", 100))
+            chart = sorted(s.get("chart", []), key=lambda n: float(n.get("beat", 0)))
+            rec[0] = self.sound_ix.get(s.get("music"), -1)
+            rec[1] = len(self.chart)
+            for n in chart:
+                at = int(round(offset + float(n.get("beat", 0)) * beat_ms))
+                self.chart.append([at, BUTTONS.index(n.get("button", "action")),
+                                   int(round(float(n.get("hold_beats", 0)) * beat_ms))])
+            rec[2] = len(chart)
+            rec[3] = int(round(float(s.get("perfect_ms", 45))))
+            rec[4] = int(round(good))
+            rec[5] = max(1, int(round(float(s.get("travel_beats", 2)) * beat_ms)))
+            rec[6] = max(1, int(round(beat_ms * 1000)))
+            rec[7] = int(round(offset))
+            last = max((c[0] + c[2] for c in self.chart[rec[1]:]), default=0)
+            rec[8] = last + int(2 * good) + 400
+            rec[9] = max(1, int(snd.get("beats_per_bar", 4)))
+            if rec[3] > rec[4]:
+                self.problem(where + ["settings", "perfect_ms"], "the perfect window is wider than the good one")
+            early = [c for c in self.chart[rec[1]:] if c[0] < TITLE_MS + good]
+            if early:
+                self.note(where + ["settings", "chart"], "%d note(s) fall inside the phase's title card (its first %.1f s) "
+                                                        "and are counted missed: start the chart later or move the music's first beat"
+                          % (len(early), TITLE_MS / 1000.0))
+        elif kind == "sequence":
+            run = list(s.get("buttons") or [])
+            rec[0] = len(self.chart)
+            for i, b in enumerate(run):
+                self.chart.append([i, BUTTONS.index(b), 0])
+            rec[1] = len(run)
+            rec[2] = 0 if run else int(s.get("length", 4))
+            shown = s.get("shown", True)
+            flash = float(s.get("flash_s", 0 if shown else 1.5))
+            rec[3] = 1 if shown and flash <= 0 else 0
+            rec[4] = steps(flash)
+            rec[5] = max(1, steps(s.get("per_press_s", 1.5)))
+            rec[6] = int(s.get("rounds", 3))
+            if not run and rec[2] + rec[6] - 1 > LIMITS["run"]:
+                self.problem(where + ["settings", "length"], "the last round's run would be %d buttons; the engine holds up to %d"
+                             % (rec[2] + rec[6] - 1, LIMITS["run"]))
+        elif kind == "dodge":
+            bs = s.get("buttons") or BUTTONS
+            rec[0] = sum(1 << BUTTONS.index(b) for b in set(bs))
+            rec[1] = steps(s.get("tell_s", 0.8))
+            rec[2] = max(1, steps(s.get("window_s", 0.6)))
+            rec[3] = int(s.get("count", 6))
+        elif kind == "shield":
+            rec[0] = BUTTONS.index(s.get("button", "action"))
+            rec[1] = steps(s.get("tell_s", 0.8))
+            rec[2] = max(1, steps(s.get("hold_s", 1.5)))
+            rec[3] = int(s.get("count", 4))
 
     def build_cards(self):
         out = []
@@ -578,7 +672,8 @@ class _Compiler:
                 "path_points": len(self.path), "phases": len(phases), "layers": len(layers),
                 "places": len(places), "spawns": len(spawns), "conditions": len(conds),
                 "weak_points": len(weak), "attacks": len(atk), "cards": len(cards), "hud": len(hud),
-                "cues": len(cues), "sounds": len(self.sound_ix), "clips": len(self.clip_ix)}
+                "cues": len(cues), "sounds": len(self.sound_ix), "clips": len(self.clip_ix),
+                "notes": len(self.chart)}
         for k, n in have.items():
             if n > LIMITS[k]:
                 self.problems.append("the document has %d %s; the engine holds up to %d" % (n, LIMIT_WORDS[k], LIMITS[k]))

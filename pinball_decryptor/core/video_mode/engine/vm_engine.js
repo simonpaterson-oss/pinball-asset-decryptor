@@ -25,6 +25,12 @@ export class VideoModeEngine {
   start(seed, level = 0) { this.x.vmw_start(seed >>> 0, level | 0); }
   // PAD-1659: start at another card (the player's "Start here"); false when there is no such card
   startAt(seed, level, card) { return this.x.vmw_start_at(seed >>> 0, level | 0, card | 0) !== 0; }
+  // the sound calibration (PAD-1663): ms this place's sound is heard after the step that cued it. Kept across start.
+  audioOffset(ms) { this.x.vmw_audio_offset(ms | 0); }
+  // ms of the phase's music played so far by the engine's clock, and the phase's kind (7: rhythm)
+  songMs() { return this.x.vmw_song_ms(); }
+  songSteps() { return this.x.vmw_song_steps(); }
+  kind() { return this.x.vmw_kind(); }
   card() { return this.x.vmw_card(); }
   phase() { return this.x.vmw_phase(); }
   phaseT() { return this.x.vmw_phase_t(); }
