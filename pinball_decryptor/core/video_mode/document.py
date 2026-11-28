@@ -27,13 +27,71 @@ import json
 import os
 import re
 
-FORMAT = 1
+FORMAT = 2
 KIND = "pad-video-mode"
 FILE_NAME = "video_mode.json"
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video_mode.schema.json")
 
-# n -> function(doc) returning the doc in format n+1.  Empty while format 1 is the only one.
-MIGRATIONS = {}
+
+
+def _format_1_to_2(doc):
+    """PAD-1664: a phase gained tracks (keyframed motion of its placed things) and sound_track (sounds at set
+    times). A format 1 file has neither, and plays the same without them."""
+    doc["format"] = 2
+    return doc
+
+
+# n -> function(doc) returning the doc in format n+1.
+MIGRATIONS = {1: _format_1_to_2}
+
+TRACK_NEEDS = {"motion": ("x", "y"), "scale": ("v",), "turn": ("v",), "alpha": ("v",), "tint": ("tint",)}
+TRACK_RANGE = {"scale": (0, 16), "turn": (-3600, 3600), "alpha": (0, 1)}
+
+
+def track_problems(phase, base):
+    """PAD-1664: a phase's tracks and sound track, beyond what the schema says."""
+    out = []
+    places = phase.get("place") or []
+    seen = {}
+    for n, tr in enumerate(phase.get("tracks") or []):
+        if not isinstance(tr, dict):
+            continue
+        p = base + ["tracks", n]
+        pl, prop = tr.get("place"), tr.get("prop")
+        if isinstance(pl, int) and pl >= len(places):
+            out.append((p + ["place"], "names place %d, but the phase places %d thing%s" % (pl, len(places), "" if len(places) == 1 else "s")))
+        if (pl, prop) in seen:
+            out.append((p, "is a second %s track for place %d (track %d is the first)" % (prop, pl, seen[(pl, prop)])))
+        seen.setdefault((pl, prop), n)
+        last = None
+        for k, key in enumerate(tr.get("keys") or []):
+            if not isinstance(key, dict):
+                continue
+            kp = p + ["keys", k]
+            at = key.get("at_s")
+            if isinstance(at, (int, float)) and last is not None and round(at * 60) <= round(last * 60):
+                out.append((kp + ["at_s"], "is not after the key before it (%g s); keys run in time order, a step apart" % last))
+            if isinstance(at, (int, float)):
+                last = at
+            for need in TRACK_NEEDS.get(prop, ()):
+                if need not in key:
+                    out.append((kp, "a %s key needs %s" % (prop, need)))
+            for other in ("x", "y", "in", "out", "v", "tint"):
+                if other in key and other not in TRACK_NEEDS.get(prop, ()) and not (prop == "motion" and other in ("in", "out")):
+                    out.append((kp + [other], "is not part of a %s key" % prop))
+            lo_hi = TRACK_RANGE.get(prop)
+            v = key.get("v")
+            if lo_hi and isinstance(v, (int, float)) and not lo_hi[0] <= v <= lo_hi[1]:
+                out.append((kp + ["v"], "must be within %g..%g for %s (it is %g)" % (lo_hi[0], lo_hi[1], prop, v)))
+            if prop == "scale" and isinstance(v, (int, float)) and v <= 0:
+                out.append((kp + ["v"], "must be more than 0"))
+            c = key.get("curve")
+            if isinstance(c, list) and len(c) == 4 and all(isinstance(q, (int, float)) for q in c):
+                if not (0 <= c[0] <= 1 and 0 <= c[2] <= 1):
+                    out.append((kp + ["curve"], "x1 and x2 must be within 0..1, so the curve runs forward in time"))
+                if "ease" in key:
+                    out.append((kp, "has both ease and curve; a curve takes the place of ease, so keep one"))
+    return out
 
 
 class VideoModeError(ValueError):
@@ -295,6 +353,13 @@ def reference_problems(doc):
     for n, cue in enumerate(doc.get("cues") or []):
         if isinstance(cue, dict):
             need(cue.get("sound"), "sound", ["cues", n, "sound"])
+    for i, phase in enumerate(doc.get("phases") or []):      # PAD-1664: the timeline
+        if not isinstance(phase, dict):
+            continue
+        out.extend(track_problems(phase, ["phases", i]))
+        for n, ts in enumerate(phase.get("sound_track") or []):
+            if isinstance(ts, dict):
+                need(ts.get("sound"), "sound", ["phases", i, "sound_track", n, "sound"])
     for n, award in enumerate((doc.get("pays") or {}).get("awards") or []):
         if isinstance(award, dict):
             need(award.get("phase"), "phase", ["pays", "awards", n, "phase"])

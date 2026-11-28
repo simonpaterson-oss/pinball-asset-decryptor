@@ -33,6 +33,28 @@
       "steps": 1533,
       "outcome": 0,
       "score": 0
+    },
+    "keyframes_idle": {
+      "doc": "tests/data/video_mode/keyframes.json",
+      "inputs": "random:0:0",
+      "seed": 1,
+      "level": 0,
+      "max": 6000,
+      "hash": "8f0aed295e91041f",
+      "steps": 2639,
+      "outcome": 0,
+      "score": 0
+    },
+    "keyframes_random": {
+      "doc": "tests/data/video_mode/keyframes.json",
+      "inputs": "random:1664:6000",
+      "seed": 3,
+      "level": 1,
+      "max": 6000,
+      "hash": "8675ef47b6610551",
+      "steps": 2640,
+      "outcome": 0,
+      "score": 0
     }
   }
 }

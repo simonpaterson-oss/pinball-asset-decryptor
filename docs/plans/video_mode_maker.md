@@ -227,7 +227,7 @@ machines (section 1b).
 A single press after a charge ("UNLEASH", "THROW IT") is a `timing` phase with a wide
 window; title cards are part of every phase (its `title` and `objective`).
 
-## 3 The document: video_mode.json, format 1
+## 3 The document: video_mode.json, format 2
 
 One file per video mode: `<project>/modes/<slug>/video_mode.json`, beside the mode's art,
 sound and clip files. The schema is
@@ -266,7 +266,7 @@ A picture and the thing drawn with it may share a name. The mode's own `id` is i
 
 | Field | Meaning |
 |---|---|
-| `format` | 1 |
+| `format` | 2 (format 1 is the same without a phase's `tracks` and `sound_track`, PAD-1664) |
 | `kind` | Always `"pad-video-mode"`, so a stray JSON file is refused |
 | `id` | The mode's slug, its folder name |
 | `title` | Shown in the modes list and on the card (40 characters) |
@@ -351,6 +351,8 @@ world), `orbit` (`radius`). `easing` is one of `linear`, `in`, `out`, `in_out`,
 | `layout` | `per_play` (spawns, forks and picks drawn from a new seed each play) or `fixed` (the same every time, so it can be learned) |
 | `ramp` | Speed over the phase: `speed_from` at the start to `speed_to` at the end (1 = as set) |
 | `bomb` | A once-or-few-times screen clear: `button` and `uses` |
+| `tracks` | The timeline's keyframed motion of placed things (format 2, below) |
+| `sound_track` | The timeline's sounds at set times: `at_s` and `sound` (format 2) |
 
 Rule events: `touch`, `value_crosses`, `timer_ends`, `pressed`, `held`, `mashed`,
 `released`, `leaves_screen`, `phase_starts`. Rule actions: `add_health`, `score`,
@@ -411,6 +413,28 @@ Buttons are `left`, `right` and `action` everywhere.
   draws are the same every play, which tournament settings need.
 - `custom`: no settings; things and rules only.
 
+### `tracks` and `sound_track` (format 2, PAD-1664)
+
+A phase's timeline. Each track drives one property of one placed thing over the phase's play:
+`place` (its index in the phase's `place` list), `prop` and `keys`. `prop` is `motion` (where its anchor is),
+`scale` (times the thing's own), `turn` (degrees), `alpha` (0..1) or `tint` (a colour multiplied over the
+picture). A thing has at most one track of each `prop`.
+
+A key: `at_s` (seconds into the play, after the title card; keys run in time order, at least a step apart), its
+value (`x` and `y` for motion, `v` for scale, turn and alpha, `tint` for tint), and how it moves on to the next:
+`ease`, one of the easings, or `curve`, an easing of its own written as CSS cubic-bezier `[x1, y1, x2, y2]`
+(x within 0..1, y within -1..2, so it may overshoot). A motion key may carry bezier handles about itself, `out`
+(towards the next key) and `in` (from the one before), each `[dx, dy]` in stage px: the path between two keys is
+the cubic through key, key + out, next + in, next, so a motion path is drawn with handles like any vector path.
+Before its first key a property holds the first key's value, after its last the last's. A motion track takes the
+thing off its mover; keyed things are not lost off the stage (the engine keeps them within a stage's width and
+height of it). A motion track on a kind's player overrides its steering, and the compiler says so.
+
+`sound_track` entries play a `sound` at `at_s`, as the step's sound cues (and so on the machine, PAD-1667's route).
+
+Markers and the loop region are the editor's: markers (`at_s`, `label`) live in `editor.markers` by phase id, so
+they need no format bump; the loop region is the user's view, kept in the browser.
+
 ### `flow`
 
 `start` names the first card; `cards` lists them. A card has an `id` and a `card` type:
@@ -459,7 +483,7 @@ the end: `time_left_s`, `health_left`, `ammo_left`, or a value's id).
 
 `pinball_decryptor/core/video_mode/examples/night_harbour.json`, an original boat chase
 shaped like the reference's first mode, with placeholder art paths (PAD-1670 makes the
-art). It checks clean and is the frozen format 1 fixture. In short:
+art). It checks clean; `tests/data/video_mode/format_1.json` and `format_2.json` are the frozen fixtures. In short:
 
 ```
 flow:   c_intro (clip "intro")
@@ -488,7 +512,7 @@ flow:   c_intro (clip "intro")
 
 ```json
 {
-  "format": 1, "kind": "pad-video-mode", "id": "night-harbour", "title": "Night Harbour",
+  "format": 2, "kind": "pad-video-mode", "id": "night-harbour", "title": "Night Harbour",
   "stage": {"width": 1360, "height": 768, "steps_per_second": 60, "background": "#05080f"},
   "phases": [{
     "id": "boss", "kind": "boss", "title": "Warship", "objective": "Hit the weak spots",

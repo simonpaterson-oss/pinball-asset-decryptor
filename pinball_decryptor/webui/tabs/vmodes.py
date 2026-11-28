@@ -736,6 +736,7 @@ class VideoModesTab(TabService):
             "fonts": [{"atlas": f["atlas"], "size": f["size"], "cell_w": max(1, int(round(f["size"] * 0.6)))}
                       for f in names.get("fonts") or []],
             "place0": names.get("place0") or [], "phases": names.get("phases") or [],
+            "track_keys": names.get("track_keys") or [],          # PAD-1664: each track's first key in the engine
         }
 
     def _edit_reply(self, doc, with_doc=False, assets_changed=False):
