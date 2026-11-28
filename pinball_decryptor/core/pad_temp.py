@@ -82,6 +82,7 @@ NAMES = (
     _n("pad_cabstock_", STERN, "cabinet lights staging"),
     _n("pad_cabrec_", STERN, "cabinet lights recording"),
     _n("pad_sidx_", STERN, "sound index hand-over"),
+    _n("pad_replace_", STERN, "Partition Explorer replace over a hole"),
     _n("pad_game_", STERN, "title read staging"),
     _n("pad_card_size_", STERN, "card size check"),
     _n("pad_scbin_", STERN, "scene code copy"),
