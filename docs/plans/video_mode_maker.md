@@ -227,7 +227,11 @@ machines (section 1b).
 A single press after a charge ("UNLEASH", "THROW IT") is a `timing` phase with a wide
 window; title cards are part of every phase (its `title` and `objective`).
 
-## 3 The document: video_mode.json, format 1
+## 3 The document: video_mode.json, format 2
+
+Format 2 (PAD-1667) added the music's `fade_s` and beat grid (`tempo_bpm`, `beat_offset_s`,
+`beats_per_bar`) to `sounds` and let a `rhythm` phase take its tempo from its music; a format 1
+file migrates unchanged but for its number.
 
 One file per video mode: `<project>/modes/<slug>/video_mode.json`, beside the mode's art,
 sound and clip files. The schema is
@@ -307,7 +311,10 @@ A `hitbox` has a `shape` (`box` with `x`, `y`, `w`, `h`, or `circle` with `x`, `
 relative to the anchor.
 
 `sounds`: `id`, `file`, `role` (`music`, `effect` or `callout`), `volume` (0..1), `loop`,
-`loop_start_s` (where a looping music bed loops back to).
+`loop_start_s` (where a looping music bed loops back to). Music only (format 2): `fade_s`
+(how long the bed fades in when it takes over, and out when it stops; absent 1 s), and its
+beat grid: `tempo_bpm`, `beat_offset_s` (where the first beat falls in the file) and
+`beats_per_bar` (absent 4), which a `rhythm` phase on that music and the timeline read.
 
 `fonts`: `id`, `face` (the card's own font, written `card:<name>`, or a font file in the
 mode folder named in `file`), `size` in stage pixels. The app draws the same face.
@@ -383,8 +390,9 @@ Buttons are `left`, `right` and `action` everywhere.
 - `tug`: `meter`, `hold` (`left`, `right`, or `shown`: the screen names it and it
   changes every `switch_every_s`), `per_press`, `pull_back_per_s`, and the second threat
   `shake_every_s` / `shake_pairs` (alternations to shake it off), `goal`.
-- `rhythm`: `music`, `tempo_bpm`, `offset_ms`, `travel_beats` (how early a prompt
-  appears), `chart` (`beat`, `button`, `hold_beats`), `perfect_ms`, `good_ms`.
+- `rhythm`: `music`, `tempo_bpm`, `offset_ms` (both absent: the music's own beat grid,
+  format 2), `travel_beats` (how early a prompt appears), `chart` (`beat`, `button`,
+  `hold_beats`), `perfect_ms`, `good_ms`.
 - `sequence`: `buttons` (a fixed run) or `length` (random from the seed), `shown`,
   `flash_s` (shown this long, then hidden: enter it from memory), `per_press_s`,
   `rounds`.
@@ -459,7 +467,8 @@ the end: `time_left_s`, `health_left`, `ammo_left`, or a value's id).
 
 `pinball_decryptor/core/video_mode/examples/night_harbour.json`, an original boat chase
 shaped like the reference's first mode, with placeholder art paths (PAD-1670 makes the
-art). It checks clean and is the frozen format 1 fixture. In short:
+art). It checks clean, in format 2 (`tests/data/video_mode/format_1.json` and `format_2.json`
+are the frozen fixtures). In short:
 
 ```
 flow:   c_intro (clip "intro")
@@ -488,7 +497,7 @@ flow:   c_intro (clip "intro")
 
 ```json
 {
-  "format": 1, "kind": "pad-video-mode", "id": "night-harbour", "title": "Night Harbour",
+  "format": 2, "kind": "pad-video-mode", "id": "night-harbour", "title": "Night Harbour",
   "stage": {"width": 1360, "height": 768, "steps_per_second": 60, "background": "#05080f"},
   "phases": [{
     "id": "boss", "kind": "boss", "title": "Warship", "objective": "Hit the weak spots",
@@ -661,7 +670,11 @@ skipped), `PHASE_START` (phase, try), `PHASE_WON` (phase, steps left, health),
 `PHASE_LOST` (phase, tries left), `SCORE` (added, total), `KILL` (thing, points),
 `PICKUP` (thing, so far), `HURT` (health left), `FIRE`, `HIT` (weak point, hits left),
 `FINISHED` (won, score, no hit taken). What `pays` makes of them is PAD-1668's. **Sound
-cues**: play a sound (from `cues`), start a phase's music, stop it.
+cues** (`sound`, `op`, `duck`, `fade`): play a sound (from `cues`); the music is this bed from
+now, fading in over `fade` steps as the one before fades out; the music stops, fading out
+(PAD-1667: only a change is cued, so the music plays on through a result card, a phase tried
+again and a next phase with the same bed; a cutscene, a phase without music and the end stop
+it).
 
 **A step**: the input's edges; the kind's own play; spawns; movers; collisions by team;
 meters draining; the win conditions, then the lose ones (so a boss downed on the step the
@@ -914,10 +927,10 @@ Status is kept current here as tickets land.
 | 1 | PAD-1656 | Mode SDK: held buttons, mash and alternate rates; screen-game state | - | queued |
 | 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | released (v1.646.0) |
 | 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | released (v1.643.0; Spike 2 card cost checked by PAD-1679, v1.644.0) |
-| 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | on its branch |
+| 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | released (v1.647.0) |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
 | 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | queued |
-| 3 | PAD-1667 | Sound: music per phase, effects on events | PAD-1659 | queued |
+| 3 | PAD-1667 | Sound: music per phase, effects on events | PAD-1659 | on its branch |
 | 3 | PAD-1668 | In the pinball game: how it starts, what it pays | PAD-1660 | queued |
 | 3 | PAD-1669 | Try it on the emulator; the app-machine match check | PAD-1659, 1660 | queued |
 | 3 | PAD-1672 | Every Spike 2 title | PAD-1660 | queued |

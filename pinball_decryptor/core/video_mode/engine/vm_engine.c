@@ -194,7 +194,7 @@ static int check_doc(const vm_doc *d)
     for (i = 0; i < d->nphase; i++) {
         const vm_phase *p = &d->phase[i];
         if (!RANGE(p->kind, 0, VM_K_CUSTOM) || !IDX(p->title, d->nstr) || !IDX(p->objective, d->nstr) || p->length < 0
-            || !OPT(p->music, d->nsounds) || !IDX(p->settings, d->nsettings)) return 1;
+            || !OPT(p->music, d->nsounds) || !IDX(p->settings, d->nsettings) || !RANGE(p->music_fade, 0, 600)) return 1;
         if (p->bg0 < 0 || p->nbg < 0 || p->bg0 + p->nbg > d->nlayer) return 1;
         if (p->place0 < 0 || p->nplace < 0 || p->place0 + p->nplace > d->nplace) return 1;
         if (p->spawn0 < 0 || p->nspawn < 0 || p->spawn0 + p->nspawn > d->nspawn) return 1;
@@ -293,7 +293,7 @@ int vm_load(vm_engine *e, const uint8_t *pack, uint32_t len)
     d->nkind = table(&r, d->kind, VM_MAX_KINDS, 15);
     d->nmover = table(&r, d->mover, VM_MAX_MOVERS, 10);
     d->npath = table(&r, d->path, VM_MAX_PATHPTS, 3);
-    d->nphase = table(&r, d->phase, VM_MAX_PHASES, 19);
+    d->nphase = table(&r, d->phase, VM_MAX_PHASES, 20);
     d->nlayer = table(&r, d->layer, VM_MAX_LAYERS, 5);
     d->nplace = table(&r, d->place, VM_MAX_PLACES, 7);
     d->nspawn = table(&r, d->spawn, VM_MAX_SPAWNS, 9);
@@ -332,11 +332,23 @@ static int32_t on_code(int32_t ev, int32_t a)
     default: return -1;
     }
 }
-static void sound(vm_engine *e, int32_t snd, int32_t op, int32_t duck)
+static void sound(vm_engine *e, int32_t snd, int32_t op, int32_t duck, int32_t fade)
 {
     if (e->ncues >= VM_MAX_SNDCUES) return;
     e->cues[e->ncues].sound = snd; e->cues[e->ncues].op = op; e->cues[e->ncues].duck = duck;
+    e->cues[e->ncues].fade = fade;
     e->ncues++;
+}
+/* PAD-1667: the music is `snd` from now (-1: none). Only a change is cued: the music plays on through a phase's
+ * result card, a phase tried again and a next phase with the same bed; a new bed fades in over its own fade as
+ * the old one fades out, and a stop fades the playing one out over its fade. */
+static void music_to(vm_engine *e, int32_t snd, int32_t fade)
+{
+    if (snd == e->music) return;
+    if (snd >= 0) sound(e, snd, VM_SND_MUSIC, 0, fade);
+    else sound(e, e->music, VM_SND_MUSIC_STOP, 0, e->music_fade);
+    e->music = snd;
+    e->music_fade = snd >= 0 ? fade : 0;
 }
 static void emit(vm_engine *e, int32_t type, int32_t a, int32_t b, int32_t c)
 {
@@ -347,7 +359,7 @@ static void emit(vm_engine *e, int32_t type, int32_t a, int32_t b, int32_t c)
     } else e->events_dropped++;
     if (on < 0) return;
     for (i = 0; i < e->doc.ncue; i++)
-        if (e->doc.cue[i].on == on) sound(e, e->doc.cue[i].sound, VM_SND_PLAY, e->doc.cue[i].duck);
+        if (e->doc.cue[i].on == on) sound(e, e->doc.cue[i].sound, VM_SND_PLAY, e->doc.cue[i].duck, 0);
 }
 
 /* ---- things -------------------------------------------------------------------- */
@@ -578,8 +590,8 @@ static void phase_start(vm_engine *e, int32_t phase, int32_t try_no)
     phase_begin(e);
     e->state = VM_ST_TITLE; e->state_t = 0;
     e->callout = p->title; e->callout_t = TITLE_STEPS;
+    music_to(e, p->music, p->music_fade);       /* the bed first: a phase_start callout ducks the new one */
     emit(e, VM_EV_PHASE_START, phase, try_no, 0);
-    if (p->music >= 0) sound(e, p->music, VM_SND_MUSIC, 0);
 }
 static void phase_end(vm_engine *e, int won)
 {
@@ -587,7 +599,6 @@ static void phase_end(vm_engine *e, int won)
     const vm_card *c = &e->doc.card[e->card];
     e->phase_result = won;
     e->state = VM_ST_OUTRO; e->state_t = 0;
-    if (p->music >= 0) sound(e, p->music, VM_SND_MUSIC_STOP, 0);
     if (won) {
         emit(e, VM_EV_PHASE_WON, e->phase, p->length > 0 ? clampi(p->length - e->t, 0, p->length) : 0, e->health);
         e->callout = e->boss_down ? VM_S_BOSS_DOWN : VM_S_CLEAR;
@@ -604,11 +615,13 @@ static void go_card(vm_engine *e, int32_t c)
     e->card = c;
     if (k->type == VM_CARD_CLIP) {
         e->state = VM_ST_CLIP; e->state_t = 0;
+        music_to(e, -1, 0);                      /* a cutscene has its own sound */
         emit(e, VM_EV_CLIP_START, k->a, k->skippable, 0);
     } else if (k->type == VM_CARD_PHASE) {
         phase_start(e, k->a, 0);
     } else {
         e->state = VM_ST_DONE; e->outcome = k->a;
+        music_to(e, -1, 0);
         emit(e, VM_EV_FINISHED, k->a, e->score, e->flawless);
     }
 }
@@ -624,6 +637,7 @@ void vm_start(vm_engine *e, uint32_t play_seed, int32_t level)
     e->hash = 0xcbf29ce484222325ull;
     e->shake = e->shake_x = e->shake_y = 0; e->flash_a = 0; e->flash_col = 0;
     e->callout = -1; e->callout_t = 0; e->serial = 0;
+    e->music = -1; e->music_fade = 0;
     e->phase = 0; e->player = e->boss = e->sight = -1; e->nthings = 0;
     for (i = 0; i < VM_MAX_THINGS; i++) e->th[i].alive = 0;
     for (i = 0; i < VM_MAX_KINDS; i++) e->pickups_total[i] = 0;
@@ -1406,7 +1420,7 @@ int vm_step(vm_engine *e, uint32_t input)
         w.out = 0; w.cap = 0; w.n = 0; w.h = &e->hash;
         list_words(e, &w);
         for (i = 0; i < e->nevents; i++) { put(&w, e->events[i].type); put(&w, e->events[i].a); put(&w, e->events[i].b); put(&w, e->events[i].c); }
-        for (i = 0; i < e->ncues; i++) { put(&w, e->cues[i].sound); put(&w, e->cues[i].op); put(&w, e->cues[i].duck); }
+        for (i = 0; i < e->ncues; i++) { put(&w, e->cues[i].sound); put(&w, e->cues[i].op); put(&w, e->cues[i].duck); put(&w, e->cues[i].fade); }
     }
     e->step_no++;
     return e->state != VM_ST_DONE;

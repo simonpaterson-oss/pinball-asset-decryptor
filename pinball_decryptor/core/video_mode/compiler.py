@@ -19,12 +19,13 @@ import os
 import struct
 
 from . import document
+from . import sound as SND
 
 ONE = 65536
 SPS = 60
 NONE = -0x80000000
 PACK_MAGIC = 0x31504D56
-PACK_VERSION = 1
+PACK_VERSION = 2                 # 2 (PAD-1667): a phase's music fade, a cue's fade
 END_MAGIC = 0x21444E45
 FONT_ATLAS_BASE = 1000      # placeholder glyph atlases sit after the pictures' (PAD-1658 packs both)
 GLYPHS = 95
@@ -216,6 +217,7 @@ class _Compiler:
         self.pics = a.get("pictures", [])
         self.pic_ix = {p["id"]: i for i, p in enumerate(self.pics)}
         self.sound_ix = {s["id"]: i for i, s in enumerate(a.get("sounds", []))}
+        self.sound_by_id = {s["id"]: s for s in a.get("sounds", [])}
         self.clip_ix = {c["id"]: i for i, c in enumerate(a.get("clips", []))}
         self.font_list = a.get("fonts", [])
         self.font_ix = {f["id"]: i for i, f in enumerate(self.font_list)}
@@ -480,6 +482,12 @@ class _Compiler:
                     self.problem(where + ["settings"], "a boss hit with shots needs a thing on the player_shot team to fire")
                 if rec[4] == 0:
                     self.note(where + ["settings"], "a boss without weak points cannot be brought down")
+            elif kind == "rhythm":
+                # PAD-1667: the beat grid, from the phase's own tempo_bpm / offset_ms or else its music's (the kind's
+                # own play is PAD-1663's): beats a minute x1000, the first beat in ms, beats a bar
+                g = SND.beat_grid(self.doc, ph)
+                if g:
+                    rec[0], rec[1], rec[2] = int(round(g["bpm"] * 1000)), int(round(g["offset_s"] * 1000)), g["per_bar"]
             elif kind in ("mash", "alternate"):
                 m = self.value_ix.get(s.get("meter"), -1)
                 if m < 0:
@@ -525,10 +533,11 @@ class _Compiler:
                 conds.append(self.cond(c))
             ramp = ph.get("ramp", {})
             phases.append([KINDS.index(kind), self.string(ph.get("title", ph["id"])), self.string(ph.get("objective", "")),
-                           steps(ph.get("length_s", 0)), self.sound_ix.get(ph.get("music"), -1),
+                           steps(ph.get("length_s", 0)), self.sound_ix.get(SND.phase_music(ph), -1),
                            bg0, len(layers) - bg0, pl0, len(places) - pl0, sp0, len(spawns) - sp0,
                            w0, l0 - w0, l0, len(conds) - l0, 1 if ph.get("layout") == "fixed" else 0,
-                           fx(ramp.get("speed_from", 1)), fx(ramp.get("speed_to", ramp.get("speed_from", 1))), i])
+                           fx(ramp.get("speed_from", 1)), fx(ramp.get("speed_to", ramp.get("speed_from", 1))), i,
+                           steps(SND.fade_s(self.sound_by_id.get(SND.phase_music(ph))))])
         return phases, layers, places, spawns, conds, settings, weak, atk
 
     def build_cards(self):
@@ -567,7 +576,10 @@ class _Compiler:
         return out, callout_font, title_font
 
     def build_cues(self):
-        return [[CUE_ON.index(c["on"]), self.sound_ix[c["sound"]], 1 if c.get("duck_music") else 0]
+        # PAD-1667: a sound ducks the music wherever it plays when it is a callout or any cue of it says duck_music
+        # (the machine ducks per call, not per event), so every cue of it carries the same flag
+        duck = SND.ducks(self.doc)
+        return [[CUE_ON.index(c["on"]), self.sound_ix[c["sound"]], 1 if duck.get(c["sound"]) else 0]
                 for c in self.doc.get("cues", [])]
 
     def check_limits(self, fonts, pics, anims, frames, values, kinds, phases, layers, places, spawns,

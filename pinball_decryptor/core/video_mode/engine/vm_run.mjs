@@ -32,7 +32,7 @@ while (running && step < max) {
   running = vm.step(input);
   if (!opt.quiet) {
     for (const e of vm.events()) out.push(`E ${step} ${e.type} ${e.a} ${e.b} ${e.c}`);
-    for (const c of vm.cues()) out.push(`C ${step} ${c.sound} ${c.op} ${c.duck}`);
+    for (const c of vm.cues()) out.push(`C ${step} ${c.sound} ${c.op} ${c.duck} ${c.fade}`);
   }
   if (dump && (step % dump === 0 || !running)) {
     const w = vm.drawWords();
