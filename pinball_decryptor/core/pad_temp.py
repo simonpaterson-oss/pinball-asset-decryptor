@@ -69,6 +69,7 @@ NAMES = (
     _n("pad_vmrun", SHARED, "video mode engine runner, built once per engine version",
        exact=True, kept=True, child_days=30),
     _n("pad_vm_", SHARED, "video mode text harness scratch"),
+    _n("pad_vmodes_", APP, "Video modes tab art staging"),
     _n("pad_engine_", STERN, "Emulate tab game staging"),
     _n("pad-network-", STERN, "network settings staging"),
     _n("pad_network_", STERN, "network settings hand-over"),
