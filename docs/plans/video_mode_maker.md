@@ -17,6 +17,7 @@ editor's design language, and the ticket map. It is kept current as the tickets 
 Never name a tester or the reference video's maker in anything public.
 
 Contents: [1 The reference](#1-the-reference-taken-apart) ·
+[1b The industry](#1b-video-modes-the-industry-made) ·
 [2 Game kinds](#2-game-kinds-and-where-each-was-seen) ·
 [3 The document](#3-the-document-video_modejson-format-1) ·
 [4 Draw list](#4-the-draw-list-and-the-backend-contract) ·
@@ -97,27 +98,134 @@ Winning or losing plays a different clip and pays into the pinball game: multipl
 add-a-balls, an extra ball, a jackpot bonus. The video does not show the playfield side
 legibly; PAD-1668 owns it.
 
+## 1b Video modes the industry made
+
+David asked (2026-11-28) for a survey of real machines' video modes before the plan
+was settled, so the kinds cover what pinball has done, not only the reference. About
+60 machines from 1991 to 2025 were checked against their rule sheets
+(pinballrulesheets.com, the old Tilt Forums sheets; ipdb and the funet / lysator rule
+archives; bmigaming.com; pinballprimer.github.io), with Pinside and Kineticist where
+they could be read. Values are the rule sheets'; a few sheets disagree with each other.
+
+### The catalog
+
+| Machine | Mode | Buttons | What you do | Ends / pays |
+|---|---|---|---|---|
+| Terminator 2 (Williams 1991) | the first DMD video mode | flippers move a crosshair; it fires by itself | shoot terminators, a plane, a falling extra-ball box | 3 hits on you or all killed; about 8-10M |
+| Fish Tales (Williams 1992) | boat shoot | rod button or flippers fire torpedoes | boats cross at three depths; lead the shot | 20 s, 20 torpedoes; far boats pay more, 20/20 pays 20M, extra ball |
+| The Getaway (Williams 1992) | lane race | hold a flipper to steer; gearshift picks speed | dodge cars in 3 lanes, pseudo-3D | higher gear pays more (about 16M in 4th, 27M in 5th); ranked the best 90s mode |
+| Doctor Who (Bally 1992) | Dalek escape | one flipper short jump, both long jump | a runner jumping hazards in waves; fixed or random on hard | each wave relights it; extra ball on waves 2-3 |
+| Black Rose (Bally 1992) | three micro-games | Fire button | knife throw (time it), walk the plank (mash), rigging swing (time it) | prize shown first |
+| Guns N' Roses (DE 1994), Harley-Davidson (Sega 1999) | Gilby Rolls | flippers steer | a motorbike in 3 lanes; pass cars, hit pedestrians | a car ends it; fixed course, can be learned |
+| Indiana Jones (Williams 1993) | Escape in the Cart | flippers pick the way at each fork | a mine cart speeding up; 25 right choices | 5M + 1M a turn, 30M to finish |
+| ST:TNG (Williams 1993) | Shuttle Simulation | flippers left, right, centre | a tunnel of 10 caverns with forks; same layout every time | 1M a cavern, 50M artifact, extra ball for perfect; **declinable for 25M** |
+| Dracula (Williams 1993) | werewolf hunt | flippers fire left and right | werewolves from both sides; 5 spare bullets | one reaches you: no bonus; pays per bullet left |
+| Tales from the Crypt (DE 1993) | Door Prize | flippers pick a door, button opens | points or a victim behind each of 3 doors | the victim ends it; 3 rounds may give an extra ball |
+| Jurassic Park (DE 1993) | skill shot, shoot out | trigger or left flipper | fire when the dinosaur is in the sights | timing, never takes the ball |
+| The Shadow (Bally 1994) | Duel of Wills | trigger clears the screen once | dodge falling daggers | points rise per dodge; one is an extra ball |
+| Corvette (Bally 1994), Viper (Sega 1998), Baywatch (Sega 1995) | drag race / beach run | mash (Corvette: left accelerates, right shifts) | race a computer opponent | win starts a multiball (Corvette); losing pays by progress (Viper) |
+| Batman Forever (Sega 1995) | Rooftop Chase | hold a flipper to be in that lane, release drifts back | dodge in two sections, collect in two | fixed course; 100-150M |
+| Apollo 13 (Sega 1995) | lunar landing | a flipper is a side thruster, both thrust up | land on a pad | 50/75/100M by pad, a crash still pays by time |
+| Attack from Mars (Bally 1995) | Saucer Attack | flippers aim an auto-firing cannon; launch button is a smart bomb, once | Space Invaders style; at 50 saucers a mothership boss | a landed saucer ends it; 635M for all |
+| Congo (Williams 1995), Indy 500 (Bally 1995), No Fear (Williams 1995) | boat, caution lap, motorbike | flippers steer (Congo: speeds up the longer you hold) | dodge waves; No Fear has 3 tracks so it cannot be memorised | finish bonus |
+| Johnny Mnemonic (Williams 1995) | SNARF | four buttons move in 2D | collect dots before time runs out | a worst-of-the-90s pick |
+| Theatre of Magic (Bally 1995) | Digital Pinball | flippers work tiny on-screen flippers | clear targets in 20 s | 40M or an extra ball; a worst-of-the-90s pick |
+| Space Jam (Sega 1996) | hoop catch | flippers move the hoop | catch 16 shots | 50K each, 200K for all |
+| Medieval Madness (Williams 1997) | Save the Children | flippers move, a button clears | defend three babies from buzzards | 30 kills wins; one baby taken loses |
+| Starship Troopers (Sega 1997), X-Files (Sega 1998), Lost World (Sega 1997) | psychic test, trivia, vine swing | left cycles / right locks; flippers pick an answer; one press | guess a card; pick an answer; time one press | flat prize; tiny |
+| Revenge from Mars (Williams 1999) | Pinball 2000 video on the playfield | action buttons aim / choose | mini-games while the ball plays (one holds the ball) | "Flawless" bonus on every mode |
+| Terminator 3 (Stern 2003) | T2's mode with tanks | flippers aim, trigger fires | 3 hits and you lose | flawless bonus |
+| Ghostbusters (Stern 2016) | Don't Cross the Streams; ESP cards | each flipper sweeps its stream; pick a card or cash out | catch 15 ghosts; double-or-nothing up to 64M | 60-80M; pays so much it became the only choice |
+| Houdini (American 2017) | King of Cards | hold a flipper to set the throw, release to throw | throw cards through hoops that speed up | 45 s (operator 40-60 s); extra ball |
+| Star Wars (Stern 2017) | asteroid flight | flippers steer, centre button boosts | dodge asteroids | per dodge, big no-hit bonus; levels stack |
+| Pirates of the Caribbean (JJP 2018) | Liar's Dice | pick a stake, or walk away | double or nothing on points, gold or tilt warnings | walk away any time; rules screen |
+| Oktoberfest (American 2019) | Tap-It! | flippers move, hold the button to fill | serve 20 customers, 4 misses allowed | 2-4K each |
+| Elvira's House of Horrors (Stern 2019), Sonic (JJP 2024), Labyrinth | wheel stop, spin dash, the duel | one button in a window | stop a moving marker on the target | nothing if not stopped in 6 s |
+| Godzilla (Stern 2021) | Fight or Flee | left fights, right flees | a decision on the two flippers | flee banks jackpot + time left |
+| Venom (Stern 2023) | Scream | each flipper strikes its side | infected come from both sides | 10M just for starting, 10M for clearing |
+| Jaws (Stern 2024) | Shark Hunter | flippers fire harpoons | shoot sharks, spare divers; harpoon pickups | 3000 x the video score; also playable from a menu |
+| Harry Potter (JJP 2025) | spell training | flippers and Action | memorise a spell sequence, then enter it | +1x multiball scoring per spell |
+| Munsters, Jurassic Park (Stern) | pizza eating, T-Rex pummel | Action mash | 6-10 s mash | per press |
+| Evil Dead (Spooky 2024), Beetlejuice (Spooky 2022) | 80s-style video mode; shooting gallery | flippers move, Action shoots | zombies and a final beast | small pay: flavour |
+
+Most modern titles have none at all (Stern's Batman 66, Deadpool, Black Knight, Iron
+Maiden, Mandalorian, Foo Fighters, King Kong, TMNT, James Bond; JJP's Wonka, Toy Story,
+Avatar; Spooky's Halloween, Ultraman; and more), and what modern games do have is often
+a screen decision or a timing meter rather than a game. Pinside is split on video modes
+(a poll had 62% wanting them back; others call them "not pinball"), which is a reason
+for the maker's lessons below, not against the feature.
+
+### What the survey teaches the maker
+
+These are now rules of the format and the editor:
+
+1. **Short, and the operator can change it.** Real ones run 6 to 60 s (Houdini 45 s,
+   adjustable 40-60 s). Phases default to 20-45 s; `operator` lets the owner shorten or
+   lengthen every phase by a percentage, or switch the mode off.
+2. **Pay must not outweigh the playfield.** Ghostbusters' 60-80M video mode became the
+   only thing anyone played and its skill-shot route had to be removed. The cost report
+   (PAD-1658) and the pinball side (PAD-1668) warn when a mode's best pay is more than a
+   set share of a good ball's score.
+3. **Failing still pays something.** A floor (Venom pays 10M just for starting), a
+   crash that still pays by time (Apollo 13), pay by progress (Viper): `pays.start_score`
+   and `pays.floor`.
+4. **Let the player say no.** ST:TNG offers 25M instead; Godzilla, Pirates and
+   Ghostbusters let you cash out or walk away; Hot Wheels skips its film on a double
+   flip: `entry.declinable`, `entry.decline_score`, `entry.skip_clips`, the `pick` kind's
+   `cash_out`.
+5. **Learnable or fresh, by choice.** Harley-Davidson, Batman Forever and ST:TNG are the
+   same every time and players learn routes; No Fear has three tracks and Doctor Who's
+   hard setting is random so nobody can: a phase's `layout` is `fixed` or `per_play`.
+6. **One hidden extra ball.** Nearly every 90s mode slips an extra-ball item into the
+   stream (T2, Getaway, Fish Tales, The Shadow, Attack from Mars, Doctor Who): an award
+   `when` `collected` `of` a thing.
+7. **Perfect and leftovers pay.** Flawless bonuses (Revenge from Mars, T3, Star Wars),
+   bullets left (Dracula), time left (Godzilla): `when` `flawless`, and `per` on an award.
+8. **The Action button is a special.** Smart bomb once per mode (Attack from Mars, The
+   Shadow): a phase's `bomb`. Boost (Star Wars). Limited `ammo` (Fish Tales 20
+   torpedoes, Houdini's cards). Auto-fire with aiming only (T2, Attack from Mars).
+9. **Risk for reward.** The Getaway's gears: faster pays more (`gears`, `gear_button`).
+10. **It gets harder.** Carts and saucers speed up within a phase (`ramp`), and a mode
+    played again starts a level higher and pays more (Star Wars, Game of Thrones, Junk
+    Yard): `levels`.
+11. **Playable on its own.** Stern's challenge menus and Jaws' Shark Hunter play a video
+    mode outside a game: `entry.from_attract`.
+12. **Video score is its own scale.** Jaws pays 3000 x the video score: `pays.score_scale`.
+
+Left out, with reasons: pinball inside pinball (Theatre of Magic, and one of the worst
+rated) needs a ball physics engine for one example; free 2D movement (Johnny Mnemonic)
+needed four buttons and is also rated among the worst; both stay possible as a
+`custom` phase with rule cards.
+
 ## 2 Game kinds and where each was seen
 
-The `kind` of a phase. Every kind traces back to something in section 1.
+The `kind` of a phase. Every kind traces back to the reference (section 1) or to real
+machines (section 1b).
 
-| Kind | What it is | Seen at |
-|---|---|---|
-| `chase` | Steer between lanes or freely with the flippers, Action fires; things to shoot, dodge and pick up arrive on a timeline; the world scrolls in layers | 3:27-4:09 |
-| `thrust` | Hold a button to rise, let go to fall; another button fires; gaps, enemies and pickups scroll in | 6:06-6:33 |
-| `aim` | A sight sweeps or is steered; Action fires or is held; an overheat meter punishes holding | 4:15 (sweeping sight), 5:06 (hold and steer) |
-| `boss` | A big thing with weak points that open on a pattern, attacks to dodge, a health bar, stages | 4:15-4:36, 6:36-6:57 |
-| `mash` | Hit Action fast to fill a meter against a drain | 4:45, 8:27 |
-| `alternate` | Left, right, left, right to fill a meter | 5:12, 9:21 |
-| `tug` | Hold the named flipper and mash Action, while a second threat needs alternating | 7:21-8:24 |
-| `rhythm` | Prompts travel to a hit line in time with the music; early, good and perfect windows | 9:54-10:09 |
-| `sequence` | A shown or hidden run of buttons to enter in time | 9:36 |
-| `dodge` | A tell, then a short window to press the named button | 4:57, 6:48 |
-| `shield` | A tell, then hold a button for a time | *(from the record)* 10:12 on |
-| `custom` | Starts empty; built from things and rule cards only (PAD-1665) | - (freedom past the reference) |
+| Kind | What it is | In the reference | On real machines |
+|---|---|---|---|
+| `chase` | Steer between lanes, freely, or hold to sit in a side lane; Action fires; things to shoot, dodge and pick up arrive on a timeline; the world scrolls in layers | 3:27-4:09 | Getaway, Gilby Rolls / Harley, Batman Forever, Congo, Indy 500, No Fear, Star Wars (2017) |
+| `thrust` | Hold a button to rise, let go to fall; another button fires; gaps, enemies and pickups scroll in | 6:06-6:33 | - |
+| `aim` | A sight sweeps, is steered or fires by itself; Action fires or is held; ammo or an overheat meter limit it | 4:15, 5:06 | Terminator 2 and 3, Fish Tales, Attack from Mars, Jaws, Beetlejuice, Jurassic Park |
+| `boss` | A big thing with weak points that open on a pattern, attacks to dodge, a health bar, stages | 4:15-4:36, 6:36-6:57 | Attack from Mars' mothership, Evil Dead's beast |
+| `mash` | Hit a button fast to fill a meter against a drain, or race a rival | 4:45, 8:27 | Corvette, Viper, Baywatch, Munsters, Jurassic Park (Stern), X-Files |
+| `alternate` | Left, right, left, right to fill a meter | 5:12, 9:21 | - |
+| `tug` | Hold the named flipper and mash Action, while a second threat needs alternating | 7:21-8:24 | - |
+| `rhythm` | Prompts travel to a hit line in time with the music; early, good and perfect windows | 9:54-10:09 | - |
+| `sequence` | A shown, hidden or memorised run of buttons to enter in time | 9:36 | Harry Potter (memorise, then enter) |
+| `dodge` | A tell, then a short window to press the named button | 4:57, 6:48 | The Shadow, Godzilla (Fight or Flee as a choice) |
+| `shield` | A tell, then hold a button for a time | *(from the record)* | - |
+| `timing` | A marker sweeps a bar; press, or hold and release, inside the window | 5:15 ("UNLEASH") | Black Rose, Lost World, Elvira's wheel, Sonic, Labyrinth, Houdini, Hot Wheels |
+| `defend` | Enemies come from the sides or the top; the flipper on that side strikes; a few may get through | - | Venom, Dracula, Medieval Madness, Ghostbusters' streams |
+| `catch` | Move a catcher between lanes or freely to catch falling things | - | Space Jam, Oktoberfest |
+| `runner` | A runner jumps hazards: one flipper a short jump, both a long one | - | Doctor Who |
+| `lander` | Side thrusters on the flippers, both (or Action) thrust up; land on a pad with fuel left | - | Apollo 13 |
+| `route` | The way forks; pick left or right in time as it speeds up; learnable when fixed | - | Indiana Jones mine cart, ST:TNG shuttle |
+| `pick` | Choose a door, card or answer with the buttons; prizes, doubles and a bust; cash out any time | - | Tales from the Crypt, Ghostbusters ESP, Pirates' Liar's Dice, Starship Troopers, X-Files trivia, Jack*Bot |
+| `custom` | Starts empty; built from things and rule cards only (PAD-1665) | - | anything else (Tap-It, digital pinball, 2D chases) |
 
-A single press after a charge ("UNLEASH", "THROW IT") is a `sequence` of one button;
-title cards are part of every phase (its `title` and `objective`).
+A single press after a charge ("UNLEASH", "THROW IT") is a `timing` phase with a wide
+window; title cards are part of every phase (its `title` and `objective`).
 
 ## 3 The document: video_mode.json, format 1
 
@@ -174,6 +282,9 @@ A picture and the thing drawn with it may share a name. The mode's own `id` is i
 | `cues` | Sounds on events |
 | `style` | The look and the feel switches |
 | `pays` | What it pays into the pinball game |
+| `entry` | How it may be entered: `declinable` (offer a choice, paying `decline_score` instead), `skip_clips` (`none`, `double_flip`, `action`), `from_attract` (also playable on its own from attract mode) |
+| `levels` | A mode played again gets harder and pays more: `carry` (`none`, per `player`, or for the whole `game`), `max_level`, `speed_step_pct`, `pay_step_pct` |
+| `operator` | The owner's setting on the mode's row: `can_turn_off`, and the range `length_pct_min` to `length_pct_max` every phase's length may be scaled by |
 | `editor` | The editor's own state |
 
 ### `stage`
@@ -236,7 +347,10 @@ world), `orbit` (`radius`). `easing` is one of `linear`, `in`, `out`, `in_out`,
 | `place` | Things on the stage at the first step: `thing`, `x`, `y`, `scale`, `turn`, `depth`, `hidden`, `locked` (editor only: cannot be dragged) |
 | `spawns` | Things that arrive: `thing`, `at_s`, `every_s`, `count`, `x`, `y`, `spread` (random spread from the seed), `lane`, `mover` (overrides the thing's) |
 | `rules` | When-this-then-that cards (PAD-1665): `when` (`event`, `a`, `b`, `button`, `value`) and `then`, a list of (`do`, `target`, `value`) |
-| `win`, `lose` | Conditions, any one of which ends the phase: `when` (`time_up`, `survive_s`, `score`, `kills`, `pickups`, `goal`, `health_gone`, `misses`, `boss_down`, `hits`, `accuracy`), `value`, `of` (a thing or a value) |
+| `win`, `lose` | Conditions, any one of which ends the phase: `when` (`time_up`, `survive_s`, `score`, `kills`, `pickups`, `goal`, `health_gone`, `misses`, `boss_down`, `hits`, `accuracy`, `ammo_out`, `landed`, `crashed`, `cashed_out`, `busted`), `value`, `of` (a thing or a value) |
+| `layout` | `per_play` (spawns, forks and picks drawn from a new seed each play) or `fixed` (the same every time, so it can be learned) |
+| `ramp` | Speed over the phase: `speed_from` at the start to `speed_to` at the end (1 = as set) |
+| `bomb` | A once-or-few-times screen clear: `button` and `uses` |
 
 Rule events: `touch`, `value_crosses`, `timer_ends`, `pressed`, `held`, `mashed`,
 `released`, `leaves_screen`, `phase_starts`. Rule actions: `add_health`, `score`,
@@ -247,19 +361,23 @@ Rule events: `touch`, `value_crosses`, `timer_ends`, `pressed`, `held`, `mashed`
 
 Buttons are `left`, `right` and `action` everywhere.
 
-- `chase`: `player` (a thing), `steer` (`lanes` or `free`), `lanes` (2 to 7),
-  `steer_speed`, `fire` (`action` or `none`), `shot` (the thing fired), `fire_per_s`,
-  `scroll_speed`, `health`, `hurt_blink_s`.
-- `thrust`: `player`, `thrust_button`, `fire_button` (or `none`), `shot`, `gravity`,
-  `thrust`, `max_fall`, `scroll_speed`, `health`.
+- `chase`: `player` (a thing), `steer` (`lanes`, `free`, or `hold`: held flipper puts
+  it in that side's lane, release drifts back), `lanes` (2 to 7), `steer_speed`, `fire`
+  (`action` or `none`), `shot` (the thing fired), `fire_per_s`, `ammo` (0 or absent:
+  unlimited), `gears` (1 to 5 speeds, each faster and paying more) shifted with
+  `gear_button`, `scroll_speed`, `health`, `hurt_blink_s`.
+- `thrust`: `player`, `thrust_button`, `fire_button` (or `none`), `shot`, `ammo`,
+  `gravity`, `thrust`, `max_fall`, `scroll_speed`, `health`.
 - `aim`: `sight` (a thing), `move` (`sweep` along `sweep_path` over `sweep_s`, or
-  `steer` at `steer_speed`), `fire` (`press` or `hold`), `heat` (a meter), `heat_per_s`,
-  `cool_per_s`, `overheat_lock_s`.
+  `steer` at `steer_speed`), `fire` (`press`, `hold`, or `auto`: it fires by itself and
+  the player only aims), `ammo`, `heat` (a meter), `heat_per_s`, `cool_per_s`,
+  `overheat_lock_s`.
 - `boss`: `boss` (a thing), `hit_with` (`sight` or `shots`), `sight`, `weak_points`
   (`x`, `y` relative to the boss, `r`, `hits`, and the open pattern `open_s`,
   `closed_s`, `offset_s`), `attacks` (`thing`, `every_s`, `aim`: `player` or
   `straight`), `stages`.
-- `mash`: `meter`, `button`, `per_press`, `drain_per_s`, `goal`.
+- `mash`: `meter`, `button`, `per_press`, `drain_per_s`, `goal`, `rival_per_s` (a
+  computer rival filling its own bar: a drag race; first to the goal wins).
 - `alternate`: `meter`, `per_pair`, `drain_per_s`, `start_side` (`left`, `right`,
   `either`), `goal`.
 - `tug`: `meter`, `hold` (`left`, `right`, or `shown`: the screen names it and it
@@ -268,9 +386,29 @@ Buttons are `left`, `right` and `action` everywhere.
 - `rhythm`: `music`, `tempo_bpm`, `offset_ms`, `travel_beats` (how early a prompt
   appears), `chart` (`beat`, `button`, `hold_beats`), `perfect_ms`, `good_ms`.
 - `sequence`: `buttons` (a fixed run) or `length` (random from the seed), `shown`,
-  `per_press_s`, `rounds`.
+  `flash_s` (shown this long, then hidden: enter it from memory), `per_press_s`,
+  `rounds`.
 - `dodge`: `buttons` (the ones a tell may name), `tell_s`, `window_s`, `count`.
 - `shield`: `button`, `tell_s`, `hold_s`, `count`.
+- `timing`: `input` (`press`, or `hold_release`: hold to charge, let go in the window),
+  `button`, `sweep_s` (one crossing of the bar), `window_from` and `window_to` (0..1 of
+  the bar), `shrink_pct` (the window narrows each round), `rounds`.
+- `defend`: `enemy` (a thing), `from` (`sides`: the flipper on that side strikes, or
+  `top`), `speed`, `every_s`, `count`, `reach` (how far a strike lands), `let_through`
+  (how many may pass before it is lost).
+- `catch`: `catcher` (a thing), `move` (`lanes` or `free`), `lanes`, `speed`,
+  `misses_allowed`; what falls comes from the phase's `spawns`.
+- `runner`: `runner` (a thing), `jump` (a button), `long_jump` (`both_flippers`, a
+  button, or `none`), `jump_px`, `long_jump_px`, `scroll_speed`, `waves`.
+- `lander`: `ship` (a thing), `gravity`, `side_thrust` (the flippers push it sideways),
+  `up` (`action` or `both_flippers`), `up_thrust`, `fuel_s`, `max_land_speed`, and
+  `pads` (`x`, `w`, `points`).
+- `route`: `vehicle` (a thing), `forks` (the right side at each fork, `left` or
+  `right`) or `fork_count` (drawn from the seed), `speed`, `speed_up_pct` (per fork).
+- `pick`: `choices` (2: the flippers, or 3: left, Action, right), `outcomes` (`label`,
+  `weight`, `result` `prize` / `double` / `bust`, `amount`), `bank_start`, `cash_out`
+  (the button that banks and ends it, or `none`), `rounds`. With `layout` `fixed` the
+  draws are the same every play, which tournament settings need.
 - `custom`: no settings; things and rules only.
 
 ### `flow`
@@ -308,10 +446,14 @@ number), `phases` (shown only in these; absent: all).
 
 ### `pays`
 
-`multiplier_in` (a multiplier earned before the mode scales its score) and `awards`:
-`when` (`won`, `lost`, `phase_won` with `phase`, `each_kill`, `pickups_reach` with `at`),
+`multiplier_in` (a multiplier earned before the mode scales its score), `start_score`
+(paid just for starting), `floor` (the least a finished mode pays, won or lost),
+`score_scale` (pinball points per video point; Jaws pays 3000), and `awards`: `when`
+(`won`, `lost`, `phase_won` with `phase`, `each_kill`, `pickups_reach` with `at`,
+`start`, `flawless` (no hit taken), `collected` `of` a thing: the hidden extra ball),
 `award` (`score`, `add_a_ball`, `extra_ball`, `light_jackpot`, `multiplier`,
-`saved_value` with `name`), `amount`.
+`saved_value` with `name`), `amount`, and `per` (multiply the amount by what is left at
+the end: `time_left_s`, `health_left`, `ammo_left`, or a value's id).
 
 ### The worked example: Night Harbour
 
@@ -599,7 +741,7 @@ Static HTML in `docs/plans/video_mode_maker/`, linking the real `app.css` so the
 and fonts are the app's own, with original placeholder art drawn in SVG:
 
 - `stage.html`: the editor with Night Harbour's chase phase selected on the stage.
-- `phases.html`: the storyboard and the game kind picker.
+- `phases.html`: the storyboard and the game kind picker (all 18 kinds and the empty phase, grouped).
 - `timeline.html`: the boss phase with its timeline open, keyframes and spawn waves.
 - `play.html`: the mode playing in the app, with the play bar and the budget meter.
 
@@ -629,8 +771,8 @@ Status is kept current here as tickets land.
 | 3 | PAD-1675 | Spooky | PAD-1660 | queued |
 | 3 | PAD-1676 | Chicago Gaming remakes (dots) | PAD-1660 | queued |
 | 3 | PAD-1677 | Spike 1, American, Dutch, Pinball Brothers, Barrels of Fun | PAD-1660 | queued |
-| 4 | PAD-1662 | Game kinds 1: chase, thrust, aim, boss | PAD-1661 | queued |
-| 4 | PAD-1663 | Game kinds 2: mash, alternate, tug, rhythm, sequence, dodge, shield | PAD-1661 | queued |
+| 4 | PAD-1662 | Game kinds 1: chase, thrust, aim, boss; and from the survey defend, catch, runner, lander, route | PAD-1661 | queued |
+| 4 | PAD-1663 | Game kinds 2: mash, alternate, tug, rhythm, sequence, dodge, shield; and from the survey timing, pick | PAD-1661 | queued |
 | 4 | PAD-1664 | Editor: storyboard, cutscenes, timeline with keyframes | PAD-1661 | queued |
 | 4 | PAD-1666 | HUD and feel | PAD-1661 | queued |
 | 5 | PAD-1665 | Rule cards | PAD-1662, 1663 | queued |
@@ -659,3 +801,11 @@ that order; two tickets that bump at once take numbers in merge order.
 - **No blending between steps**: the frame at step N is the same picture on every
   screen, which the match check needs.
 - **Dot-matrix screens show a 4:1 band** of the stage rather than a squashed whole.
+- **Seven kinds added from the survey** of real machines (`timing`, `defend`, `catch`,
+  `runner`, `lander`, `route`, `pick`), split between PAD-1662 and PAD-1663, rather than
+  leaving them to rule cards: each is used by several shipped games.
+- **Not kinds:** pinball inside pinball and free 2D movement, each from one poorly rated
+  90s game; a `custom` phase can still build them.
+- **The survey's lessons are format fields**, not editor advice: short adjustable
+  length, a pay floor, decline and cash-out, fixed or per-play layouts, levels, the
+  hidden extra ball, flawless and leftover pay.

@@ -186,7 +186,13 @@ _SETTING_REFS = {
     "alternate": {"meter": "value"},
     "tug": {"meter": "value"},
     "rhythm": {"music": "music"},
+    "defend": {"enemy": "thing"},
+    "catch": {"catcher": "thing"},
+    "runner": {"runner": "thing"},
+    "lander": {"ship": "thing"},
+    "route": {"vehicle": "thing"},
 }
+_PER_BUILTIN = ("time_left_s", "health_left", "ammo_left")
 
 
 def _ids(doc):
@@ -294,6 +300,13 @@ def reference_problems(doc):
             need(award.get("phase"), "phase", ["pays", "awards", n, "phase"])
             if award.get("when") == "phase_won" and "phase" not in award:
                 out.append((["pays", "awards", n], "pays when a phase is won, but does not say which phase"))
+            if award.get("when") == "collected":
+                if "of" not in award:
+                    out.append((["pays", "awards", n], "pays when something is collected, but does not say what"))
+                need(award.get("of"), "thing", ["pays", "awards", n, "of"])
+            per = award.get("per")
+            if isinstance(per, str) and per not in _PER_BUILTIN:
+                need(per, "value", ["pays", "awards", n, "per"])
 
     flow = doc.get("flow") or {}
     cards = [c for c in flow.get("cards") or [] if isinstance(c, dict)]
