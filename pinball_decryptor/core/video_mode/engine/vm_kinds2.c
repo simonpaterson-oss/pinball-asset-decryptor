@@ -23,6 +23,14 @@
 #define BK_GRACE        9      /* shield: steps into the attack the button may still come down */
 #define BK_JUDGE_STEPS  30
 
+/* PAD-1666: a mode with its own pop-up words on presses shows those instead of the judge word */
+static int prompt_popups(const vm_engine *e)
+{
+    int32_t i, m = (1 << VM_ON_PROMPT_GOOD) | (1 << VM_ON_PROMPT_PERFECT) | (1 << VM_ON_PROMPT_MISS);
+    if (!(e->doc.style & VM_FX_POPUPS)) return 0;
+    for (i = 0; i < e->doc.nhud; i++) if (e->doc.hud[i].part == VM_HUD_POPUP && (e->doc.hud[i].on & m)) return 1;
+    return 0;
+}
 static int bk_kind(int32_t k)
 {
     return k == VM_K_MASH || k == VM_K_ALTERNATE || k == VM_K_TUG || k == VM_K_RHYTHM || k == VM_K_SEQUENCE
@@ -571,7 +579,7 @@ static void draw_kinds2(vm_engine *e)
     }
     for (i = 0; i < e->doc.nhud; i++) if (e->doc.hud[i].part == VM_HUD_PROMPTS) prompts = 1;
     if (!prompts && e->state == VM_ST_PLAY) bk_prompts(e, DEG(e->doc.stage_w) / 2, DEG(e->doc.stage_h) - DEG(20));
-    if (e->judge_t > 0 && e->judge_word >= 0 && e->state == VM_ST_PLAY) {
+    if (e->judge_t > 0 && e->judge_word >= 0 && e->state == VM_ST_PLAY && !prompt_popups(e)) {
         int32_t W = DEG(e->doc.stage_w), age = BK_JUDGE_STEPS - e->judge_t;
         int32_t x = k == VM_K_RHYTHM ? btn_x(e, e->judge_x == -1 ? 0 : e->judge_x == 1 ? 1 : 2, W / 2, DEG(150)) : W / 2;
         int32_t y = k == VM_K_RHYTHM ? DEG(e->doc.stage_h) - DEG(250) : DEG(e->doc.stage_h) / 3;

@@ -27,7 +27,10 @@
 #include <stdint.h>
 
 #define VM_PACK_MAGIC   0x31504D56u   /* "VMP1" little end first */
-#define VM_PACK_VERSION 3   /* 2 (PAD-1667): phases carry their music's fade, cues their fade; 3 (PAD-1663): the notes table, after PAD-1664's timeline tables */
+#define VM_PACK_VERSION 4   /* 2 (PAD-1667): phases carry their music's fade, cues their fade; 3 (PAD-1663): the notes
+                              table, after PAD-1664's timeline tables; 4 (PAD-1666): fonts' outline and gradient glyphs,
+                              the HUD's looks and text styles, particle emitters (after the notes), a thing's trail,
+                              the feel (shake, hit-stop, transitions, CRT) */
 
 /* ---- limits: sized from the largest column of the plan's budgets (section 5) ---- */
 #define VM_MAX_THINGS     512   /* alive at once (the desk budget is 300) */
@@ -56,7 +59,10 @@
 #define VM_MAX_STRINGS    256
 #define VM_MAX_SOUNDS     64
 #define VM_MAX_CLIPS      32
-#define VM_MAX_PARTICLES  256
+#define VM_MAX_PARTICLES  512
+#define VM_MAX_EMITTERS   20    /* the document's particles (16) and the four presets (PAD-1666) */
+#define VM_MAX_POPUPS     24    /* pop-up words alive at once */
+#define VM_MAX_ZONES      4     /* a meter's danger zones */
 #define VM_MAX_ENTRIES    3072  /* quads + boxes in one draw list */
 #define VM_MAX_EVENTS     64    /* a step */
 #define VM_MAX_SNDCUES    16    /* a step */
@@ -92,7 +98,23 @@ enum { VM_W_TIME_UP, VM_W_SURVIVE, VM_W_SCORE, VM_W_KILLS, VM_W_PICKUPS, VM_W_GO
 enum { VM_CARD_CLIP, VM_CARD_PHASE, VM_CARD_END };
 enum { VM_TK_MOTION, VM_TK_SCALE, VM_TK_TURN, VM_TK_ALPHA, VM_TK_TINT };
 enum { VM_HUD_HEALTH, VM_HUD_METER, VM_HUD_SCORE, VM_HUD_COMBO, VM_HUD_TIMER, VM_HUD_LIVES,
-       VM_HUD_PROGRESS, VM_HUD_PROMPTS, VM_HUD_CALLOUT, VM_HUD_COUNTER, VM_HUD_TEXT };
+       VM_HUD_PROGRESS, VM_HUD_PROMPTS, VM_HUD_CALLOUT, VM_HUD_COUNTER, VM_HUD_TEXT,
+       VM_HUD_MULTIPLIER, VM_HUD_POPUP };
+enum { VM_ALIGN_AUTO, VM_ALIGN_LEFT, VM_ALIGN_CENTRE, VM_ALIGN_RIGHT };
+/* the mode's effect switches (doc.style): every effect can be turned off per mode (PAD-1666) */
+#define VM_FX_SHAKE      0x001u
+#define VM_FX_FLASH      0x002u
+#define VM_FX_PARTICLES  0x004u
+#define VM_FX_HITSTOP    0x008u
+#define VM_FX_CRT        0x010u
+#define VM_FX_SQUASH     0x020u
+#define VM_FX_BLINK      0x040u
+#define VM_FX_POPUPS     0x080u
+#define VM_FX_TRAILS     0x100u
+#define VM_FX_COUNTUP    0x200u
+#define VM_FX_PULSE      0x400u   /* danger pulses and the pop of a number that changed */
+/* doc.burst[]: the particle preset each happening throws (-1 none) */
+enum { VM_BURST_KILL, VM_BURST_HURT, VM_BURST_PICKUP, VM_BURST_HIT, VM_BURST_FIRE, VM_BURST_BOSS, VM_BURST_COUNT };
 enum { VM_LOOK_DEFAULT, VM_LOOK_BAR, VM_LOOK_PIPS, VM_LOOK_HEARTS, VM_LOOK_RING,
        VM_LOOK_NUMBER, VM_LOOK_GLYPHS };
 enum { VM_TR_CUT, VM_TR_FADE, VM_TR_WHITE_FLASH, VM_TR_WIPE, VM_TR_IRIS };
@@ -104,6 +126,8 @@ enum { VM_S_CLEAR, VM_S_FAILED, VM_S_TRY_AGAIN, VM_S_STEER, VM_S_FIRE, VM_S_LEFT
        VM_S_PERFECT, VM_S_GOOD, VM_S_EARLY, VM_S_LATE, VM_S_MISS, VM_S_SHAKE, VM_S_DODGE, VM_S_BLOCK,
        VM_S_TOO_EARLY, VM_S_HIT, VM_S_DODGED, VM_S_BLOCKED, VM_S_WATCH, VM_S_GO, VM_S_GLYPH_L, VM_S_GLYPH_R,
        VM_S_GLYPH_A, VM_S_ALTERNATE, VM_S_PULL,
+       /* PAD-1666: the prompts' words in the buttons' places (left, Action, right) for chase, thrust and boss */
+       VM_S_UP, VM_S_DOWN, VM_S_SHOOT, VM_S_THRUST, VM_S_MOVE,
        VM_S_COUNT };
 
 /* ---- events for the pinball side, and the triggers sounds are cued on ---- */
@@ -181,7 +205,8 @@ typedef struct { int32_t shape, x, y, w, h; } vm_hitbox;  /* shape -1 none, 0 bo
 typedef struct { int32_t atlas, w, h, cols, frames, sx0, sy0, ax, ay, texel; vm_hitbox hit; } vm_picture;
 typedef struct { int32_t fps, loop, first, count; } vm_anim;
 typedef struct { int32_t type, start, min, max, drain; } vm_value;
-typedef struct { int32_t picture, anim, scale, team, health, points, blend, depth, mover, counter; vm_hitbox hit; } vm_kind;
+typedef struct { int32_t picture, anim, scale, team, health, points, blend, depth, mover, counter; vm_hitbox hit;
+                 int32_t trail, trail_every; } vm_kind;   /* trail: an emitter it leaves behind every trail_every steps */
 typedef struct { int32_t type, speed, dir, path0, npath, easing, loop, target, turn, radius; } vm_mover;
 typedef struct { int32_t x, y, cum; } vm_pathpt;
 typedef struct { int32_t kind, title, objective, length, music, bg0, nbg, place0, nplace,
@@ -203,16 +228,37 @@ typedef struct { int32_t when, value, of_kind, of_value; } vm_cond;
 typedef struct { int32_t x, y, r, hits, open, closed, offset; } vm_weakpt;
 typedef struct { int32_t kind, every, aim; } vm_attack;
 typedef struct { int32_t type, a, next, lost, tries, skippable; } vm_card;
-typedef struct { int32_t part, x, y, w, h, value, look, font, colour, accent, text, phases; } vm_hud;
+typedef struct { int32_t from, to, colour; } vm_zone;   /* 0..1 of a bar, 16.16 */
+typedef struct {
+    int32_t part, x, y, w, h, value, look, font, colour, accent, text, phases;
+    int32_t align, outline, shadow, gradient;   /* text: colours, 0 = none; gradient is the bottom colour */
+    int32_t danger, low;                         /* the colour it turns (and pulses) at or under `low` (16.16 of full) */
+    vm_zone zone[VM_MAX_ZONES];                  /* a bar's danger zones; colour 0 = unused */
+    int32_t count_up;                            /* steps a number takes to catch up, 0 = at once */
+    int32_t pop;                                 /* 1: a number that changed pops */
+    int32_t on;                                  /* a pop-up's happenings: 1 << VM_ON_* */
+    int32_t rise, life;                          /* a pop-up rises `rise` px (16.16) over `life` steps */
+    int32_t picture;                             /* pips, hearts, lives: frame 0 full, frame 1 empty; -1 drawn */
+} vm_hud;
+typedef struct {
+    int32_t count, speed_lo, speed_hi, dir, spread;   /* px a step 16.16; degrees 16.16 */
+    int32_t life, size0, size1, gravity, drag;        /* steps; px 16.16; px a step a step; kept a step 16.16 */
+    int32_t col0, col1, blend, picture, layers, stretch;  /* layers 1..3: a soft glow; stretch: a streak along its speed */
+} vm_emitter;
 typedef struct { int32_t on, sound, duck; } vm_cue;
 typedef struct { int32_t at, button, hold; } vm_note;   /* rhythm: ms in the music; a run: at = place in it */
-typedef struct { int32_t adv, sx, sy, sw, sh; } vm_glyph;
-typedef struct { int32_t size, line_h, atlas, texel; vm_glyph g[VM_GLYPHS]; } vm_font;
+/* a glyph: its advance and where its box sits from the pen (stage px 16.16), its fill box, its outline box (sw 0:
+ * none baked), and its gradient ramp box (the fill's size). The outline box sits `ow` up and left of the fill. */
+typedef struct { int32_t adv, x, y, sx, sy, sw, sh, osx, osy, osw, osh, rsx, rsy; } vm_glyph;
+typedef struct { int32_t size, line_h, atlas, texel, ow; vm_glyph g[VM_GLYPHS]; } vm_font;
 typedef struct { int32_t off, len; } vm_str;
 
 typedef struct {
     int32_t sps, stage_w, stage_h, background, seed, style, transition, skip_clips,
             speed_step_pct, start_card, nsounds, nclips, callout_font, title_font;
+    int32_t burst[VM_BURST_COUNT];   /* the emitter each happening throws, -1 none */
+    int32_t shake_pct, hitstop_steps, trans_steps, crt_alpha, combo_steps, combo_every, combo_max;
+    int32_t nemit;
     int32_t nstr, nfont, npic, nanim, nframe, nvalue, nkind, nmover, npath, nphase, nlayer,
             nplace, nspawn, ncond, nsettings, nweak, natk, ncard, nhud, ncue, ntrack, nkey, ncurve, ntsnd, nnote;
     char strbytes[VM_MAX_STRBYTES];
@@ -236,6 +282,7 @@ typedef struct {
     vm_card card[VM_MAX_CARDS];
     vm_hud hud[VM_MAX_HUD];
     vm_cue cue[VM_MAX_CUES];
+    vm_emitter emit[VM_MAX_EMITTERS];
     vm_track track[VM_MAX_TRACKS];
     vm_key key[VM_MAX_KEYS];
     vm_curve curve[VM_MAX_CURVES];
@@ -254,13 +301,15 @@ typedef struct {
     int32_t heading;             /* 16.16 degrees: straight and home movers */
     int32_t target;              /* thing slot a homer chases, -1 none */
     int32_t role;                /* 0, or VM_ROLE_* */
+    int32_t squash;              /* steps of squash and stretch left */
     int32_t place;               /* PAD-1664: the phase's place it was put on the stage from, or -1 (spawned) */
     int32_t alpha;               /* 0..255, its tracks' own */
     int32_t tint;                /* 0xRRGGBBAA, its tracks' own; -1 (0xFFFFFFFF) none */
     int32_t keyed;               /* 1: a motion track places it, and it is not lost off the stage */
 } vm_thing;
 enum { VM_ROLE_NONE, VM_ROLE_PLAYER, VM_ROLE_BOSS, VM_ROLE_SIGHT };
-typedef struct { int32_t alive, x, y, vx, vy, life, colour; } vm_particle;
+typedef struct { int32_t alive, x, y, vx, vy, life, life0, em; } vm_particle;
+typedef struct { int32_t alive, hud, x, y, t, n; } vm_popup;
 
 enum { VM_ST_IDLE, VM_ST_CLIP, VM_ST_TITLE, VM_ST_PLAY, VM_ST_OUTRO, VM_ST_DONE };
 
@@ -285,7 +334,12 @@ typedef struct vm_engine {
     int32_t kills_all, pickups_all, hits, misses, shots, boss_down, goal_hit, crashed, phase_result;
     int32_t weak_hits[VM_MAX_WEAKPTS], stage_no;
     int32_t alt_last, alt_half, rival;
-    int32_t combo, combo_t, hitstop, shake, shake_x, shake_y, flash_a, flash_col;
+    int32_t combo, combo_t, mult, hitstop, shake, shake_x, shake_y, flash_a, flash_col;
+    int32_t hud_n[VM_MAX_HUD], hud_t[VM_MAX_HUD], hud_pop[VM_MAX_HUD];   /* the number each part shows (counting
+                                     up to hud_t, its target) and the steps left of its pop */
+    vm_popup pop[VM_MAX_POPUPS];
+    int32_t editing;                 /* vm_edit_still's: the HUD parts' boxes are worked out (never on a machine) */
+    int32_t hud_box[VM_MAX_HUD][5];  /* drawn, x0, y0, x1, y1 (stage px 16.16) of each part in the editor's still */
     int32_t callout, callout_t;      /* a string shown big, steps left */
     int32_t music, music_fade;       /* the music bed playing (-1 none) and the steps it fades out over */
     int32_t spawned[VM_MAX_SPAWNS];
@@ -336,13 +390,17 @@ int vm_check(const vm_engine *e);
 /* 1 when boss weak point i is open this step */
 int vm_weak_open(const vm_engine *e, int32_t i);
 /* the editor's still (PAD-1661): phase `phase` as its first step leaves it, past the opening transition, with
- * the title card when flags & 1. Builds the draw list and steps nothing; play state is the phase's start.
+ * the title card when flags & 1; flags & 2 (PAD-1666): every HUD part shown with sample numbers (a score, a combo
+ * and its multiplier, the prompts, each pop-up at its own place) and their boxes in e->hud_box. Builds the draw list and steps nothing; play state is the phase's start.
  * Never called on a machine. 0 when there is no such phase. */
 int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags);
 /* the host's calibration (PAD-1663): its sound is heard `ms` after the step that cued it (negative: early). A
  * rhythm phase judges presses and draws its notes against the music as heard. Kept across vm_start; a replay must
  * set the same value to end on the same hash. */
 void vm_set_audio_offset(vm_engine *e, int32_t ms);
+/* PAD-1666, the editor's particle preview: after vm_edit_still, emitter `em` bursts at (x, y) (stage px 16.16)
+ * and runs `steps` steps by the engine's own rules, drawn over the still. Never called on a machine. */
+int vm_edit_burst(vm_engine *e, int32_t em, int32_t x, int32_t y, int32_t steps, int32_t flags);
 /* the editor's timeline (PAD-1664): scrubbing is replaying. vm_edit_seek_begin puts phase `phase` at the first step
  * of its play exactly as starting on its card and pressing nothing for the title card's 90 steps leaves it;
  * vm_edit_seek_step plays one step of it with no button held (and, with VM_SEEK_ENDLESS, never ends the phase, so

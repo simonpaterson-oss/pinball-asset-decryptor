@@ -1,5 +1,5 @@
 {
-  "format": 3,
+  "format": 4,
   "kind": "pad-video-mode",
   "id": "night-harbour",
   "title": "Night Harbour",
@@ -253,6 +253,25 @@
         "file": "clips/lost.mp4",
         "skippable": true
       }
+    ],
+    "particles": [
+      {
+        "id": "wake",
+        "preset": "smoke",
+        "count": 2,
+        "speed": [
+          10,
+          40
+        ],
+        "direction": 180,
+        "spread": 40,
+        "life_s": 0.9,
+        "size": 8,
+        "size_end": 30,
+        "colour": "#d8e6f0a0",
+        "colour_end": "#5a708000",
+        "gravity": -10
+      }
     ]
   },
   "values": [
@@ -279,7 +298,11 @@
       "animation": "wake",
       "team": "player",
       "health": 6,
-      "depth": 10
+      "depth": 10,
+      "trail": {
+        "particles": "wake",
+        "every_s": 0.08
+      }
     },
     {
       "id": "player_bolt",
@@ -664,8 +687,10 @@
       "y": 22,
       "w": 180,
       "h": 22,
-      "look": "pips",
-      "colour": "#5ee07a"
+      "look": "hearts",
+      "colour": "#e8202a",
+      "danger": "#e8202a",
+      "low": 0.34
     },
     {
       "id": "progress",
@@ -682,7 +707,24 @@
       "x": 1100,
       "y": 18,
       "font": "hud",
-      "colour": "#f2c14e"
+      "colour": "#ffe14d",
+      "outline": "#000000",
+      "shadow": "#000000a0",
+      "gradient": "#ff7a1a",
+      "pop": true
+    },
+    {
+      "id": "mult",
+      "part": "multiplier",
+      "x": 1100,
+      "y": 52,
+      "font": "hud",
+      "text": "x{n} BONUS",
+      "colour": "#ffe14d",
+      "outline": "#000000",
+      "shadow": "#000000a0",
+      "gradient": "#ff7a1a",
+      "pop": true
     },
     {
       "id": "score",
@@ -690,7 +732,12 @@
       "x": 1332,
       "y": 18,
       "font": "hud",
-      "colour": "#ffffff"
+      "colour": "#ffe14d",
+      "outline": "#000000",
+      "shadow": "#000000a0",
+      "gradient": "#ff7a1a",
+      "count_up": 0.5,
+      "pop": true
     },
     {
       "id": "charge_bar",
@@ -705,6 +752,13 @@
       "accent": "#f0705f",
       "phases": [
         "charge"
+      ],
+      "zones": [
+        {
+          "from": 0.0,
+          "to": 0.25,
+          "colour": "#f0705f"
+        }
       ]
     },
     {
@@ -714,7 +768,12 @@
       "y": 60,
       "value": "crates",
       "font": "hud",
-      "text": "CRATES {n}"
+      "text": "CRATES {n}",
+      "colour": "#ffe14d",
+      "outline": "#000000",
+      "shadow": "#000000a0",
+      "count_up": 0.5,
+      "pop": true
     },
     {
       "id": "prompts",
@@ -723,7 +782,11 @@
       "y": 728,
       "w": 1360,
       "h": 40,
-      "look": "glyphs"
+      "look": "glyphs",
+      "colour": "#ffe14d",
+      "outline": "#000000",
+      "shadow": "#000000a0",
+      "accent": "#ffffff"
     },
     {
       "id": "callout",
@@ -731,8 +794,28 @@
       "x": 680,
       "y": 200,
       "font": "big",
-      "colour": "#f2c14e",
-      "accent": "#1b1d1f"
+      "colour": "#ffe14d",
+      "outline": "#000000",
+      "shadow": "#000000a0",
+      "gradient": "#ff7a1a"
+    },
+    {
+      "id": "popups",
+      "part": "popup",
+      "x": 680,
+      "y": 360,
+      "font": "hud",
+      "text": "+{n}",
+      "on": [
+        "kill",
+        "pickup",
+        "hit"
+      ],
+      "colour": "#ffffff",
+      "outline": "#000000",
+      "shadow": "#000000a0",
+      "rise": 50,
+      "life_s": 0.7
     }
   ],
   "cues": [
@@ -759,13 +842,30 @@
     }
   ],
   "style": {
-    "preset": "comic",
     "shake": true,
+    "shake_amount": 1.0,
     "flash": true,
     "particles": true,
+    "trails": true,
     "hit_stop": true,
+    "hit_stop_frames": 4,
+    "squash": true,
+    "blink": true,
+    "popups": true,
+    "count_up": true,
+    "pulse": true,
     "crt": false,
-    "transition": "white_flash"
+    "transition": "iris",
+    "transition_s": 0.35,
+    "bursts": {
+      "kill": "spark",
+      "hurt": "debris",
+      "pickup": "glow",
+      "hit": "spark",
+      "fire": "none",
+      "boss": "debris"
+    },
+    "preset": "comic"
   },
   "pays": {
     "multiplier_in": true,
@@ -842,5 +942,10 @@
   "editor": {
     "zoom": "fit",
     "grid": 8
+  },
+  "combo": {
+    "window_s": 1.5,
+    "every": 4,
+    "max": 4
   }
 }

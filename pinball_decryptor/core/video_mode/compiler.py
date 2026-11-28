@@ -19,13 +19,16 @@ import os
 import struct
 
 from . import document
+from . import feel
 from . import sound as SND
 
 ONE = 65536
 SPS = 60
 NONE = -0x80000000
 PACK_MAGIC = 0x31504D56
-PACK_VERSION = 3   # 2 (PAD-1667): a phase's music fade, a cue's fade; 3 (PAD-1663): the notes table, after PAD-1664's timeline tables
+PACK_VERSION = 4   # 2 (PAD-1667): a phase's music fade, a cue's fade; 3 (PAD-1663): the notes table, after
+                   # PAD-1664's timeline tables; 4 (PAD-1666): the HUD's looks and text styles, fonts' outline and
+                   # gradient glyphs, particles (after the notes), the feel
 END_MAGIC = 0x21444E45
 FONT_ATLAS_BASE = 1000      # placeholder glyph atlases sit after the pictures' (PAD-1658 packs both)
 GLYPHS = 95
@@ -40,7 +43,8 @@ WHENS = ["time_up", "survive_s", "score", "kills", "pickups", "goal", "health_go
          "boss_down", "hits", "accuracy", "ammo_out", "landed", "crashed", "cashed_out", "busted"]
 CARDS = ["clip", "phase", "end"]
 HUD_PARTS = ["health", "meter", "score", "combo", "timer", "lives", "progress", "prompts",
-             "callout", "counter", "text"]
+             "callout", "counter", "text", "multiplier", "popup"]
+ALIGNS = ["auto", "left", "centre", "right"]
 LOOKS = ["default", "bar", "pips", "hearts", "ring", "number", "glyphs"]
 TRANSITIONS = ["cut", "fade", "white_flash", "wipe", "iris"]
 BUTTONS = ["left", "right", "action"]
@@ -53,7 +57,9 @@ FIXED_STRINGS = ["CLEAR!", "FAILED", "TRY AGAIN", "< STEER >", "ACTION  FIRE", "
                  # the button kinds (PAD-1663)
                  "PERFECT", "GOOD", "EARLY", "LATE", "MISS", "SHAKE IT OFF!", "DODGE!", "BLOCK!",
                  "TOO EARLY", "HIT!", "DODGED", "BLOCKED", "WATCH", "GO!", "L", "R",
-                 "A", "LEFT  RIGHT  LEFT  RIGHT", "MASH TO PULL"]
+                 "A", "LEFT  RIGHT  LEFT  RIGHT", "MASH TO PULL",
+                 # the prompts' words in the buttons' places (PAD-1666)
+                 "UP", "DOWN", "FIRE", "THRUST", "MOVE"]
 PLAYED_KINDS = {"chase", "thrust", "boss", "mash", "alternate", "custom",
                 "tug", "rhythm", "sequence", "dodge", "shield"}
 UNPLAYED_WHENS = {"landed", "cashed_out", "busted"}
@@ -65,7 +71,7 @@ LIMITS = {
     "strings": 256, "string_bytes": 8192, "fonts": 8, "pictures": 96, "animations": 192,
     "frames": 2048, "values": 48, "things": 96, "movers": 192, "path_points": 1024,
     "phases": 32, "layers": 128, "places": 1024, "spawns": 256, "conditions": 256,
-    "weak_points": 64, "attacks": 64, "cards": 96, "hud": 64, "cues": 64, "sounds": 64,
+    "weak_points": 64, "attacks": 64, "cards": 96, "hud": 64, "cues": 64, "particles": 20, "sounds": 64,
     "clips": 32, "tracks": 256, "keys": 4096, "curves": 128, "timed_sounds": 256,
     "notes": 2048, "run": 48,
 }
@@ -77,7 +83,7 @@ LIMIT_WORDS = {
     "movers": "movers", "path_points": "path points", "phases": "phases",
     "layers": "background layers", "places": "placed things", "spawns": "spawns",
     "conditions": "win and lose conditions", "weak_points": "weak points", "attacks": "boss attacks",
-    "cards": "storyboard cards", "hud": "HUD parts", "cues": "sound cues", "sounds": "sounds",
+    "cards": "storyboard cards", "hud": "HUD parts", "particles": "particle kinds", "cues": "sound cues", "sounds": "sounds",
     "clips": "clips", "tracks": "timeline tracks", "keys": "keyframes", "curves": "easing curves of their own",
     "timed_sounds": "sounds on the timeline",
     "notes": "rhythm notes and button runs", "run": "buttons in one run",
@@ -188,10 +194,10 @@ def placeholder_font(size, index):
     for i in range(GLYPHS):
         c = 32 + i
         if c == 32:
-            glyphs.append((adv, 0, 0, 0, 0))
+            glyphs.append((adv, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, -1, -1))
         else:
-            glyphs.append((adv, (i % 16) * cell_w, (i // 16) * size, cell_w, size))
-    return {"size": size, "line_h": fx(size * 1.25), "atlas": FONT_ATLAS_BASE + index, "texel": ONE,
+            glyphs.append((adv, 0, 0, (i % 16) * cell_w, (i // 16) * size, cell_w, size, -1, -1, 0, 0, -1, -1))
+    return {"size": size, "line_h": fx(size * 1.25), "atlas": FONT_ATLAS_BASE + index, "texel": ONE, "ow": 0,
             "glyphs": glyphs}
 
 
@@ -271,6 +277,7 @@ class _Compiler:
         fonts = self.build_fonts()
         pics, anims, frames = self.build_pictures()
         values = self.build_values()
+        self.build_emitters()
         kinds = self.build_kinds()
         self.chart = []
         phases, layers, places, spawns, conds, settings, weak, atk = self.build_phases()
@@ -287,9 +294,7 @@ class _Compiler:
             return Compiled(problems=self.problems, notes=self.notes)
 
         st = d.get("style", {})
-        style = (1 if st.get("shake", True) else 0) | (2 if st.get("flash", True) else 0) \
-            | (4 if st.get("particles", True) else 0) | (8 if st.get("hit_stop", False) else 0) \
-            | (16 if st.get("crt", False) else 0)
+        style = feel.style_bits(st)
         stage = d.get("stage", {})
         p = _Pack()
         p.put(PACK_MAGIC, PACK_VERSION, 0)
@@ -298,6 +303,8 @@ class _Compiler:
               SKIP_CLIPS.index(d.get("entry", {}).get("skip_clips", "none")),
               int(d.get("levels", {}).get("speed_step_pct", 0)), self.card_ix[flow["start"]],
               len(self.sound_ix), len(self.clip_ix), callout_font, title_font)
+        p.put(*self.bursts)
+        p.put(*(feel.style_numbers(st) + feel.combo_numbers(d)))
         p.put(len(self.strings))
         for s in self.strings:
             b = s.encode("utf-8")
@@ -307,11 +314,12 @@ class _Compiler:
                 p.put(struct.unpack("<I", b[i:i + 4])[0])
         p.put(len(fonts))
         for f in fonts:
-            p.put(f["size"], f["line_h"], f["atlas"], f["texel"])
+            p.put(f["size"], f["line_h"], f["atlas"], f["texel"], f.get("ow", 0))
             for g in f["glyphs"]:
                 p.put(*g)
         for t in (pics, anims, frames, values, kinds, self.movers, self.path, phases, layers, places,
-                  spawns, conds, settings, weak, atk, cards, hud, cues, self.tracks, self.keys, self.curves, self.tsnds, self.chart):
+                  spawns, conds, settings, weak, atk, cards, hud, cues, self.tracks, self.keys, self.curves, self.tsnds,
+                  self.chart, self.emitters):
             p.table(t)
         p.put(END_MAGIC)
         p.w[2] = len(p.w)
@@ -319,7 +327,8 @@ class _Compiler:
         names = {"things": [t["id"] for t in self.things], "phases": [ph["id"] for ph in self.phases],
                  "sounds": list(self.sound_ix), "clips": list(self.clip_ix),
                  "pictures": [pc["id"] for pc in self.pics], "values": [v["id"] for v in self.values],
-                 "fonts": fonts, "place0": [ph[7] for ph in phases], "track_keys": self.track_keys}
+                 "fonts": fonts, "place0": [ph[7] for ph in phases], "track_keys": self.track_keys,
+                 "emitters": sorted(self.emit_ix, key=self.emit_ix.get)}
         return Compiled(pack, [], self.notes, names)
 
     def build_fonts(self):
@@ -434,8 +443,44 @@ class _Compiler:
             out.append([self.pic_ix[pc], anim, fx(t.get("scale", 1)), TEAMS.index(t.get("team", "scenery")),
                         int(t.get("health", 0)), int(t.get("points", 0)),
                         1 if t.get("blend") == "add" else 0, int(t.get("depth", 0)),
-                        self.mover(t.get("mover"), ["things", i, "mover"]), counter] + self.hitbox(t.get("hitbox")))
+                        self.mover(t.get("mover"), ["things", i, "mover"]), counter] + self.hitbox(t.get("hitbox"))
+                       + self.trail(t.get("trail"), ["things", i, "trail"]))
         return out
+
+    # ---- the feel (PAD-1666) ----
+    def emitter(self, name, where):
+        """The emitter a burst or trail names: a particle of the document's, else a preset; -1 for none."""
+        if not name or name == "none":
+            return -1
+        if name in self.emit_ix:
+            return self.emit_ix[name]
+        spec = self.particles.get(name)
+        if spec is None and name not in feel.PARTICLE_PRESETS:
+            self.problem(where, "names a particle the document does not have: %s" % name)
+            return -1
+        p = feel.particle(spec if spec is not None else name)
+        pic = self.pic_ix.get(p.get("picture"), -1) if p.get("picture") else -1
+        if p.get("picture") and pic < 0:
+            self.problem(where, "the particle %s names a picture the document does not have: %s" % (name, p["picture"]))
+        self.emitters.append(feel.emitter_row(p, pic))
+        self.emit_ix[name] = len(self.emitters) - 1
+        return self.emit_ix[name]
+
+    def build_emitters(self):
+        self.particles = {p["id"]: p for p in (self.doc.get("assets") or {}).get("particles") or []}
+        self.emitters, self.emit_ix = [], {}
+        for pid in self.particles:      # the document's own first, in order, so the editor's index is theirs
+            self.emitter(pid, ["assets", "particles"])
+        for name in feel.PRESET_NAMES:  # then every preset, so the editor can preview any (16 words each)
+            self.emitter(name, ["style"])
+        bursts = dict(feel.DEFAULT_BURSTS)
+        bursts.update((self.doc.get("style") or {}).get("bursts") or {})
+        self.bursts = [self.emitter(bursts.get(k), ["style", "bursts", k]) for k in feel.BURSTS]
+
+    def trail(self, tr, where):
+        if not tr or not tr.get("particles"):
+            return [-1, 0]
+        return [self.emitter(tr["particles"], where), max(1, min(600, steps(tr.get("every_s", 0.1)) or 1))]
 
     def lane_band(self, ph):
         """The chase's rows: from the lowest background layer's top to the stage's bottom."""
@@ -731,7 +776,7 @@ class _Compiler:
         out = []
         callout_font = title_font = -1
         sizes = [f["size"] for f in fonts]
-        for h in self.doc.get("hud", []):
+        for n, h in enumerate(self.doc.get("hud", [])):
             mask = 0
             for pid in h.get("phases", []):
                 if pid in self.phase_ix:
@@ -739,10 +784,31 @@ class _Compiler:
             font = self.font_ix.get(h.get("font"), -1)
             if h["part"] == "callout" and font >= 0:
                 callout_font = font
+            zones = []
+            for z in (h.get("zones") or [])[:4]:
+                a, b = sorted((float(z.get("from", 0)), float(z.get("to", 1))))
+                zones += [fx(max(0.0, min(1.0, a))), fx(max(0.0, min(1.0, b))), colour(z.get("colour"), 0xF0705FFF)]
+            zones += [0, 0, 0] * (4 - len(zones) // 3)
+            on = 0
+            for ev in h.get("on") or ([] if h["part"] != "popup" else ["kill"]):
+                if ev in CUE_ON:
+                    on |= 1 << CUE_ON.index(ev)
+            pic = self.pic_ix.get(h.get("picture"), -1) if h.get("picture") else -1
+            if h.get("picture") and pic < 0:
+                self.problem(["hud", n, "picture"], "names a picture the document does not have: %s" % h["picture"])
+            low = h.get("low", 0.34 if h.get("danger") else 0)
             out.append([HUD_PARTS.index(h["part"]), fx(h.get("x", 0)), fx(h.get("y", 0)), fx(h.get("w", 0)), fx(h.get("h", 0)),
                         self.value_ix.get(h.get("value"), -1), LOOKS.index(h.get("look", "default")), font,
                         colour(h.get("colour")) if h.get("colour") else 0, colour(h.get("accent")) if h.get("accent") else 0,
-                        self.string(h["text"]) if h.get("text") else -1, mask])
+                        self.string(h["text"]) if h.get("text") else -1, mask,
+                        ALIGNS.index(h.get("align", "auto")),
+                        colour(h.get("outline")) if h.get("outline") else 0,
+                        colour(h.get("shadow")) if h.get("shadow") else 0,
+                        colour(h.get("gradient")) if h.get("gradient") else 0,
+                        colour(h.get("danger")) if h.get("danger") else 0, fx(max(0.0, min(1.0, float(low)))),
+                        ] + zones + [
+                        max(0, min(600, steps(h.get("count_up", 0)))), 1 if h.get("pop") else 0, on,
+                        fx(h.get("rise", 60)), max(0, min(600, steps(h.get("life_s", 0.8)))), pic])
         if callout_font < 0:
             callout_font = sizes.index(max(sizes))
         title_font = sizes.index(min(sizes))
@@ -764,7 +830,7 @@ class _Compiler:
                 "places": len(places), "spawns": len(spawns), "conditions": len(conds),
                 "weak_points": len(weak), "attacks": len(atk), "cards": len(cards), "hud": len(hud),
                 "cues": len(cues), "sounds": len(self.sound_ix), "clips": len(self.clip_ix),
-                "notes": len(self.chart)}
+                "notes": len(self.chart), "particles": len(self.emitters)}
         for k, n in have.items():
             if n > LIMITS[k]:
                 self.problems.append("the document has %d %s; the engine holds up to %d" % (n, LIMIT_WORDS[k], LIMITS[k]))

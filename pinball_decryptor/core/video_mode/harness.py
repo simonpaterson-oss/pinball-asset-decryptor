@@ -117,6 +117,7 @@ def picture(words, names, fonts):
     grid = [[" "] * COLS for _ in range(ROWS)]
     letters = {}
     texts = {}
+    seen = []
     for e in entries(words):
         if e["tag"] == "box":
             continue
@@ -126,7 +127,14 @@ def picture(words, names, fonts):
             if not f:
                 continue
             cw = max(1, int(round(f["size"] * 0.6)))
+            if e["sh"] != f["size"]:      # PAD-1666: a gradient's lower half, not a letter of its own
+                continue
             ch = chr(32 + (e["sx"] // cw) + 16 * (e["sy"] // f["size"]))
+            # a letter's shadow and outline copies sit a few px from it: read the letter once
+            near = min(6.0, cw * e["scale"] / 2)
+            if any(c == ch and abs(x - e["x"]) <= near and abs(y - e["y"]) <= 6 for x, y, c in seen):
+                continue
+            seen.append((e["x"], e["y"], ch))
             texts.setdefault(round(e["y"]), []).append((e["x"], ch, cw * e["scale"]))
             continue
         name = names["pictures"][e["atlas"]] if e["atlas"] < len(names["pictures"]) else "?"

@@ -342,3 +342,41 @@ body.vme-resizing, body.vme-scrubbing { cursor: ew-resize !important; user-selec
 .vmp-cal-dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--line, #2c313a); transition: background .08s; }
 .vmp-cal-dots i.on { background: var(--ink-3, #7b8494); }
 .vmp-cal-dots i.now { background: var(--accent, #e5483b); }
+
+
+/* ---- PAD-1666: the HUD and the look and feel ---------------------------------------------------------------- */
+.vme-lay .team.hud, .vme-dock-h .team.hud { background: var(--accent); border-radius: 2px; transform: rotate(45deg) scale(.8); }
+.vme-lay .d { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+.vme-hud-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.vme-hud-tile { height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2);
+  font: 500 12px var(--sans); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab;
+  transition: background 120ms cubic-bezier(.2,.75,.25,1), border-color 120ms cubic-bezier(.2,.75,.25,1); }
+.vme-hud-tile:hover { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
+.vme-hud-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vme-hud-tile.vme-ghost { position: fixed; z-index: 1000; pointer-events: none; opacity: .9; }
+.vme-col-pair { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.vme-col-pair .vme-colour { flex: 1 1 auto; }
+.vme-none { flex: 1 1 auto; height: 28px; display: flex; align-items: center; padding: 0 8px; border-radius: 6px; border: 1px dashed var(--line-2);
+  color: var(--ink-3); font-size: 12px; }
+.vme-colour.sm { width: 36px; flex: 0 0 36px; }
+.vme-zone { display: grid; grid-template-columns: 1fr 1fr 36px 24px; gap: 6px; align-items: center; }
+.vme-checks { display: flex; flex-direction: column; gap: 4px; }
+.vme-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.vme-preset { display: flex; align-items: center; justify-content: space-between; gap: 6px; height: 36px; padding: 0 10px; border-radius: 6px;
+  border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); font: 500 12px var(--sans); cursor: pointer;
+  transition: background 120ms cubic-bezier(.2,.75,.25,1), border-color 120ms cubic-bezier(.2,.75,.25,1); }
+.vme-preset:hover { background: var(--panel-2); }
+.vme-preset.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.vme-preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vme-budget { height: 8px; border-radius: 999px; background: var(--panel-3); overflow: hidden; }
+.vme-budget i { display: block; height: 100%; border-radius: 999px; background: var(--ok); transition: width 180ms cubic-bezier(.2,.75,.25,1); }
+.vme-budget.warn i { background: var(--warn); }
+.vme-budget.err i { background: var(--err); }
+.vme-fx { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+.vme-fx .chk { flex: 1 1 auto; min-width: 0; }
+.vme-fx .vme-nf { flex: 0 0 120px; }
+.vme-cost { font-variant-numeric: tabular-nums; }
+.vme-cost.warn { color: var(--warn); }
+.vme-pchip { cursor: pointer; }
+.vme-pchip.on { background: var(--accent-soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+@media (prefers-reduced-motion: reduce) { .vme-hud-tile, .vme-preset, .vme-budget i { transition: none; } }

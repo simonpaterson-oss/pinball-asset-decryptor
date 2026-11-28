@@ -158,36 +158,29 @@ def _font_file(mode_dir, font, resolve):
 
 
 def bake_fonts(mode_dir, doc, resolve=None, scale=1.0):
-    """Each font of the document as glyph items and its metrics. ``resolve(face)`` gives a
-    font file for a ``card:<name>`` face; with none, a stand-in face of the same size is
-    baked and the font says ``stand_in`` (its cost is the real one's to within the
-    glyph shapes)."""
-    from PIL import Image, ImageDraw, ImageFont
+    """Each font of the document as glyph items and its metrics (PAD-1666: fonts.py bakes them, for the app and
+    the machine alike). ``resolve(face)`` gives a font file or a card font for a ``card:<name>`` face (absent:
+    the game's own fonts in the mode's project); with neither, a stand-in face of the same size is baked and the
+    font says ``stand_in`` (its cost is the real one's to within the glyph shapes). Each glyph is three items:
+    its fill (index the code point), its outline (+1000) and its gradient ramp (+2000)."""
+    from . import fonts as F
     items, fonts, problems = [], {}, []
     for f in (doc.get("assets") or {}).get("fonts") or []:
-        fid, size = f.get("id"), max(4, int(round(float(f.get("size") or 24) * scale)))
-        path = _font_file(mode_dir, f, resolve)
-        stand_in = False
-        try:
-            font = ImageFont.truetype(path, size) if path else None
-        except OSError:
-            problems.append("Font \"%s\": %s is not a font file this app can read." % (fid, os.path.basename(path)))
-            font = None
-        if font is None:
-            font, stand_in = ImageFont.load_default(size), True
-        ascent, descent = font.getmetrics()
-        glyphs = {}
-        for ch in GLYPHS:
-            l, t, r, b = font.getbbox(ch)
-            adv = font.getlength(ch)
-            glyphs[ord(ch)] = {"adv": round(adv, 2), "x": l, "y": t}
-            if r <= l or b <= t:
-                continue
-            img = Image.new("RGBA", (r - l, b - t), (255, 255, 255, 0))
-            ImageDraw.Draw(img).text((-l, -t), ch, font=font, fill=(255, 255, 255, 255))
-            items.append(Item("font:%s" % fid, ord(ch), img, 0, 0, r - l, b - t, (0.0, 0.0)))
-        fonts[fid] = {"size": size, "ascent": ascent, "descent": descent, "line": ascent + descent,
-                      "stand_in": stand_in, "glyphs": glyphs}
+        if f.get("file") and mode_dir:
+            path = os.path.join(mode_dir, *str(f["file"]).split("/"))
+            if os.path.isfile(path):
+                try:
+                    from PIL import ImageFont
+                    ImageFont.truetype(path, 12)
+                except OSError:
+                    problems.append("Font \"%s\": %s is not a font file this app can read." % (f.get("id"), os.path.basename(path)))
+    baked = F.bake(mode_dir, doc, resolve, scale)
+    for owner, index, img in F.items(baked):
+        items.append(Item(owner, index, img, 0, 0, img.width, img.height, (0.0, 0.0)))
+    for fid, bk in baked.items():
+        fonts[fid] = {"size": bk.size, "line": bk.line, "outline": bk.ow, "stand_in": bk.stand_in, "source": bk.source,
+                      "glyphs": {c: {"adv": round(g["adv"], 2), "x": round(g["x"], 2), "y": round(g["y"], 2)}
+                                 for c, g in bk.glyphs.items()}}
     return items, fonts, problems
 
 
@@ -545,7 +538,11 @@ def manifest(pk, backend, files):
                                "sh": it.img.height}
         glyphs = {}
         for cp, gm in meta["glyphs"].items():
-            glyphs[str(cp)] = dict(gm, **g.get(cp, {}))
+            row = dict(gm, **g.get(cp, {}))
+            for off, key in ((1000, "outline"), (2000, "ramp")):     # PAD-1666: the glyph's outline and ramp
+                if cp + off in g:
+                    row[key] = g[cp + off]
+            glyphs[str(cp)] = row
         fonts[fid] = dict(meta, glyphs=glyphs)
     return {"format": 1, "backend": backend, "machine": pk.machine["key"], "extrude": EXTRUDE,
             "premultiplied": True, "texel_scale": round(1.0 / float(pk.machine["art_scale"]), 6),

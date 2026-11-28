@@ -5,7 +5,7 @@
       "kind": "mash",
       "inputs": "mash_win.inputs",
       "max": 20000,
-      "hash": "a3da6dc42f83d2e6",
+      "hash": "b512fc5e79f9420c",
       "steps": 228,
       "outcome": 1,
       "score": 0
@@ -14,7 +14,7 @@
       "kind": "mash",
       "inputs": "idle",
       "max": 12000,
-      "hash": "b9d92ed5ddf15be9",
+      "hash": "94658b1e11756a2a",
       "steps": 750,
       "outcome": 0,
       "score": 0
@@ -23,7 +23,7 @@
       "kind": "alternate",
       "inputs": "alternate_win.inputs",
       "max": 20000,
-      "hash": "5f3c4ff825fe8061",
+      "hash": "e6acc21b2cb5b8c0",
       "steps": 276,
       "outcome": 1,
       "score": 0
@@ -32,7 +32,7 @@
       "kind": "alternate",
       "inputs": "idle",
       "max": 12000,
-      "hash": "80dea5673b41a315",
+      "hash": "3b9e650794b744f2",
       "steps": 750,
       "outcome": 0,
       "score": 0
@@ -41,7 +41,7 @@
       "kind": "tug",
       "inputs": "tug_win.inputs",
       "max": 20000,
-      "hash": "3486b2d760b246ec",
+      "hash": "624bbd80d1918581",
       "steps": 700,
       "outcome": 1,
       "score": 0
@@ -50,7 +50,7 @@
       "kind": "tug",
       "inputs": "idle",
       "max": 12000,
-      "hash": "bb65af76f7bb69c6",
+      "hash": "c18242b7a4c5024f",
       "steps": 488,
       "outcome": 0,
       "score": 0
@@ -59,7 +59,7 @@
       "kind": "rhythm",
       "inputs": "rhythm_win.inputs",
       "max": 20000,
-      "hash": "70e01777648ae43f",
+      "hash": "8253d2ec193c7d52",
       "steps": 3067,
       "outcome": 1,
       "score": 21400
@@ -68,7 +68,7 @@
       "kind": "rhythm",
       "inputs": "idle",
       "max": 12000,
-      "hash": "6fde588c3409a017",
+      "hash": "ff5c47351739d94b",
       "steps": 1214,
       "outcome": 0,
       "score": 0
@@ -77,7 +77,7 @@
       "kind": "sequence",
       "inputs": "sequence_win.inputs",
       "max": 20000,
-      "hash": "3830f00817f0b9c4",
+      "hash": "d8dfd66738f14979",
       "steps": 708,
       "outcome": 1,
       "score": 2250
@@ -86,7 +86,7 @@
       "kind": "sequence",
       "inputs": "idle",
       "max": 12000,
-      "hash": "1a5acbf4e4c96602",
+      "hash": "6eaf8cf5e9fd7074",
       "steps": 852,
       "outcome": 0,
       "score": 0
@@ -95,7 +95,7 @@
       "kind": "dodge",
       "inputs": "dodge_win.inputs",
       "max": 20000,
-      "hash": "e95d03c06098c406",
+      "hash": "961c6ed956aa4416",
       "steps": 978,
       "outcome": 1,
       "score": 1600
@@ -104,7 +104,7 @@
       "kind": "dodge",
       "inputs": "idle",
       "max": 12000,
-      "hash": "e92640c850bab609",
+      "hash": "133df376b97bc0ed",
       "steps": 529,
       "outcome": 0,
       "score": 0
@@ -113,7 +113,7 @@
       "kind": "shield",
       "inputs": "shield_win.inputs",
       "max": 20000,
-      "hash": "1393378b9abfbc96",
+      "hash": "d1f74c18a5b842ef",
       "steps": 1015,
       "outcome": 1,
       "score": 750
@@ -122,7 +122,7 @@
       "kind": "shield",
       "inputs": "idle",
       "max": 12000,
-      "hash": "5b4ed12ef61b92b0",
+      "hash": "8ba5787eee2c1be4",
       "steps": 492,
       "outcome": 0,
       "score": 0

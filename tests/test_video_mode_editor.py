@@ -397,7 +397,7 @@ def test_stage_300_is_made_by_its_script(tmp_path):
 
 
 # ---- the page ------------------------------------------------------------------------------------------------
-@pytest.mark.parametrize("name", ["vmodes_edit.js", "vmodes_play.js", "vmodes.js"])
+@pytest.mark.parametrize("name", ["vmodes_edit.js", "vmodes_play.js", "vmodes.js", "vmodes_hud.js"])
 def test_browser_modules_parse(tmp_path, name):
     src = open(os.path.join(JS, name), encoding="utf-8").read()
     mod = tmp_path / (name[:-3] + ".mjs")

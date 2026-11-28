@@ -116,6 +116,21 @@ EXPORT(vmw_place_set) int32_t vmw_place_set(int32_t i, int32_t x, int32_t y, int
     p->x = x; p->y = y; p->scale = scale; p->turn = turn; p->depth = depth; p->hidden = hidden ? 1 : 0;
     return 1;
 }
+/* PAD-1666: HUD part i's place and size (stage px 16.16), rewritten live while the editor drags it */
+EXPORT(vmw_hud_set) int32_t vmw_hud_set(int32_t i, int32_t x, int32_t y, int32_t w, int32_t h)
+{
+    if (i < 0 || i >= E.doc.nhud || w < 0 || h < 0) return 0;
+    E.doc.hud[i].x = x; E.doc.hud[i].y = y; E.doc.hud[i].w = w; E.doc.hud[i].h = h;
+    return 1;
+}
+EXPORT(vmw_edit_burst) int32_t vmw_edit_burst(int32_t em, int32_t x, int32_t y, int32_t steps)
+{
+    return vm_edit_burst(&E, em, x, y, steps, 0);
+}
+EXPORT(vmw_emit_count) int32_t vmw_emit_count(void) { return E.doc.nemit; }
+/* after vmw_edit_still with flags & 2: each HUD part as drawn, drawn, x0, y0, x1, y1 (stage px 16.16), 5 words */
+EXPORT(vmw_hud_boxes_buf) int32_t *vmw_hud_boxes_buf(void) { return &E.hud_box[0][0]; }
+EXPORT(vmw_hud_count) int32_t vmw_hud_count(void) { return E.doc.nhud; }
 /* after vmw_edit_still: each placed thing of the phase as drawn (place j is live thing j, the phase's places spawn
  * first, in order): alive, hidden, x, y (its anchor), turn, then the frame's corners about the anchor x0, y0, x1, y1
  * (scaled, unturned), stage px 16.16; 9 words a place */

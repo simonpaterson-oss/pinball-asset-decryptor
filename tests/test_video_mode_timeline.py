@@ -79,16 +79,16 @@ def quads(words):
 def test_keyframes_document_and_the_format_3_fixture_check_clean():
     assert problems(doc_of()) == []
     assert problems(doc_of(os.path.join(DATA, "format_3.json"))) == []
-    assert document.FORMAT == 3 and doc_of()["format"] == 3
+    assert document.FORMAT >= 3 and doc_of()["format"] == document.FORMAT   # PAD-1666 took format 4
 
 
 @pytest.mark.parametrize("n", [1, 2])
 def test_an_older_file_gains_nothing_and_plays_the_same(n):
     old = te.load_json(os.path.join(DATA, "format_%d.json" % n))
     new = document.migrate(old)
-    assert new["format"] == 3 and all("tracks" not in p and "sound_track" not in p for p in new["phases"])
+    assert new["format"] == document.FORMAT and all("tracks" not in p and "sound_track" not in p for p in new["phases"])
     old2 = copy.deepcopy(old)
-    old2["format"] = 3
+    old2["format"] = document.FORMAT
     assert new == old2
 
 

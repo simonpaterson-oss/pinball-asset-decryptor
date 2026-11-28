@@ -169,6 +169,9 @@ def test_fixed_strings_match_the_engine():
         "PERFECT", "GOOD", "EARLY", "LATE", "MISS", "SHAKE", "DODGE", "BLOCK", "TOO_EARLY", "HIT", "DODGED",
         "BLOCKED", "WATCH", "GO", "GLYPH_L", "GLYPH_R", "GLYPH_A", "ALTERNATE", "PULL")]
     assert compiler.FIXED_STRINGS[k:k + 3] == ["PERFECT", "GOOD", "EARLY"]
+    k = names.index("VM_S_UP")          # the prompts' words in the buttons' places (PAD-1666)
+    assert names[k:k + 5] == ["VM_S_%s" % n for n in ("UP", "DOWN", "SHOOT", "THRUST", "MOVE")]
+    assert compiler.FIXED_STRINGS[k:k + 5] == ["UP", "DOWN", "FIRE", "THRUST", "MOVE"]
     assert len(compiler.FIXED_STRINGS) == len(header_enum("VM_S_CLEAR")) - 1
 
 
@@ -180,7 +183,7 @@ def test_compiler_limits_match_the_engine():
              "path_points": "PATHPTS", "phases": "PHASES", "layers": "LAYERS", "places": "PLACES",
              "spawns": "SPAWNS", "conditions": "CONDS", "weak_points": "WEAKPTS", "attacks": "ATTACKS",
              "cards": "CARDS", "hud": "HUD", "cues": "CUES", "sounds": "SOUNDS", "clips": "CLIPS",
-             "tracks": "TRACKS", "keys": "KEYS", "curves": "CURVES", "timed_sounds": "TSOUNDS"}
+             "particles": "EMITTERS", "tracks": "TRACKS", "keys": "KEYS", "curves": "CURVES", "timed_sounds": "TSOUNDS"}
     for py, c in pairs.items():
         assert compiler.LIMITS[py] == caps[c], py
     assert caps["SETTINGS"] >= compiler.LIMITS["phases"]

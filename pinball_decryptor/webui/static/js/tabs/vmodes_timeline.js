@@ -221,7 +221,7 @@ export class TimelineCtl {
     const ed = this.ed, e = ed.e;
     if (this.live && this.live.apply) this.live.apply(e);
     if (this.step > 0) e.seek(ed.ph, this.step, 2);
-    else e.editStill(ed.ph, ed.opts.title ? 1 : 0);
+    else e.editStill(ed.ph, (ed.opts.title ? 1 : 0) | 2);   // PAD-1666: every HUD part shown, with sample numbers
   }
   // -- keys --------------------------------------------------------------------------------------------------------------
   /** add keys at the playhead for the picked things: each of their tracks, or a position key when they have none */

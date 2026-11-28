@@ -7,8 +7,8 @@
       "seed": 1,
       "level": 0,
       "max": 200000,
-      "hash": "dcce8b6ae668bb35",
-      "steps": 3101,
+      "hash": "835c83afc22af898",
+      "steps": 3141,
       "outcome": 1,
       "score": 33000
     },
@@ -18,10 +18,10 @@
       "seed": 9,
       "level": 2,
       "max": 40000,
-      "hash": "e9d69439670a9313",
-      "steps": 1249,
+      "hash": "c4953c1e2be25510",
+      "steps": 1581,
       "outcome": 0,
-      "score": 1000
+      "score": 2000
     },
     "desk_300_random": {
       "doc": "tests/data/video_mode/desk_300.json",
@@ -29,10 +29,10 @@
       "seed": 4,
       "level": 0,
       "max": 6000,
-      "hash": "0b628718fee07068",
-      "steps": 1533,
+      "hash": "c2c29aa92d166c55",
+      "steps": 1849,
       "outcome": 0,
-      "score": 0
+      "score": 2000
     },
     "keyframes_idle": {
       "doc": "tests/data/video_mode/keyframes.json",
@@ -40,8 +40,8 @@
       "seed": 1,
       "level": 0,
       "max": 6000,
-      "hash": "222f9bd2fb9ac894",
-      "steps": 2639,
+      "hash": "fa3ca133a8452ab3",
+      "steps": 2664,
       "outcome": 0,
       "score": 0
     },
@@ -51,8 +51,8 @@
       "seed": 3,
       "level": 1,
       "max": 6000,
-      "hash": "573940c8fdfe5548",
-      "steps": 2640,
+      "hash": "088fe4a8c3b72f9a",
+      "steps": 2679,
       "outcome": 0,
       "score": 0
     }
