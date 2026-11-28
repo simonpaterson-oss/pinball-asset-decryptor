@@ -17,7 +17,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from pinball_decryptor.core import video_mode as vm  # noqa: E402
-from pinball_decryptor.core.video_mode import compiler, document, harness, sound as SND  # noqa: E402
+from pinball_decryptor.core.video_mode import compiler, harness, sound as SND  # noqa: E402
 
 EXAMPLE = os.path.join(ROOT, "pinball_decryptor", "core", "video_mode", "examples", "night_harbour.json")
 FIXTURES = os.path.join(ROOT, "tests", "data", "video_mode")

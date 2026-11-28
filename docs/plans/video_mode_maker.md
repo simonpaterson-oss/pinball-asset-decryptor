@@ -725,7 +725,7 @@ by the page. The cadence is rule 8: steps as wall time passes, at most 4 a frame
 Buttons: Left Shift / Right Shift / Space / Enter, a gamepad's LB / RB / A / Start (triggers too), and on-screen
 buttons. Start begins again when the play is over, or ends a clip (the host's `VM_IN_CLIP_DONE`); a clip with a
 file plays as video over the stage, one without stands 2 s as a card. Sounds go through Web Audio, off until turned
-on: `music` cues loop (from `loop_start_s`), effects play once and `duck_music` dips the music under them.
+on, by the machine's rules (section "Sound" below).
 
 Every play keeps its input word a step. **Replay** plays them again from the same card and seed and must end on the
 same draw list hash; **Save** keeps them as `<mode>/replays/<time>.inputs` with a `.json` (seed, card, steps, hash).
@@ -744,6 +744,55 @@ through Web Audio (Edge muted); the machine rate drew 29 frames a second at 60 s
 
 The Modes tab lists video modes with the rest (a Video pill; picking one opens it on the Video modes tab), and the
 New mode wizard has a fourth way, **Video mode**, that needs a project but no card.
+
+### Sound (PAD-1667)
+
+**One set of rules, written once** in `core/video_mode/sound.py` and followed by the player (Web Audio) and the
+machine (`pad_mode_assets.h`), so what the editor plays is what the machine plays:
+
+- **One music voice.** The machine's music is one carrier playing one bed at a time, so a music change is the
+  bed playing fading out over the new bed's `fade_s`, then the new one fading in over the same; a stop fades
+  the playing bed out over its own; from quiet a bed fades in. The engine cues only a change (music plays on
+  through result cards, retries and a next phase on the same bed); a cutscene, a phase without music and the
+  end stop it. A looping bed goes back to `loop_start_s`.
+- **Ducking.** A sound ducks the music wherever it plays when it is a `callout` or any cue of it says
+  `duck_music` (the machine ducks per call, not per event): 28 volume steps of 1/3 dB (about 9.3 dB), down over
+  150 ms, back over 400 ms, the machine's own dip.
+- **One voice for effects and callouts**, as a mode's calls share the voice bus: a new one fades the one still
+  sounding (30 ms) and starts 70 ms later; an effect (a priority 3 call) whose previous play still sounds is
+  skipped; a callout (priority 4) played again starts over. `sound.cue_log` is this rule in step time, and
+  the player's log and the rig's are held to it.
+- **Volumes** are each sound's `volume`; on the machine it is baked into the sound's file.
+
+**The Sound card** on the Video modes tab: each sound with its waveform (`sound.peaks`, made off the page's thread;
+the timeline's sound track is the same `<Wave>`), its loop point dragged on it, a music bed's fade shaded and its
+beat grid drawn (bars strong); its role, volume, loop, fade, tempo, first beat and beats a bar; **Find the beat**
+(`sound.find_beat`: onsets matched against themselves a beat later, 60 to 200 a minute, then the first beat's
+phase; within 0.25 a minute and 12 ms on the test beds); music per phase; sounds on events; and the count against
+the machine picked (`sound.machine_plan`), with what is left. A sound with no file yet plays a placeholder the app
+makes (`sound.placeholder_wav`: a blip, a two-note chime, or bars of bass and click on the bed's own grid), as a
+picture without one is a placeholder. Every change on the tab can be undone (Ctrl+Z, Ctrl+Y).
+
+**On the machine** (Spike 2; Spike 3 has the same mode runtime): `sound.machine_plan` puts the first music a phase
+plays on the mode's own music, every other bed on a further bed by name (`pa_music_bed`'s), and each effect and
+callout a cue plays on a call of the mode's own; a sound nothing plays is left off. The route carries **16 calls and
+the mode's own music plus 6 more beds**; Night Harbour uses 5 and 2. No cap was raised: a mode that needs more is
+told so (cue fewer sounds, let phases share music) - one sound can serve several events. `sound.machine_files`
+writes the machine's 48 kHz WAVs and the code mode's `assets.json` sound fields; because the machine loops a record
+from its start, each bed is baked: the whole file once, then its loop body again and again until it outlasts every
+phase that plays it, each try with its cards (`sound.bed_seconds`, 300 s at most). `engine/vm_sound.h` plays each
+step's cues: `pa_call` for a sound, `pa_music_change` for the music. `pad_mode_assets.h` gained `pa_music_change`
+(fade out, then the new bed in; or quiet without giving the game's music back, which `pa_end` does) and a call line's
+`noduck` (the build writes it for a sound that does not duck; every other call ducks the music, as before).
+Jersey Jack, Spooky and the dot-matrix machines count the sounds with no cap until their tickets set one.
+
+**Proved by** `tests/test_video_mode_sound.py` (format 2 and its checks; the engine's music cues by phase, retries
+and cutscenes; ducking per sound; the plan, its names and its over-the-cap words; baked beds; the machine's files;
+`noduck` in the .assets file; `pa_music_change` and `noduck` on the desk against stand-ins of the runtime; the
+placeholder and the beat finder; the player's Sounds class against `cue_log`; the tab's edits, undo and redo),
+`scripts/shot_pad1667.py` (the shots, and the bot's winning run replayed in the app's player with sound on in Edge,
+muted at the process: its 55 cues the native build's, step for step, 52 sounds and 2 beds played through Web Audio)
+and `scripts/proof_pad1667_rig.py` (the same run on James Bond LE 1.06 in the emulator, muted: see the ticket).
 
 ## 5 Budgets per machine
 
@@ -780,7 +829,7 @@ two in step (memory, largest atlas, card space, texel format, how the card holds
 | Picture sets loaded at once | 8, up to 96 MB a set | to measure | to measure | to measure | to measure | Spike 2: the runtime's own limits (PAD-1655); same |
 | Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | PAD-1660 on Spike 2 (desk: ~300 us on emulated ARM); then each platform |
 | Card space for one video mode (pictures, sounds, clips) | 128 MB | 256 MB | 256 MB | 256 MB | 16 MB | PAD-1658 / each platform |
-| Sounds | 16 sounds, 6 music beds (today's mode cap) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
+| Sounds | 16 calls, its own music and 6 more beds (the mode sound route; not raised) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
 
 The engine itself is fixed-size (no malloc): its tables are sized from the largest
 column above at compile time (`VM_MAX_*` in `vm_engine.h`: 512 things alive, 3072 draw
