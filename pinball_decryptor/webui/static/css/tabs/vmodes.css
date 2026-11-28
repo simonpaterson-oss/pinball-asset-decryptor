@@ -309,3 +309,13 @@ body.vme-resizing, body.vme-scrubbing { cursor: ew-resize !important; user-selec
 .vme-key-row .kbd { justify-self: start; }
 .vme-xy { min-width: 116px; }
 .vme-xy:empty::before { content: "x \00b7  y"; color: var(--ink-3); }
+
+/* the sound calibration panel (PAD-1663) */
+.vmp-cal { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, 90%);
+  display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; border-radius: var(--r-3, 10px);
+  background: var(--panel, #1b1e24); border: 1px solid var(--line, #2c313a); box-shadow: 0 12px 40px rgba(0,0,0,.45); z-index: 5; }
+.vmp-cal-t { font-weight: 600; }
+.vmp-cal-dots { display: flex; gap: 10px; justify-content: center; }
+.vmp-cal-dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--line, #2c313a); transition: background .08s; }
+.vmp-cal-dots i.on { background: var(--ink-3, #7b8494); }
+.vmp-cal-dots i.now { background: var(--accent, #e5483b); }
