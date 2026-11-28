@@ -2944,13 +2944,16 @@ def check_layout(target, machine_layout, replace_ok=False):
             sizes = " (its game partition is %s; this image's is %s)" % (_gb(machine_layout[3][1]),
                                                                         _gb(target.layout[3][1]))
         raise SendError("This is a multi-boot image, and the card in the machine isn't laid out for one: partition "
-                        "%s is missing%s. A Send changes files, never a card's partitions, so write this image to "
-                        "the SD card once; after that, new builds of it can be sent to the machine."
+                        "%s is missing%s. Send it from the Network tab (Send an image to the machine...): it asks, then "
+                        "lays the machine's card out for it before it sends. Or write this image to the SD card "
+                        "once; after that, new builds of it can be sent to the machine."
                         % (", ".join(map(str, missing)), sizes))
     if spike2 and not menu and extra and not missing and max(extra) >= 7 and not replace_ok:
         raise SendError("The image's partitions don't match the machine's card (%s). If the machine runs a "
                         "multi-boot card, this one-game image can't replace one of its games: build the multi-boot "
-                        "image again with this version in it and send that." % "; ".join(bad))
+                        "image again with this version in it and send that, or send this image from the Network tab "
+                        "(Send an image to the machine...) to replace the multi-boot card with this one game."
+                        % "; ".join(bad))
     if bad:
         raise SendError("The image's partitions don't match the machine's card (%s), so it can't be sent file by "
                         "file: write the card instead." % "; ".join(bad))

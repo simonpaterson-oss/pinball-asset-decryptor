@@ -239,7 +239,7 @@ class TestCardTab(TabService):
             raise RpcError("Send to machine is not available here")
         # Simon (2026-11-26): "create a card which is only a test card no multiboot (over the network)" - what the
         # machine runs is read first: a test card is updated, a PAD multi-boot card may be replaced (asked), a
-        # one-game card is refused (its game would be deleted)
+        # one-game card too (Simon, 2026-11-27), each asked about first (its games are deleted)
         from ...core import remote_send as rs
         try:
             machine = rs.connect(address)

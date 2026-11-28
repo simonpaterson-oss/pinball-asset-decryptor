@@ -289,7 +289,7 @@ def test_a_multi_boot_image_sent_to_a_one_game_card_says_to_write_the_card_once(
     said = str(e.value)
     assert "multi-boot image" in said and "partition 7 is missing" in said
     assert "its game partition is 14.5 GB; this image's is 29.3 GB" in said
-    assert "write this image to the SD card once" in said
+    assert "write this image to the SD card once" in said and "Send it from the Network tab" in said
     # the card written, the same image (or a new build of it) goes
     R.check_layout(target, {n: v[:2] for n, v in target.layout.items()})
 
