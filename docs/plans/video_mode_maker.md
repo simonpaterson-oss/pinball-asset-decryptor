@@ -626,6 +626,75 @@ are not shrunk: the dots renderer draws them with a dot font at dot size, laid o
 the same anchor. The editor shows the band and a "dots" preview (PAD-1676) so a maker
 can keep the action inside it.
 
+### The engine (PAD-1657)
+
+`pinball_decryptor/core/video_mode/engine/`: `vm_engine.h` / `vm_engine.c` are the whole
+engine; `vm_tables.h` (made by `gen_tables.py`) holds its sine, arctangent and power
+tables, so no float is used at run time. `vm_bot.c` (a test player), `vm_cli.c` (vmrun,
+the native runner) and `vm_wasm.c` (the WebAssembly exports) are never in the machine's
+object. `vm_engine.js` is the module the app's player loads; `vm_run.mjs` is vmrun's twin
+on WebAssembly. `build.py` builds all three ways: `wasm` (committed as `vm_engine.wasm`,
+with the source hash in `vm_engine.wasm.sha`, since a user's PC has no compiler),
+`native`, and `arm` (mode.so's own flags; it refuses the object if it calls anything the
+mode rules ban; it needs only libgcc's division helpers and `memset`). The mode runtime
+links it by passing `vm_engine.c` to `build_mode.sh` beside the mode (PAD-1660).
+
+The compiler is `compiler.py` (`compile_doc`, `compile_file`): ids become indexes, seconds
+become steps, pixels a second become 16.16 a step, and the lanes and path lengths are
+worked out there, so the C side never parses JSON. It reports every problem as "place:
+what" (the checker's, then its own, such as a spawn lane past the chase's lanes or a
+document bigger than the engine's tables) and keeps a list of notes for what plays
+differently today (placeholder art, kinds and conditions still to come). `harness.py` is
+the text harness: `python -m pinball_decryptor.core.video_mode.harness MODE.json --bot`
+plays a mode in a terminal, events in words and the stage drawn in letters.
+
+**Interface.** `vm_load` (the pack; every index is checked, a broken pack is refused),
+`vm_start(seed, level)`, then `vm_step(input)` 60 times a second. The input is one word a
+step: bit 0 left flipper held, bit 1 right, bit 2 Action, bit 3 the host saying the clip it
+was asked for has ended. Out of each step come `e.list` (the draw list above; its
+canonical words, `vm_list_words`, are what WebAssembly hands to JavaScript), `e.events`
+and `e.cues`, and the run's hash (FNV-1a over every step's draw list words, events and
+cues).
+
+**Events** for the pinball side: `CLIP_START` (clip, skippable), `CLIP_STOP` (clip,
+skipped), `PHASE_START` (phase, try), `PHASE_WON` (phase, steps left, health),
+`PHASE_LOST` (phase, tries left), `SCORE` (added, total), `KILL` (thing, points),
+`PICKUP` (thing, so far), `HURT` (health left), `FIRE`, `HIT` (weak point, hits left),
+`FINISHED` (won, score, no hit taken). What `pays` makes of them is PAD-1668's. **Sound
+cues**: play a sound (from `cues`), start a phase's music, stop it.
+
+**A step**: the input's edges; the kind's own play; spawns; movers; collisions by team;
+meters draining; the win conditions, then the lose ones (so a boss downed on the step the
+last health goes is a win); then the draw list, built from scratch. A phase opens with
+its title card (1.5 s, the opening transition in its first 0.3 s) and closes on CLEAR!,
+BOSS DOWN!, TRY AGAIN or FAILED (1 s); a clip card waits for the host's bit (or the skip
+`entry.skip_clips` names, when the clip is skippable).
+
+**How the kinds play today.** `chase`: the lanes are rows, spread evenly from the top of
+the phase's lowest background layer (the sea) to the stage's foot; a left press moves one
+lane up, a right press one lane down (`hold`: the held side's lane, the middle when let
+go; `free`: steer up and down); Action held fires `shot` at `fire_per_s`; a spawn's
+`lane` puts it in that row; gears shift on `gear_button`. `boss`: the sight sweeps across
+the weak points by itself and an Action press hits the open one it is over (`hit_with:
+shots`: the player's shots must strike an open one); the flippers move the player along
+the bottom; attacks leave the boss on their beat, aimed at the player. `alternate`: a left
+then a right (or the other way) adds `per_pair`. `mash`: each press adds `per_press`,
+against a rival bar when `rival_per_s` is set. `thrust`: hold to rise, let go to fall,
+leaving the screen is a crash. Every other kind plays its things, spawns and conditions
+for now, its own play coming with PAD-1662 and PAD-1663, and the compiler says so. A
+pickup counts into the counter named after it (`crate` into `crates`) until rule cards
+(PAD-1665) name the link. A homer gives up after 10 s; anything moving more than 256 px
+off the stage is gone.
+
+**Proved by** `tests/test_video_mode_engine.py`: golden replays (the bot's winning run of
+Night Harbour, a random-button run, a random run on the 300-thing desk) give the
+recorded hash on native and on WebAssembly, and the two print the same events, cues and
+draw lists line for line; the same hash on Windows (zig), Linux (gcc) and 32-bit ARM
+(the Spike 2 cross compiler, under qemu); Night Harbour plays start to finish in the text
+harness; a million steps of random buttons (and the bot with one step in four random,
+so every phase is reached) never leave bounds, under the address and undefined-behaviour
+sanitizers on Linux; 120 broken packs are refused or played safely, never crash.
+
 ## 5 Budgets per machine
 
 **Spike 2 is measured** (PAD-1655 in the emulator, `video_mode_spike2_drawing.md`; checked
@@ -638,7 +707,7 @@ it on Godzilla Premium 1.16 in the emulator: the report said 8,388,608 bytes of 
 runtime "8192 KB of pictures on GL" (0% apart); the report's card bytes were the file's 8,388,672
 plus the font tables the file will carry (0.04%). PAD-1655's frame costs are here too (time on
 the game's GL thread, the list build on the tick, pictures sent a frame, sets at once); "things
-alive" and "engine step" are the engine's to measure (PAD-1657), and what the emulator cannot see
+alive" and "engine step" are the engine's own (PAD-1657 on the desk, PAD-1660 on Spike 2), and what the emulator cannot see
 is the real GPU's fill (PAD-575): 1500 quads draw about 6.8 screens of pixels a frame, so the
 runtime's budget line ("frames went to the glass") is the meter on a real machine. **The other
 columns are placeholders** until each
@@ -652,19 +721,27 @@ two in step (memory, largest atlas, card space, texel format, how the card holds
 | Texel format in memory | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | Spike 2 measured; same |
 | Atlases on the card | raw (`.padgfx`, mapped in) | compressed | compressed | compressed | compressed | Spike 2 measured; same |
 | Largest atlas | 2048 x 2048 | 4096 x 4096 | 4096 x 4096 | 4096 x 4096 | 512 x 512 | Spike 2 measured (the emulator's GL takes 4096); same |
-| Things alive at once | 300 | 500 | 400 | 400 | 100 | PAD-1657 (desk) then each platform |
+| Things alive at once | 300 | 500 | 400 | 400 | 100 | desk measured (PAD-1657: 306 alive, ~33 us a step on x86); then each platform |
 | Quads drawn a frame (things + glyphs + particles) | 1500 | 3000 | 2000 | 2000 | 400 | Spike 2 measured (1500 at 30 a second); same |
 | Draw calls a frame (one per atlas and blend run) | 16 | 32 | 24 | 24 | n/a | Spike 2 measured (4 to 6 for packed art, 512 still held); same |
 | Drawing's part of a frame (the game's GL thread, average) | 0.3 ms | to measure | to measure | to measure | to measure | Spike 2 measured (0.1 ms at 300 quads, 0.1 to 0.3 at 1500); PAD-1673 / 1674 / 1675 / 1676 |
 | Draw list build on the tick | 0.75 ms | to measure | to measure | to measure | to measure | Spike 2 measured (0.12 to 0.15 ms at 300 quads, 0.55 to 0.75 at 1500); same |
 | Pictures sent to the GPU a frame (a set loads over several) | 6 MB | to measure | to measure | to measure | to measure | Spike 2 measured (a 12 MB set took 2 frames, the worst 22 ms); same |
 | Picture sets loaded at once | 8, up to 96 MB a set | to measure | to measure | to measure | to measure | Spike 2: the runtime's own limits (PAD-1655); same |
-| Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | same |
+| Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | PAD-1660 on Spike 2 (desk: ~300 us on emulated ARM); then each platform |
 | Card space for one video mode (pictures, sounds, clips) | 128 MB | 256 MB | 256 MB | 256 MB | 16 MB | PAD-1658 / each platform |
 | Sounds | 16 sounds, 6 music beds (today's mode cap) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
 
 The engine itself is fixed-size (no malloc): its tables are sized from the largest
-column above at compile time.
+column above at compile time (`VM_MAX_*` in `vm_engine.h`: 512 things alive, 3072 draw
+list entries, 96 kinds of thing, 32 phases; about 0.6 MB, kept static).
+
+**Measured on the desk (PAD-1657)**, `tests/data/video_mode/desk_300.json` (306 things
+alive: 150 orbiting, 150 on looping paths, mines, crates and shots, all colliding): a step
+costs about 33 us on a desktop x86 (Windows and Linux alike), about 54 us in WebAssembly
+under Node (the draw list copied out to JavaScript included), and about 300 us on 32-bit
+ARM emulated under qemu, which is slower than the real chip. The Spike 2 figure is
+PAD-1660's to measure, with a video mode inside a real game.
 
 ## 6 The editor's design language
 
@@ -798,7 +875,7 @@ Status is kept current here as tickets land.
 | 0 | PAD-1654 | This plan, the format and its schema, the design language and mock-ups | - | released (v1.641.0) |
 | 1 | PAD-1655 | Spike 2: a mode draws moving pictures on the glass every frame (the risk of the epic; measures the Spike 2 budgets) | - | released (v1.645.0; its budgets are in section 5) |
 | 1 | PAD-1656 | Mode SDK: held buttons, mash and alternate rates; screen-game state | - | queued |
-| 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | queued |
+| 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | released (v1.646.0) |
 | 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | released (v1.643.0; Spike 2 card cost checked by PAD-1679, v1.644.0) |
 | 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | queued |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
@@ -850,3 +927,15 @@ that order; two tickets that bump at once take numbers in merge order.
 - **The survey's lessons are format fields**, not editor advice: short adjustable
   length, a pay floor, decline and cash-out, fixed or per-play layouts, levels, the
   hidden extra ball, flawless and leftover pay.
+- **The engine's input is one word a step** (three buttons held, and the host's "the
+  clip ended"), so a recorded run is one byte a step and replays anywhere; the engine
+  finds presses and releases itself, and PAD-1656's rates come from the same edges.
+- **A chase's lanes are rows** across the lowest background layer, with left up and right
+  down: the document's things scroll in from the right along the sea, so rows are what a
+  spawn's `lane` can mean. A top-down chase would want columns: that is a field to add
+  (with a format bump) when a kind needs it.
+- **Win before lose on the same step**, and a clock that runs out with no condition met
+  loses the phase.
+- **Pictures without a file yet are drawn as placeholders** the size of their hitbox, and
+  fonts use monospace placeholder metrics, until PAD-1658 packs the real atlases and
+  glyphs; the compiler takes both as inputs, so nothing in the engine changes then.
