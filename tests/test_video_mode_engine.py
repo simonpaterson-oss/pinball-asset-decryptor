@@ -397,9 +397,7 @@ def test_tables_are_what_gen_tables_writes(tmp_path, monkeypatch):
     monkeypatch.setattr(gen_tables.os.path, "join", lambda *a: str(out) if a[-1] == "vm_tables.h" else real_join(*a))
     gen_tables.main()
     with open(os.path.join(ENGINE, "vm_tables.h"), encoding="utf-8") as f:
-        assert out.read_text(encoding="utf-8") == f.read().replace("
-", "
-")
+        assert out.read_text(encoding="utf-8") == f.read()   # text mode: CRLF checkouts read the same
 
 
 # ---- regenerate ------------------------------------------------------------------------
