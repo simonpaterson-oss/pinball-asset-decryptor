@@ -31,6 +31,8 @@ TABS = (
     ("modes", "modes", "Modes", "Modes", "Make", "modes"),
     ("defaults", "defaults", "Default Settings", "Defaults", "Make",
      "defaults"),
+    # PAD-1658: video modes, small screen games (the video mode maker, docs/plans/video_mode_maker.md)
+    ("vmodes", "vmodes", "Video Modes", "Video modes", "Make", "play"),
     # PAD-1204: what changes how the game plays or reports and keeps Insider Connected (Stern Spike 2)
     ("playopts", "playopts", "Play Options", "Play options", "Make", "gear"),
     # PR #38 review: what the card does on the owner's home network: the score feed (PAD-1204) and remote access

@@ -581,6 +581,27 @@ outline, shadow and gradient are glyph-atlas variants, not backend features.
    slows rather than skips). It draws the newest list; there is no blending between two
    steps, so the frame at step N is the same picture everywhere.
 
+### Packed pictures (PAD-1658)
+
+`core/video_mode/pack.py` is what a backend loads. Per machine it writes `atlas.json` and
+the atlases into `<mode>/build/<backend>/`, only through `for_card`, which refuses
+(naming the sprites to shrink) when the mode is over a budget of section 5.
+
+- Every frame is trimmed to its visible pixels (a tiled background is not, and its edge
+  extrudes by wrapping), frames that are the same texel for texel are kept once, and all
+  are packed (MaxRects, largest first) into the smallest power-of-two atlas that holds
+  them, else pages of the machine's largest. 2 texels of extruded edge round each.
+- `webgl`: `atlas_<n>.png`. Every machine: `atlas_<n>.pmat`, a 16-byte header (`PMAT`,
+  u16 version 1, u16 format 1 = RGBA8 premultiplied, u16 width, u16 height, u16 flags:
+  bit 0 nearest, bit 1 zlib, u16 0) and the texels, rows top down, zlib-compressed.
+- `atlas.json`: per picture, per frame, `atlas`, `sx sy sw sh` (texels), `ax ay` (the
+  anchor inside the source box, 16.16, exactly what `pm_vm_quad` carries), `fw fh ox oy`
+  (the frame before the trim); per font, its glyphs the same way with `adv`, `x`, `y`.
+  `texel_scale` is stage px per texel: 1, or 8 on dot-matrix screens, whose art is packed
+  at 1/8 (they show the stage at 1/10.625).
+- Memory is every atlas at 4 bytes a texel; card space is the written atlases plus the
+  mode's sounds, clips and font files as they are.
+
 ### The stage on other screens
 
 Every mode is made on the 1360x768 stage. A screen of `W` x `H` shows it at a uniform
@@ -758,7 +779,7 @@ Status is kept current here as tickets land.
 | 1 | PAD-1655 | Spike 2: a mode draws moving pictures on the glass every frame (the risk of the epic; measures the Spike 2 budgets) | - | queued |
 | 1 | PAD-1656 | Mode SDK: held buttons, mash and alternate rates; screen-game state | - | queued |
 | 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | queued |
-| 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | queued |
+| 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | this branch |
 | 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | queued |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
 | 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | queued |

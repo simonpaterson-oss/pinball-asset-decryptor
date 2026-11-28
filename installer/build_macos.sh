@@ -165,6 +165,7 @@ pyinstaller \
     --add-data "$ROOT_DIR/pinball_decryptor/plugins/stern/valpatch.py:pinball_decryptor/plugins/stern" \
     `# the official Stern stock fingerprints (PAD-426): data, not code` \
     --add-data "$ROOT_DIR/pinball_decryptor/plugins/stern/data/stock_prints.json.xz:pinball_decryptor/plugins/stern/data" \
+    --add-data "$ROOT_DIR/pinball_decryptor/core/video_mode/video_mode.schema.json:pinball_decryptor/core/video_mode" \
     `# Spike 3 LUKS2 verifier/decryptor: stern/spike3.py loads it by path at run` \
     `# time (_luks_otp(), four parents up from the plugin then` \
     `# stern-spike-3/tools/luks_otp.py), so the whole Spike 3 key/decrypt path` \

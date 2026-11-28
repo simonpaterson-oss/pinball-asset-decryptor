@@ -1,0 +1,90 @@
+/* Video modes tab (js/tabs/vmodes.js): a video mode's pictures, backgrounds, and what they cost on the machine.
+   Held to the video mode maker's design language (docs/plans/video_mode_maker.md section 6): the app's tokens,
+   a 4px grid, --accent only for what is picked or active, --ok/--warn/--err only for budgets. */
+
+.vm-page { gap: 16px; }
+.vm-page > .card { flex: 0 0 auto; }
+.vm-lbl { font-family: var(--cond); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.vm-none { padding: 8px 0; }
+.vm-page .sp { flex: 1 1 auto; }
+
+/* the modes */
+.vm-mode { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+  transition: background 120ms cubic-bezier(.2,.75,.25,1), border-color 120ms cubic-bezier(.2,.75,.25,1); }
+.vm-mode:hover { background: var(--panel-2); }
+.vm-mode.on { border-color: var(--accent); background: var(--sel); }
+.vm-mode.bad { border-color: var(--err); }
+.vm-mode svg.i { width: 14px; height: 14px; color: var(--ink-3); }
+
+/* the pictures grid */
+.vm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+.vm-sprite { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+  transition: background 120ms cubic-bezier(.2,.75,.25,1), border-color 120ms cubic-bezier(.2,.75,.25,1); min-width: 0; }
+.vm-sprite:hover { background: var(--panel-2); }
+.vm-sprite.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.vm-sprite.bad { border-color: var(--err); }
+.vm-thumb { height: 88px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: var(--bg); }
+.vm-sprite-name { font-size: 12px; font-weight: 500; }
+.vm-sprite-meta { font-size: 11px; font-variant-numeric: tabular-nums; }
+.vm-used { position: absolute; top: 10px; right: 10px; color: var(--ink-3); display: inline-flex; }
+.vm-used svg.i { width: 12px; height: 12px; }
+.vm-player { display: block; image-rendering: auto; border-radius: 2px; }
+
+/* the inspector */
+.vm-insp-body { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.vm-frame-wrap { flex: 0 0 auto; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  min-width: 200px; min-height: 120px; display: flex; align-items: center; justify-content: center; cursor: crosshair;
+  touch-action: none; user-select: none; }
+.vm-big { image-rendering: pixelated; }
+.vm-fields { flex: 1 1 260px; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px 12px; align-items: center;
+  max-width: 420px; }
+.vm-strip-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; min-width: 0; }
+.vm-fno { flex: 0 0 72px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.vm-strip { flex: 1 1 auto; display: flex; gap: 4px; overflow-x: auto; padding: 4px 0; min-width: 0; }
+.vm-cell { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 3px; background-color: var(--bg);
+  background-repeat: no-repeat; padding: 0; cursor: pointer; image-rendering: pixelated; }
+.vm-cell:hover { border-color: var(--line-2); }
+.vm-cell.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* bringing art in */
+.vm-imp { display: flex; gap: 16px; min-height: 340px; }
+.vm-imp-opts { flex: 0 0 330px; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px 12px; align-content: start;
+  align-items: center; }
+.vm-imp-prev { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0; }
+.vm-imp-busy { display: flex; gap: 8px; align-items: center; }
+.vm-swatch { width: 32px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: none; }
+
+/* backgrounds */
+.vm-bg-body { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.vm-layers { flex: 1 1 420px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.vm-layer { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 8px; border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--line); flex-wrap: nowrap; }
+.vm-layer > * { flex-shrink: 0; }
+.vm-layer-n { flex: 0 0 14px; text-align: right; }
+.vm-bg-prev { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
+.vm-parallax { display: block; border: 1px solid var(--line); border-radius: 4px; background: #000; }
+
+/* pack and cost */
+.vm-report { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.vm-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.vm-meter .row { gap: 4px; align-items: baseline; }
+.vm-bar { height: 6px; border-radius: 999px; background: var(--panel-2); overflow: hidden; margin-top: 6px; }
+.vm-bar > span { display: block; height: 100%; border-radius: 999px; transition: width 180ms cubic-bezier(.2,.75,.25,1); }
+.vm-bar > .ok { background: var(--ok); } .vm-bar > .warn { background: var(--warn); } .vm-bar > .err { background: var(--err); }
+.vm-meter .ok { color: var(--ok); } .vm-meter .warn { color: var(--warn); } .vm-meter .err { color: var(--err); }
+.vm-cost { width: 100%; border-collapse: collapse; font-size: 12px; }
+.vm-cost th { font-family: var(--cond); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-3); text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.vm-cost td { padding: 0 8px; height: 28px; border-bottom: 1px solid var(--line); max-width: 260px; }
+.vm-cost .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vm-share { display: inline-block; width: 64px; height: 4px; border-radius: 999px; background: var(--panel-2); margin-right: 6px;
+  vertical-align: middle; overflow: hidden; }
+.vm-share > span { display: block; height: 100%; background: var(--ink-3); }
+.vm-report .ok { color: var(--ok); } .vm-report .err { color: var(--err); }
+
+@media (prefers-reduced-motion: reduce) {
+  .vm-mode, .vm-sprite, .vm-bar > span { transition: none; }
+}
