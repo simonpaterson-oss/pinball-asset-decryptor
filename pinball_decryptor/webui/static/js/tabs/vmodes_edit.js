@@ -14,7 +14,9 @@
 
 import { html, useEffect, useLayoutEffect, useMemo, useRef, useState, Button, Select, Icon, Empty, tip, call, cx,
          mediaUrl } from "../core/ui.js";
-import { GLStage, TEAM_HEX, newEngine, loadImage, placeholderSheet, fontTexture, b64bytes } from "./vmodes_play.js";
+import { GLStage, TEAM_HEX, newEngine, loadImage, placeholderSheet, glyphSheet, fontTexture, b64bytes } from "./vmodes_play.js";
+import { TimelineCtl, Timeline, KeyInspector, keyTitle, removePicked, remapTracks } from "./vmodes_timeline.js";
+import { Storyboard } from "./vmodes_story.js";
 import { HudInspector, StylePanel, HudPalette, HudLayers, PARTS, newPart } from "./vmodes_hud.js";
 
 const TEAMS = ["player", "enemy", "enemy_shot", "player_shot", "pickup", "health", "scenery"];
@@ -27,7 +29,7 @@ const MOVERS = [["none", "Stays put"], ["straight", "Straight"], ["lanes", "In l
                 ["home", "Homes on a target"], ["scroll", "Scrolls with the world"], ["orbit", "Orbits"]];
 const EASINGS = ["linear", "in", "out", "in_out", "back_out", "bounce_out", "elastic_out", "step"];
 const HANDLE = 8, TURN_GAP = 24, SNAP_PX = 6, RULER = 20, NUDGE_BIG = 10, PASTE_OFF = 16;
-const DOCKS = { left: [240, 200, 360], right: [300, 260, 420] };
+const DOCKS = { left: [240, 200, 360], right: [300, 260, 420], tl: [220, 120, 560] };
 
 const T = {
   done: "Back to the mode's pictures and backgrounds",
@@ -150,6 +152,16 @@ class Ed {
     this.hudSel = -1; this.hudHover = -1; this.hudBoxesList = []; this.hudPrev = null; this.panel = null; this.burst = null;
     this.feel = info.feel || null; this.emitters = info.emitters || [];
     this.colours();
+    this.lastPack = info.pack ? b64bytes(info.pack) : null;
+    this.tlc = new TimelineCtl(this);          // PAD-1664: the timeline's playhead, live key drags and path overlay
+  }
+  // the engine's tables back to the last pack the compiler made (a live key drag let go of without a change kept)
+  reloadPack() {
+    if (!this.lastPack) return;
+    const v = this.e.load(this.lastPack);
+    this.packOk = !v;
+    this.needSync = true;
+    this.dirty(true);
   }
   counts(doc) { return (doc.phases || []).map((p) => (p.place || []).length); }
   phase() { return this.doc.phases[this.ph]; }
@@ -226,7 +238,7 @@ class Ed {
         this.e.hudSet(p.i, p.x, p.y, p.w || 0, p.h || 0);
         this.needSync = true;                 // the next frame starts again from the document
       }
-      this.e.editStill(this.ph, (this.opts.title ? 1 : 0) | 2);
+      this.tlc.draw();                          // the playhead's step: a still at 0, else the replay to it
       this.hudBoxesList = this.e.hudBoxes();
       if (this.burst) {                       // a particle's preview: the engine bursts it in the middle of the stage
         const steps = Math.floor((performance.now() - this.burst.t0) / (1000 / 60));
@@ -416,6 +428,8 @@ class Ed {
         }
       }
     }
+    // the picked things' motion paths (PAD-1664)
+    this.tlc.overlay(g, P, c);
     // the marquee
     if (this.drag && this.drag.type === "marquee" && this.drag.moved) {
       const [a, b] = P(Math.min(this.drag.x0, this.drag.x1), Math.min(this.drag.y0, this.drag.y1));
@@ -606,7 +620,9 @@ class Ed {
     this.els.view.focus({ preventScroll: true });
     const [cx, cy] = this.local(e), [x, y] = this.toStage(cx, cy);
     this.els.view.setPointerCapture(e.pointerId);
-    if (this.space || e.button === 1) { this.drag = { type: "pan", cx, cy, ox: this.view.ox, oy: this.view.oy }; this.els.view.style.cursor = "grabbing"; return; }
+    if (this.space || e.button === 1) { this.spaceUsed = true; this.drag = { type: "pan", cx, cy, ox: this.view.ox, oy: this.view.oy }; this.els.view.style.cursor = "grabbing"; return; }
+    const hp = this.tlc.hitPath(cx, cy);
+    if (hp) { this.tlc.pathDown(hp, x, y); this.drag = { type: "tl" }; return; }
     const hk = this.handleAt(cx, cy);
     if (hk >= 0) { this.startTransform(hk === 8 ? "turn" : "scale", hk, x, y); return; }
     const hi = e.shiftKey ? -1 : this.hudAt(x, y);       // the HUD is drawn over everything: it is picked first
@@ -642,6 +658,7 @@ class Ed {
     const pls = this.places(), sel = this.sel.filter((k) => !pls[k].locked);
     if (!sel.length) return;
     const u = this.selBounds(sel);
+    if (!dup) this.tlc.keyedMoveStart(sel);    // things with a position track get a key at the playhead instead
     this.drag = { type: "move", x0: x, y0: y, sel, orig: new Map(sel.map((k) => [k, Object.assign({}, pls[k])])), u,
                   targets: this.snapTargets(new Set(sel)), dup, clicked,
                   ghosts: sel.map((k) => this.shape(k)).filter(Boolean).map(polyOf) };
@@ -668,12 +685,14 @@ class Ed {
       const gi = hk < 0 && i < 0 ? this.guideAt(cx, cy) : null;
       const hh = hk < 0 ? this.hudAt(x, y) : -1;
       if (hh !== this.hudHover) this.hudHover = hh;
-      this.els.view.style.cursor = this.space ? "grab" : hk === 8 ? "alias" : hk >= 0 ? (["nwse-resize", "ns-resize", "nesw-resize", "ew-resize"][hk % 4])
+      const onPath = !this.space && this.tlc.hitPath(cx, cy);
+      this.els.view.style.cursor = this.space ? "grab" : onPath ? "pointer" : hk === 8 ? "alias" : hk >= 0 ? (["nwse-resize", "ns-resize", "nesw-resize", "ew-resize"][hk % 4])
         : i >= 0 || hh >= 0 ? "move" : li >= 0 ? "not-allowed" : gi ? (gi.axis === "x" ? "ew-resize" : "ns-resize") : "default";
       if (i !== this.hover || li !== this.hoverLocked) { this.hover = i; this.hoverLocked = li; }
       this.dirty(true);
       return;
     }
+    if (d.type === "tl") { this.tlc.pathMove(x, y, e.altKey, e.shiftKey); return; }
     if (d.type === "pan") {
       this.view = { k: this.view.k, ox: d.ox + cx - d.cx, oy: d.oy + cy - d.cy, fit: false };
       this.dirty(true); return;
@@ -712,6 +731,7 @@ class Ed {
       if (d.u) [dx, dy] = this.snapMove(d.u, dx, dy, d.targets, e.ctrlKey || e.metaKey);
       for (const [k, o] of d.orig) prev.set(k, Object.assign({}, o, { x: o.x + dx, y: o.y + dy }));
       d.dx = dx; d.dy = dy;
+      this.tlc.keyedMove(dx, dy);
     } else if (d.type === "scale") {
       const f = d.fixed, g0 = d.grab;
       const v0 = [g0[0] - f[0], g0[1] - f[1]], v1 = [x - f[0], y - f[1]];
@@ -745,6 +765,7 @@ class Ed {
     this.drag = null; this.snaps = []; this.els.view.style.cursor = this.space ? "grab" : "default";
     try { this.els.view.releasePointerCapture(e.pointerId); } catch (err) { /* already gone */ }
     if (!d) return;
+    if (d.type === "tl") { this.tlc.pathUp(); return; }
     if (d.type === "pan") { this.dirty(true); return; }
     if (d.type === "guide") {
       const doc = clone(this.doc), gd = guidesOf(doc);
@@ -768,6 +789,7 @@ class Ed {
     const prev = this.preview;
     if (!d.moved || !prev) {
       this.preview = null;
+      this.tlc.keyedCancel();
       if (d.type === "move" && d.clicked != null && !e.shiftKey && this.sel.length > 1) this.setSel(this.groupOf(d.clicked));
       this.dirty(); return;
     }
@@ -788,7 +810,9 @@ class Ed {
       this.commit(doc, label, added);
       return;
     }
-    for (const [k, p] of prev) pls[k] = cleanPlace(Object.assign({}, p));
+    const keyed = this.tlc.keyedCommit(doc, ph, d.dx || 0, d.dy || 0);   // their keys moved, not their places
+    for (const [k, p] of prev) if (!keyed.has(k)) pls[k] = cleanPlace(Object.assign({}, p));
+    if (keyed.size && d.sel.every((k) => keyed.has(k))) label = keyed.size > 1 ? "Move keyframes" : "Move a keyframe";
     this.commit(doc, label);
   }
   wheel(e) {
@@ -838,6 +862,8 @@ class Ed {
     this.sel = (sel || this.sel).filter((i) => i < this.places().length);
     if (this.hudSel >= (doc.hud || []).length) this.hudSel = -1;
     this.preview = null; this.hudPrev = null;
+    const k = this.tlc && this.tlc.key, tr = k && (this.phase().tracks || [])[k.tr];
+    if (k && (!tr || !tr.keys[k.k])) this.tlc.key = null;
     this.needSync = true;
     this.dirty(true);
     this.notify.panels();
@@ -861,6 +887,7 @@ class Ed {
       if (!r || !r.ok) {
         this.failed = { why: (r && r.problems) || [] };
         if (this.doc === job.doc) this.setDoc(r && r.doc ? r.doc : before);
+        this.reloadPack();                       // a live key drag may have put keys into the engine's tables
         return;
       }
       await this.applyReply(r, job.doc);
@@ -883,7 +910,8 @@ class Ed {
     if (r.feel) this.feel = r.feel;
     if (r.emitters) this.emitters = r.emitters;
     if (r.pack) {
-      const v = this.e.load(b64bytes(r.pack));
+      this.lastPack = b64bytes(r.pack);
+      const v = this.e.load(this.lastPack);
       this.packOk = !v;
       this.packErr = v ? "The engine refused the compiled mode (" + v + " at word " + this.e.errAt() + ")." : "";
       this.place0 = r.place0 || this.place0;
@@ -911,8 +939,10 @@ class Ed {
     return this.commit(doc, label, Array.isArray(out) ? out : sel);
   }
   setPhase(i) {
+    const was = this.ph;
     this.ph = clamp(i, 0, this.doc.phases.length - 1);
     this.sel = []; this.preview = null; this.hover = -1; this.hudHover = -1;
+    if (was !== this.ph || this.tlc.step) this.tlc.phaseChanged();
     this.dirty(true); this.notify.panels();
   }
 
@@ -928,7 +958,7 @@ class Ed {
   }
   setHud(i) {
     this.hudSel = i;
-    if (i >= 0) { this.sel = []; this.panel = null; }
+    if (i >= 0) { this.sel = []; this.panel = null; if (this.tlc) { this.tlc.key = null; this.tlc.pick = null; } }
     this.dirty(true); this.notify.panels();
   }
   showStyle() { this.sel = []; this.hudSel = -1; this.panel = "style"; this.dirty(true); this.notify.panels(); }
@@ -1023,13 +1053,19 @@ class Ed {
       ph.place.forEach((_, i) => { map[i] = gone.has(i) ? -1 : n++; });
       ph.place = ph.place.filter((_, i) => !gone.has(i));
       remapGroups(doc, ph, map);
+      remapTracks(ph, map);
       return [];
     });
   }
   nudge(dx, dy) {
     const sel = this.sel.filter((i) => !this.places()[i].locked);
     if (!sel.length) return;
-    this.edit("Nudge", (doc, ph) => { for (const i of sel) { ph.place[i].x = r2(ph.place[i].x + dx); ph.place[i].y = r2(ph.place[i].y + dy); } });
+    this.edit("Nudge", (doc, ph) => {
+      for (const i of sel) {
+        if (this.tlc.nudgeKeyed(ph, i, dx, dy)) continue;      // a thing on a position track: its key at the playhead
+        ph.place[i].x = r2(ph.place[i].x + dx); ph.place[i].y = r2(ph.place[i].y + dy);
+      }
+    });
   }
   setPlaces(label, patch, sel = this.sel) {
     if (!sel.length) return null;
@@ -1174,7 +1210,7 @@ class Ed {
 }
 
 // ---- number fields that scrub on drag ------------------------------------------------------------------------
-function Scrub({ label, value, unit, step = 1, min = -1e9, max = 1e9, digits = 2, onLive, onCommit, title, mixed, disabled }) {
+export function Scrub({ label, value, unit, step = 1, min = -1e9, max = 1e9, digits = 2, onLive, onCommit, title, mixed, disabled }) {
   const [text, setText] = useState(null);
   const shown = mixed ? "" : value == null ? "" : String(r2(Number(value) * 10 ** (digits - 2)) / 10 ** (digits - 2));
   const down = (e) => {
@@ -1226,7 +1262,7 @@ function TextIn({ value, onCommit, placeholder, max = 60 }) {
     onInput=${(e) => setT(e.target.value)} onBlur=${done} onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { setT(null); e.target.blur(); } }} /></div>`;
 }
 
-const Group = ({ label, children, extra }) => html`<div class="vme-group">
+export const Group = ({ label, children, extra }) => html`<div class="vme-group">
   <div class="vme-lab"><span>${label}</span>${extra || null}</div>${children}</div>`;
 const UI = { Scrub, TextIn, Group };    // the HUD panels (vmodes_hud.js) use the inspector's own fields
 
@@ -1609,6 +1645,9 @@ function commands(ed, ctx) {
   for (const [k, l] of PARTS) add("Add HUD part: " + l, () => ed.addHud(k));
   add("Remove the HUD part", () => ed.removeHud(), "Delete", ed.hudSel >= 0);
   add("Play this phase", () => ctx.play(), "F5");
+  add("Storyboard: the flow of the whole mode", () => ctx.story(), "Ctrl B");
+  add("Timeline: add a keyframe at the playhead", () => ed.tlc.addKeys(), "K");
+  add("Timeline: play or pause", () => ed.tlc.toggle(), "Space");
   add("Shortcuts", () => ctx.keys(), "?");
   return out;
 }
@@ -1662,6 +1701,14 @@ const SHORTCUTS = [
   ["Ctrl K / Ctrl P", "Commands / phases"],
   ["F6", "The next panel: stage, inspector, layers"],
   ["F5", "Play this phase"],
+  ["Ctrl B", "The storyboard: the whole mode's flow"],
+  ["Space (tap)", "Play / pause the timeline"],
+  [", / .", "One step back / on"],
+  ["Home", "The timeline's start (or its loop's)"],
+  ["K", "Add a keyframe at the playhead"],
+  ["Alt ← / Alt →", "The playhead to the last / next key, and that key picked"],
+  ["L", "Loop the marked stretch on and off"],
+  ["Drag a path's key / handle", "Move it; Alt moves one handle on its own"],
   ["Escape", "Clear the selection"],
 ];
 
@@ -1680,12 +1727,14 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
   const [, setVer] = useState(0);
   const [pal, setPal] = useState(null);
   const [keys, setKeys] = useState(false);
+  const [story, setStory] = useState(false);       // PAD-1664: the storyboard over the stage
   const [docks, setDocks] = useState(loadDocks);
   const [pics, setPics] = useState([]);
   const edRef = useRef(null);
   const root = useRef(null), view = useRef(null), canvas = useRef(null), over = useRef(null), rx = useRef(null), ry = useRef(null), coords = useRef(null);
   const ed = edRef.current;
   const bump = () => setVer((v) => v + 1);
+  const tlDock = Object.assign({ tl: 220, tlOpen: true }, docks);
 
   useEffect(() => {
     let live = true, gl = null;
@@ -1735,6 +1784,12 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
           hudBox: (id) => e.hudBox((e.doc.hud || []).findIndex((h) => h.id === id)),
           showStyle: () => e.showStyle(), preset: (k) => e.preset(k), burst: (n) => e.previewBurst(n),
           addHud: (part, x, y) => e.addHud(part, x, y), feel: () => e.feel,
+          // PAD-1664: the timeline
+          seek: (s) => e.tlc.seek(s), step: () => e.tlc.step, addKeys: (props) => e.tlc.addKeys(props),
+          pickKey: (tr, k) => { e.tlc.key = tr == null ? null : { tr, k }; e.notify.panels(); e.dirty(true); },
+          play: () => e.tlc.toggle(), playing: () => e.tlc.playing,
+          loop: (a, b) => { e.tlc.loops[e.phase().id] = { a, b, on: true }; e.notify.panels(); },
+          keyTable: () => { const n = e.e.keyCount(); return n; },
         };
       } catch (x) { if (live) setErr(String(x && x.message || x)); }
     })();
@@ -1782,14 +1837,15 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
     e.info.machine = key;
     if (!e.opts.bezel) toggleOpt("bezel"); else { e.dirty(); bump(); }
   };
-  const ctx = { toggleOpt, play, keys: () => setKeys(true), machines: s.machines || [], setMachine };
+  const ctx = { toggleOpt, play, keys: () => setKeys(true), machines: s.machines || [], setMachine, story: () => setStory(true) };
 
   // the keyboard: the editor's shortcuts, not while typing in a field
   useEffect(() => {
     const kd = (ev) => {
       const e = edRef.current;
       if (keys) { if (ev.key === "Escape" || ev.key === "?") { ev.preventDefault(); setKeys(false); } return; }
-      if (!e || pal) return;
+      if (e && (ev.ctrlKey || ev.metaKey) && (ev.key === "b" || ev.key === "B")) { ev.preventDefault(); setStory((v) => !v); return; }
+      if (!e || pal || story) return;                // the storyboard keeps its own keys while it is open
       if (!root.current || !document.body.contains(root.current)) return;
       const mod = ev.ctrlKey || ev.metaKey, k = ev.key, inField = typing(ev.target);
       if (mod && (k === "k" || k === "K")) { ev.preventDefault(); setPal({ start: "" }); return; }
@@ -1808,7 +1864,18 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
       if (mod && ((ev.shiftKey && (k === "z" || k === "Z")) || k === "y" || k === "Y")) { ev.preventDefault(); e.undoRedo("redo"); return; }
       const onStage = document.activeElement === view.current || document.activeElement === document.body || root.current.contains(document.activeElement);
       if (!onStage) return;
-      if (k === " " && !ev.repeat) { ev.preventDefault(); e.space = true; view.current.style.cursor = "grab"; return; }
+      if (k === " " && !ev.repeat) { ev.preventDefault(); e.space = true; e.spaceUsed = false; view.current.style.cursor = "grab"; return; }
+      if (k === " ") { ev.preventDefault(); return; }
+      if (!mod && (k === "," || k === "<")) { ev.preventDefault(); e.tlc.stepBy(ev.shiftKey ? -10 : -1); return; }
+      if (!mod && (k === "." || k === ">")) { ev.preventDefault(); e.tlc.stepBy(ev.shiftKey ? 10 : 1); return; }
+      if (k === "Home") { ev.preventDefault(); e.tlc.home(); return; }
+      if (!mod && (k === "k" || k === "K")) { ev.preventDefault(); e.tlc.addKeys(); return; }
+      if (!mod && (k === "l" || k === "L")) {
+        ev.preventDefault();
+        const lp = e.tlc.loops[e.phase().id];
+        if (lp) { lp.on = !lp.on; e.tlc.save(); bump(); }
+        return;
+      }
       if (k === "?" ) { ev.preventDefault(); setKeys(true); return; }
       if (mod && (k === "a" || k === "A")) { ev.preventDefault(); e.setSel(e.places().map((_, i) => i)); return; }
       if (mod && (k === "c" || k === "C")) { ev.preventDefault(); e.copy(); return; }
@@ -1822,13 +1889,15 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
       if (mod && k === "-") { ev.preventDefault(); e.zoomTo(e.view.k / 1.25); return; }
       if (mod && (k === "]" || k === "}")) { ev.preventDefault(); e.arrange(ev.shiftKey ? "front" : "forward"); return; }
       if (mod && (k === "[" || k === "{")) { ev.preventDefault(); e.arrange(ev.shiftKey ? "back" : "backward"); return; }
-      if (k === "Delete" || k === "Backspace") { ev.preventDefault(); if (e.hudSel >= 0) e.removeHud(); else e.remove(); return; }
+      if (k === "Delete" || k === "Backspace") { ev.preventDefault(); if (e.hudSel >= 0) e.removeHud(); else if (!removePicked(e)) e.remove(); return; }
       if (k === "Escape") {
+        if (e.tlc.key || e.tlc.pick) { ev.preventDefault(); e.tlc.key = null; e.tlc.pick = null; bump(); e.dirty(true); return; }
         if (e.sel.length || e.hudSel >= 0 || e.panel) { ev.preventDefault(); e.panel = null; e.setSel([]); e.setHud(-1); }
         return;
       }
       if (k === "Tab" && document.activeElement === view.current) { ev.preventDefault(); e.cycle(ev.shiftKey); return; }
       if ((k === "h" || k === "H") && !mod) { ev.preventDefault(); toggleOpt("hits"); return; }
+      if (ev.altKey && (k === "ArrowLeft" || k === "ArrowRight")) { ev.preventDefault(); e.tlc.hopKey(k === "ArrowRight" ? 1 : -1); return; }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[k] && e.hudSel >= 0) {
         ev.preventDefault();
@@ -1842,10 +1911,17 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
         e.nudge(arrows[k][0] * f, arrows[k][1] * f);
       }
     };
-    const ku = (ev) => { const e = edRef.current; if (e && ev.key === " ") { e.space = false; if (view.current) view.current.style.cursor = "default"; } };
+    const ku = (ev) => {
+      const e = edRef.current;
+      if (e && ev.key === " ") {
+        const tap = e.space && !e.spaceUsed;            // a tap plays the timeline; held for a drag, it pans
+        e.space = false; if (view.current) view.current.style.cursor = "default";
+        if (tap && !typing(ev.target) && root.current && document.body.contains(root.current)) e.tlc.toggle();
+      }
+    };
     window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
-  }, [pal, keys]);
+  }, [pal, keys, story]);
 
   const resize = (side) => (e) => {
     e.preventDefault();
@@ -1865,11 +1941,24 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
   const optBtn = (k, icon, label, title) => html`<button type="button" class=${cx("btn ghost sm vme-opt", ed && ed.opts[k] && "on")}
     onClick=${() => toggleOpt(k)} aria-pressed=${!!(ed && ed.opts[k])} ...${tip(title)}>${icon ? html`<${Icon} name=${icon} />` : null}${label}</button>`;
   const zoomPct = ed ? Math.round(ed.view.k * 100) : 100;
-  return html`<div class="vme" ref=${root} style=${{ "--vme-left": (docks.leftOpen ? docks.left : 28) + "px", "--vme-right": (docks.rightOpen ? docks.right : 28) + "px" }}>
+  const kt = ed && keyTitle(ed);
+  const tlResize = (e) => {
+    e.preventDefault();
+    const y0 = e.clientY, h0 = tlDock.tl, [, lo] = DOCKS.tl, hi = Math.max(lo, Math.round((root.current ? root.current.clientHeight : 800) * 0.5));
+    const mv = (ev) => setDocks((d) => Object.assign({}, d, { tl: clamp(h0 - (ev.clientY - y0), lo, hi) }));
+    const upf = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", upf); document.body.classList.remove("vme-resizing"); };
+    document.body.classList.add("vme-resizing");
+    window.addEventListener("pointermove", mv); window.addEventListener("pointerup", upf);
+  };
+  return html`<div class="vme" ref=${root} style=${{ "--vme-left": (docks.leftOpen ? docks.left : 28) + "px", "--vme-right": (docks.rightOpen ? docks.right : 28) + "px",
+                                                   "--vme-tl": (tlDock.tlOpen ? tlDock.tl : 28) + "px" }}>
     <div class="vme-top">
       <${Button} kind="ghost" size="sm" icon="left" title=${T.done} onClick=${() => { const e = edRef.current; (e ? e.queue : Promise.resolve()).then(onClose); }}>Done<//>
       <span class="vme-name">${(doc && doc.title) || s.title || s.slug}</span><span class="vme-crumb">video mode</span>
       <span class="vme-vsep"></span>
+      <button type="button" class=${cx("btn sm vme-story-btn", story ? "primary" : "ghost")} disabled=${!ed} aria-pressed=${story}
+        onClick=${() => setStory((v) => !v)} ...${tip({ head: story ? "Back to the stage" : "The storyboard", lines: ["The flow of the whole mode: clips, phases, won and lost", "Ctrl B"] })}>
+        <${Icon} name="blocks" />Storyboard</button>
       ${ed ? html`<${Select} sm cls="vme-phase-pick" value=${String(ed.ph)} title="The phase on the stage (Ctrl P)"
         options=${doc.phases.map((p, i) => ({ value: String(i), label: (i + 1) + " · " + (p.title || p.id) + " · " + p.kind }))}
         onChange=${(v) => ed.setPhase(Number(v))} />` : null}
@@ -1931,14 +2020,22 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
         <div class="vme-dock-h">
           ${ed && ed.hudSel >= 0 && (doc.hud || [])[ed.hudSel] ? html`<span class="team hud"></span><span class="t">HUD · ${doc.hud[ed.hudSel].id}</span>`
             : ed && ed.panel === "style" ? html`<${Icon} name="palette" /><span class="t">Look and feel</span>`
+            : kt ? html`<span class="vtl-kf on vtl-kf-static"></span><span class="t">Keyframe</span><span class="chip sm mono">${kt.thing} · ${kt.prop} · ${kt.at}</span>`
             : sel1 ? html`<span class="team" style=${{ background: ed.teamColour((selThing || {}).team) }}></span><span class="t">${sel1.thing}</span>`
             : ed && ed.sel.length > 1 ? html`<span class="t">${ed.sel.length} things</span>` : html`<span class="t">${ph ? (ph.title || ph.id) : "Inspector"}</span>`}
           <span class="sp"></span>
           <button type="button" class="btn ghost icon xs" onClick=${() => dockOpen("right", false)} ...${tip("Fold the inspector away")}><${Icon} name="right" /></button>
         </div>
         <div class="vme-dock-scroll">${!ed ? null : ed.hudSel >= 0 ? html`<${HudInspector} ed=${ed} ui=${UI} />`
+          : kt ? html`<${KeyInspector} ed=${ed} />`
           : ed.panel === "style" && !ed.sel.length ? html`<${StylePanel} ed=${ed} ui=${UI} />` : html`<${Inspector} ed=${ed} pics=${pics} />`}</div>`
       : html`<button type="button" class="vme-rail" onClick=${() => dockOpen("right", true)} ...${tip("The inspector")}><${Icon} name="edit" /></button>`}
+    </div>
+    <div class=${cx("vme-tl", !tlDock.tlOpen && "shut")}>
+      ${tlDock.tlOpen ? html`<div class="vme-split-h" onPointerDown=${tlResize} ...${tip("Drag to resize the timeline")}></div>
+        ${ed ? html`<${Timeline} ed=${ed} />` : null}
+        <button type="button" class="btn ghost icon xs vme-tl-fold" onClick=${() => setDocks((d) => Object.assign({}, d, { tlOpen: false }))} ...${tip("Fold the timeline away")}><${Icon} name="down" /></button>`
+      : html`<button type="button" class="vme-rail h" onClick=${() => setDocks((d) => Object.assign({}, d, { tlOpen: true }))} ...${tip("The timeline")}><${Icon} name="clock" /><span>Timeline</span></button>`}
     </div>
     <div class="vme-bar">
       <span class="mono vme-xy" ref=${coords}></span>
@@ -1951,6 +2048,10 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
       <span class="vme-vsep"></span>
       <span class="muted">Grid ${ed ? ed.grid() : 8}</span>
     </div>
+    ${story && ed ? html`<div class="vme-story-area"><${Storyboard} ed=${ed}
+        onOpen=${(i) => { setStory(false); ed.setPhase(i); setTimeout(() => view.current && view.current.focus(), 0); }}
+        onPlay=${(card) => { setStory(false); ed.queue.then(() => onPlay(card)); }}
+        onClose=${() => { setStory(false); setTimeout(() => view.current && view.current.focus(), 0); }} /></div>` : null}
     ${pal && ed ? html`<${Palette} ed=${ed} ctx=${ctx} start=${pal.start} onClose=${() => { setPal(null); if (view.current) view.current.focus(); }} />` : null}
     ${keys ? html`<${KeySheet} onClose=${() => setKeys(false)} />` : null}
   </div>`;

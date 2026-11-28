@@ -1,0 +1,131 @@
+/* The video mode editor's timeline (PAD-1664), held to the plan's design language (docs/plans/video_mode_maker.md,
+   section 6): the app's tokens only; --accent only for what is picked or active (the playhead, the picked key);
+   --info for markers, guides and the loop; teams keep their hues; a 4px grid; mono figures for time. */
+
+.vme-tl { grid-area: tl; position: relative; min-height: 0; min-width: 0; display: flex; background: var(--bg-2); border-top: 1px solid var(--line); }
+.vme-tl.shut { align-items: center; padding: 0 8px; }
+.vme-rail.h { width: auto; height: 22px; padding: 0 8px; gap: 6px; display: inline-flex; align-items: center; font-size: 12px; }
+.vme-split-h { position: absolute; left: 0; right: 0; top: -3px; height: 6px; cursor: row-resize; z-index: 4; }
+.vme-split-h:hover, body.vme-resizing .vme-split-h { background: var(--accent-line); }
+.vme-tl-fold { position: absolute; right: 6px; top: 5px; z-index: 3; }
+
+.vtl { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.vtl-h { flex: 0 0 34px; display: flex; align-items: center; gap: 6px; padding: 0 40px 0 12px; border-bottom: 1px solid var(--line); min-width: 0; overflow: hidden; white-space: nowrap; }
+.vtl-h .t { font-family: var(--cond); font-weight: 600; font-size: 13px; color: var(--ink); }
+.vtl-h .sp { flex: 1 1 auto; }
+.vtl-h .dim, .vtl .dim { color: var(--ink-3); font-size: 11.5px; }
+.vtl-time { font-size: 12.5px; color: var(--ink); min-width: 62px; font-variant-numeric: tabular-nums; }
+.vtl-hint { font-size: 11.5px; }
+.vtl-loopchip { gap: 4px; padding-right: 2px; }
+.vtl-loopchip .btn { height: 18px; width: 18px; }
+
+.vtl-b { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 196px minmax(0, 1fr); overflow-y: auto; overflow-x: hidden; position: relative; }
+.vtl-names { border-right: 1px solid var(--line); min-width: 0; background: var(--bg-2); position: sticky; left: 0; z-index: 2; }
+.vtl-name { height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 12px; color: var(--ink-2);
+            border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); white-space: nowrap; overflow: hidden; }
+.vtl-name.ruler { height: 22px; position: sticky; top: 0; z-index: 3; background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.vtl-name.grp { font-family: var(--cond); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: 600; color: var(--ink-3); }
+.vtl-name.thing { color: var(--ink); cursor: pointer; font-weight: 500; }
+.vtl-name.thing:hover { background: var(--panel-2); }
+.vtl-name.thing.on { background: var(--sel, var(--accent-soft)); }
+.vtl-name .dim { margin-left: auto; font-family: var(--mono); font-size: 10.5px; }
+.vtl-name.sub { padding-left: 26px; color: var(--ink-3); }
+.vtl-name.sub.on { color: var(--ink); background: var(--sel, var(--accent-soft)); }
+.vtl-name.sub .vtl-rm { margin-left: auto; opacity: 0; height: 18px; width: 18px; transition: opacity 120ms cubic-bezier(.2,.75,.25,1); }
+.vtl-name.sub:hover .vtl-rm, .vtl-name.sub .vtl-rm:focus-visible { opacity: 1; }
+.vtl-name.add { gap: 4px; padding-left: 22px; }
+.vtl-addprop { height: 18px; padding: 0 7px; font-size: 11px; cursor: pointer; border: 1px dashed var(--line-2); background: transparent; color: var(--ink-2); }
+.vtl-addprop:hover { border-color: var(--accent-line); color: var(--ink); }
+.vtl .team { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+
+.vtl-area { position: relative; min-width: 0; overflow: hidden; user-select: none; }
+.vtl-ruler { height: 22px; position: sticky; top: 0; z-index: 3; background: var(--bg-2); border-bottom: 1px solid var(--line); cursor: ew-resize;
+             font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+.vtl-tick { position: absolute; bottom: 0; height: 5px; border-left: 1px solid var(--line-2); }
+.vtl-tick.big { height: 9px; border-left-color: var(--ink-3); }
+.vtl-tick.big { padding-left: 3px; line-height: 1; }
+.vtl-tick.big::after { content: none; }
+.vtl-tick { text-indent: 3px; white-space: nowrap; display: flex; align-items: flex-start; }
+.vtl-tick.big { height: 20px; border-left-color: var(--line-2); align-items: flex-start; padding-top: 3px; }
+.vtl-end { position: absolute; top: 0; bottom: -2000px; border-left: 1px dashed var(--ink-3); opacity: .5; pointer-events: none; }
+.vtl-loop { position: absolute; top: 0; height: 22px; background: var(--info-soft); border-left: 1px solid var(--info); border-right: 1px solid var(--info); pointer-events: none; }
+.vtl-loopband { position: absolute; top: 22px; bottom: 0; background: color-mix(in srgb, var(--info) 6%, transparent); pointer-events: none; }
+.vtl-markline { position: absolute; top: 22px; bottom: 0; border-left: 1px dashed color-mix(in srgb, var(--info) 55%, transparent); pointer-events: none; }
+
+.vtl-row { height: 24px; position: relative; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
+.vtl-row.on { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.vtl-row.vtl-thing, .vtl-row.vtl-addkeys { background: color-mix(in srgb, var(--panel) 40%, transparent); }
+.vtl-span { position: absolute; top: 11px; height: 2px; background: var(--line-2); pointer-events: none; }
+.vtl-curve { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.vtl-curve path { fill: none; stroke: var(--ink-3); stroke-width: 1.2; }
+.vtl-kf { position: absolute; top: 7px; width: 10px; height: 10px; margin-left: -5px; transform: rotate(45deg); background: var(--panel-3);
+          border: 1px solid var(--ink-2); cursor: grab; z-index: 1; transition: background 120ms cubic-bezier(.2,.75,.25,1); }
+.vtl-kf:hover { border-color: var(--accent); }
+.vtl-kf.on { background: var(--accent); border-color: var(--accent); }
+.vtl-kf.motion { border-color: var(--info); }
+.vtl-kf.motion.on { border-color: var(--accent); }
+.vtl-kf-static { position: static; display: inline-block; margin: 0 4px 0 2px; cursor: default; }
+
+.vtl-marker { position: absolute; top: 3px; height: 18px; display: inline-flex; align-items: center; padding: 0 6px 0 5px; border-left: 2px solid var(--info);
+              font-family: var(--cond); font-size: 11px; font-weight: 600; color: var(--info); white-space: nowrap; cursor: grab; border-radius: 0 4px 4px 0;
+              background: color-mix(in srgb, var(--info) 10%, transparent); }
+.vtl-marker.on { background: var(--accent-soft); color: var(--ink); border-left-color: var(--accent); }
+.vtl-rename { width: 120px; height: 16px; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--accent); border-radius: 3px; padding: 0 4px; }
+
+.vtl-spawns { cursor: crosshair; }
+.vtl-wave { position: absolute; top: 4px; height: 16px; border-radius: 4px; background: color-mix(in srgb, var(--ink-3) 14%, transparent);
+            border: 1px solid var(--line-2); cursor: grab; box-sizing: border-box; }
+.vtl-wave i { position: absolute; top: 2px; bottom: 2px; width: 2px; margin-left: 3px; background: var(--ink-2); border-radius: 1px; pointer-events: none; }
+.vtl-wave.on { border-color: var(--accent); background: var(--accent-soft); }
+.vtl-wave.paint { border-style: dashed; border-color: var(--accent-line); pointer-events: none; }
+.vtl-wave-end { position: absolute; right: -4px; top: -1px; bottom: -1px; width: 8px; cursor: ew-resize; }
+.vtl-wave-end::after { content: ""; position: absolute; left: 3px; top: 3px; bottom: 3px; width: 2px; border-radius: 1px; background: var(--ink-3); }
+
+.vtl-snd { position: absolute; top: 3px; height: 18px; display: inline-flex; align-items: center; gap: 4px; padding: 0 7px 0 4px; border-radius: 999px;
+           font-size: 11px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line-2); cursor: grab; white-space: nowrap; }
+.vtl-snd .i { width: 12px; height: 12px; }
+.vtl-snd.on { border-color: var(--accent); color: var(--ink); }
+
+.vtl-head { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: var(--accent); z-index: 4; cursor: ew-resize; will-change: transform; }
+.vtl-head::before { content: ""; position: absolute; top: 0; left: -6px; border: 6px solid transparent; border-top: 8px solid var(--accent); }
+.vtl-head::after { content: ""; position: absolute; top: 0; bottom: 0; left: -4px; width: 9px; }
+
+.vtl-empty { position: absolute; left: 0; right: 0; top: 46px; display: flex; justify-content: center; pointer-events: none; }
+.vtl-empty > * { pointer-events: auto; }
+
+.vtl-scrim { background: transparent; }
+.vtl-menu { position: fixed; bottom: calc(var(--vme-tl, 220px) - 6px); min-width: 200px; max-height: 320px; overflow: auto; padding: 4px; border-radius: 10px;
+            background: var(--panel); border: 1px solid var(--line-2); box-shadow: var(--shadow); z-index: 30; }
+.vtl-menu-i { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;
+              color: var(--ink); font-size: 12.5px; cursor: pointer; text-align: left; }
+.vtl-menu-i:hover, .vtl-menu-i:focus-visible { background: var(--panel-2); outline: none; }
+.vtl-menu-i .dim { margin-left: auto; }
+.vtl-menu-i .i { width: 14px; height: 14px; }
+
+/* the keyframe inspector */
+.vtl-kins { display: flex; flex-direction: column; }
+.vtl-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.vtl-preset { height: 34px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; cursor: pointer; color: var(--ink-2);
+              transition: border-color 120ms cubic-bezier(.2,.75,.25,1), background 120ms cubic-bezier(.2,.75,.25,1); }
+.vtl-preset:hover { border-color: var(--line-2); background: var(--panel-2); }
+.vtl-preset.on { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.vtl-preset.txt { font-size: 12px; font-weight: 500; }
+.vtl-ease-ic { width: 70%; height: 70%; overflow: visible; }
+.vtl-curved { margin-top: 8px; }
+.vtl-curved svg { width: 100%; height: 132px; display: block; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); overflow: visible; touch-action: none; }
+.vtl-ch { fill: var(--panel); stroke: var(--accent); stroke-width: 2; cursor: grab; }
+.vtl-ch:hover { fill: var(--accent-soft); }
+.vtl-curvenums { margin-top: 6px; font-size: 11.5px; color: var(--ink-3); }
+.vtl-note { font-size: 12px; line-height: 1.45; }
+.vtl-colour { padding: 0 4px; }
+.vtl-colour input { width: 100%; height: 22px; border: 0; background: transparent; padding: 0; cursor: pointer; }
+.vtl-kfoot { display: flex; align-items: center; gap: 8px; padding: 12px; border-top: 1px solid var(--line); margin-top: 4px; }
+.vtl-kfoot .sp { flex: 1 1 auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vtl-kf, .vtl-preset, .vtl-name.sub .vtl-rm { transition: none; }
+}
+
+/* the storyboard over the stage, the docks and the timeline (its own sheet: vmodes_story.css) */
+.vme-story-area { grid-row: 2 / 4; grid-column: 1 / -1; position: relative; min-height: 0; min-width: 0; z-index: 6; background: var(--bg); }
+.vme-story-btn .i { width: 15px; height: 15px; }

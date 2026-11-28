@@ -1051,6 +1051,7 @@ class VideoModesTab(TabService):
             "pictures": self._play_pictures(doc, names),
             "fonts": self._page_fonts(comp, doc),
             "place0": names.get("place0") or [], "phases": names.get("phases") or [],
+            "track_keys": names.get("track_keys") or [],          # PAD-1664: each track's first key in the engine
         }
 
     def _edit_reply(self, doc, with_doc=False, assets_changed=False):
@@ -1163,6 +1164,18 @@ class VideoModesTab(TabService):
     @rpc
     def edit_redo(self):
         return self._edit_move("redo")
+
+    @rpc
+    def phase_template(self, doc, kind):
+        """PAD-1664, the storyboard's Add a phase: ``doc`` (the page's copy) with a new playable phase of game kind
+        ``kind`` and the placeholder things it needs. Nothing is saved: the page wires the phase into the flow and
+        commits the whole change as one step."""
+        _, _, D, _ = _mods()
+        try:
+            new = D.phase_template(D.migrate(doc), str(kind or ""))
+        except ValueError as e:
+            return {"ok": False, "problems": list(getattr(e, "problems", None) or [str(e)])}
+        return {"ok": True, "doc": new, "phase": new["phases"][-1]["id"]}
 
 
 TAB = VideoModesTab

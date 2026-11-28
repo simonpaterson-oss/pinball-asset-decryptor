@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -77,7 +78,7 @@ def test_format_2_reads_format_1_unchanged_but_its_number():
     with open(os.path.join(FIXTURES, "format_1.json"), encoding="utf-8") as f:
         raw = json.load(f)
     doc = vm.migrate(raw)
-    assert doc["format"] == vm.FORMAT and vm.FORMAT >= 2     # PAD-1666 took format 3; 1 still reads on through 2
+    assert doc["format"] == vm.FORMAT and vm.FORMAT >= 2      # format 3 (PAD-1664) and 4 (PAD-1666) add nothing a format 1 file holds
     raw2 = copy.deepcopy(raw)
     raw2["format"] = vm.FORMAT
     assert doc == raw2
@@ -248,11 +249,46 @@ def test_machine_files_are_written_for_every_sound_the_plan_carries(tmp_path):
     assert fields["calls"]["zap"]["priority"] == 3 and fields["calls"]["go_now"]["duck"] is True
     for f in [fields["music"]] + list(fields["beds"].values()) + [c["wav"] for c in fields["calls"].values()]:
         with wave.open(str(tmp_path / "out" / f)) as w:
-            if shutil.which("ffmpeg") or SND._ffmpeg() != "ffmpeg":
-                assert w.getframerate() == 48000 and w.getnchannels() == 2
+            assert w.getframerate() == 48000 and w.getnchannels() == 2
             secs = w.getnframes() / float(w.getframerate())
         if f == fields["music"]:
             assert secs >= SND.bed_seconds(doc, "chase_music")
+
+
+def test_machine_files_need_no_ffmpeg(tmp_path, monkeypatch):
+    """No ffmpeg on the computer (PAD-1684: the Linux CI runner): the machine still gets 48 kHz stereo WAVs, as
+    long as its mono source, and no stray _mono_ files are left behind."""
+    monkeypatch.setattr(SND, "_ffmpeg", lambda: str(tmp_path / "no-such-ffmpeg"))
+    doc = example()
+    plan, fields = SND.machine_files(doc, str(tmp_path / "nothing"), str(tmp_path / "out"))
+    names = [fields["music"]] + list(fields["beds"].values()) + [c["wav"] for c in fields["calls"].values()]
+    assert sorted(os.listdir(str(tmp_path / "out"))) == sorted(set(names))
+    for f in names:
+        with wave.open(str(tmp_path / "out" / f)) as w:
+            assert (w.getframerate(), w.getnchannels(), w.getsampwidth()) == (48000, 2, 2)
+            secs = w.getnframes() / 48000.0
+        if f == fields["music"]:
+            assert secs >= SND.bed_seconds(doc, "chase_music")
+
+
+def test_machine_wav_resamples_and_doubles_to_stereo(tmp_path):
+    p = str(tmp_path / "x.wav")
+    SND._write_machine_wav(p, [0.0, 0.5, 1.0, 0.5] * 2756, 11025)
+    with wave.open(p) as w:
+        assert (w.getframerate(), w.getnchannels()) == (48000, 2)
+        n = w.getnframes()
+        raw = w.readframes(n)
+    assert n == round(4 * 2756 * 48000 / 11025.0)
+    vals = struct.unpack("<%dh" % (len(raw) // 2), raw)
+    assert vals[0::2] == vals[1::2] and max(vals) > 32000
+
+
+def test_a_non_wav_sound_without_ffmpeg_says_it_could_not_be_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(SND, "_ffmpeg", lambda: str(tmp_path / "no-such-ffmpeg"))
+    src = tmp_path / "a.mp3"
+    src.write_bytes(b"ID3 not really")
+    with pytest.raises(ValueError, match="could not be read"):
+        SND.decode(str(src))
 
 
 def test_code_mode_call_that_does_not_duck_says_noduck(tmp_path):

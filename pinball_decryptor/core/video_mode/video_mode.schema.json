@@ -18,7 +18,7 @@
   "additionalProperties": false,
   "properties": {
     "format": {
-      "const": 3,
+      "const": 4,
       "description": "The document's format number. A later PAD migrates an older number step by step; an older PAD refuses a newer one."
     },
     "kind": {
@@ -1120,6 +1120,22 @@
           "required": [
             "button"
           ]
+        },
+        "tracks": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/track"
+          },
+          "description": "PAD-1664: the timeline's keyframed motion of placed things."
+        },
+        "sound_track": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/timed_sound"
+          },
+          "description": "PAD-1664: the timeline's sounds at set times."
         }
       },
       "allOf": [
@@ -2921,6 +2937,104 @@
       "required": [
         "outcomes"
       ]
+    },
+    "key": {
+      "type": "object",
+      "required": [
+        "at_s"
+      ],
+      "additionalProperties": false,
+      "description": "PAD-1664: one keyframe. at_s is seconds into the phase's play. A motion key has x, y (where the thing's anchor is) and may have bezier handles: out (towards the next key) and in (from the one before), each [dx, dy] stage px about the key. A scale, turn or alpha key has v; a tint key has tint. ease (or curve) is how it moves on to the next key.",
+      "properties": {
+        "at_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "x": {
+          "$ref": "#/$defs/px"
+        },
+        "y": {
+          "$ref": "#/$defs/px"
+        },
+        "in": {
+          "$ref": "#/$defs/point"
+        },
+        "out": {
+          "$ref": "#/$defs/point"
+        },
+        "v": {
+          "type": "number",
+          "minimum": -3600,
+          "maximum": 3600
+        },
+        "tint": {
+          "$ref": "#/$defs/colour"
+        },
+        "ease": {
+          "$ref": "#/$defs/easing"
+        },
+        "curve": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 2
+          },
+          "description": "An easing curve of its own, as CSS cubic-bezier(x1, y1, x2, y2); x1 and x2 within 0..1. Takes the place of ease."
+        }
+      }
+    },
+    "track": {
+      "type": "object",
+      "required": [
+        "place",
+        "prop",
+        "keys"
+      ],
+      "additionalProperties": false,
+      "description": "PAD-1664: one property of one placed thing, keyframed over the phase's play. place is the index of the thing in the phase's place list.",
+      "properties": {
+        "place": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 299
+        },
+        "prop": {
+          "enum": [
+            "motion",
+            "scale",
+            "turn",
+            "alpha",
+            "tint"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/key"
+          }
+        }
+      }
+    },
+    "timed_sound": {
+      "type": "object",
+      "required": [
+        "at_s",
+        "sound"
+      ],
+      "additionalProperties": false,
+      "description": "PAD-1664: a sound played at a set time of the phase's play.",
+      "properties": {
+        "at_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "sound": {
+          "$ref": "#/$defs/id"
+        }
+      }
     },
     "particle": {
       "type": "object",

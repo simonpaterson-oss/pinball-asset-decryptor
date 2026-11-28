@@ -7,7 +7,7 @@
       "seed": 1,
       "level": 0,
       "max": 200000,
-      "hash": "73258b61507a10bf",
+      "hash": "a965067396784c3f",
       "steps": 3141,
       "outcome": 1,
       "score": 33000
@@ -33,6 +33,28 @@
       "steps": 1849,
       "outcome": 0,
       "score": 2000
+    },
+    "keyframes_idle": {
+      "doc": "tests/data/video_mode/keyframes.json",
+      "inputs": "random:0:0",
+      "seed": 1,
+      "level": 0,
+      "max": 6000,
+      "hash": "fa3ca133a8452ab3",
+      "steps": 2664,
+      "outcome": 0,
+      "score": 0
+    },
+    "keyframes_random": {
+      "doc": "tests/data/video_mode/keyframes.json",
+      "inputs": "random:1664:6000",
+      "seed": 3,
+      "level": 1,
+      "max": 6000,
+      "hash": "088fe4a8c3b72f9a",
+      "steps": 2679,
+      "outcome": 0,
+      "score": 0
     }
   }
 }

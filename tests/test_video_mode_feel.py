@@ -89,12 +89,12 @@ def busy_inputs():
 
 
 # ---- the format and the presets ----------------------------------------------------------------------------------
-def test_format_2_reads_on_as_format_3_unchanged_but_its_number():
-    with open(os.path.join(FIXTURES, "format_2.json"), encoding="utf-8") as f:
+def test_format_3_reads_on_as_format_4_unchanged_but_its_number():
+    with open(os.path.join(FIXTURES, "format_3.json"), encoding="utf-8") as f:
         raw = json.load(f)
     doc = D.migrate(raw)
     want = copy.deepcopy(raw)
-    want["format"] = 3
+    want["format"] = 4
     assert doc == want and D.check(doc) == []
 
 

@@ -25,7 +25,8 @@ static int32_t words[VM_MAX_ENTRIES * 12 + 16];
 
 EXPORT(vmw_pack_buf) uint8_t *vmw_pack_buf(void) { return pack; }
 EXPORT(vmw_pack_max) int32_t vmw_pack_max(void) { return PACK_MAX; }
-EXPORT(vmw_load) int32_t vmw_load(int32_t len) { return len < 0 || len > PACK_MAX ? VM_ERR_SHORT : vm_load(&E, pack, (uint32_t)len); }
+static int32_t snap_n, snap_phase, seek_at;   /* PAD-1664's seek, below */
+EXPORT(vmw_load) int32_t vmw_load(int32_t len) { snap_n = 0; snap_phase = -1; seek_at = -1; return len < 0 || len > PACK_MAX ? VM_ERR_SHORT : vm_load(&E, pack, (uint32_t)len); }
 EXPORT(vmw_err_at) int32_t vmw_err_at(void) { return E.err_at; }
 EXPORT(vmw_start) void vmw_start(uint32_t seed, int32_t level) { vm_start(&E, seed, level); }
 EXPORT(vmw_step) int32_t vmw_step(uint32_t input) { return vm_step(&E, input); }
@@ -106,6 +107,7 @@ EXPORT(vmw_place_set) int32_t vmw_place_set(int32_t i, int32_t x, int32_t y, int
     vm_place *p;
     if (i < 0 || i >= E.doc.nplace || scale <= 0) return 0;
     p = &E.doc.place[i];
+    snap_n = 0; seek_at = -1;            /* PAD-1664: a place moved changes the play from its first step */
     p->x = x; p->y = y; p->scale = scale; p->turn = turn; p->depth = depth; p->hidden = hidden ? 1 : 0;
     return 1;
 }
@@ -137,9 +139,10 @@ EXPORT(vmw_place_boxes) int32_t vmw_place_boxes(void)
     ph = &E.doc.phase[E.phase];
     n = ph->nplace < VM_MAX_THINGS ? ph->nplace : VM_MAX_THINGS;
     for (i = 0; i < n; i++) {
-        const vm_thing *t = &E.th[i];
+        int32_t slot = E.place_th[i];      /* PAD-1664: after a seek, place i is wherever it was put, if still alive */
+        const vm_thing *t = slot >= 0 ? &E.th[slot] : 0;
         int32_t *o = &boxes[i * 9];
-        if (!t->alive) { o[0] = 0; continue; }
+        if (!t || !t->alive || t->place != i) { o[0] = 0; continue; }
         {
             const vm_picture *p = &E.doc.pic[E.doc.kind[t->kind].picture];
             int32_t w = vm_fxmul(p->w * p->texel, t->scale), h = vm_fxmul(p->h * p->texel, t->scale);
@@ -149,4 +152,94 @@ EXPORT(vmw_place_boxes) int32_t vmw_place_boxes(void)
         }
     }
     return n;
+}
+
+/* PAD-1664, the editor's timeline: scrubbing is replaying (vm_edit_seek_*), made instant by a snapshot of the play
+ * state every second of the phase, so a seek restores the nearest one at or before it and plays at most 59 steps.
+ * A change to the loaded tables throws away the snapshots it could have changed. None of this is in the machine. */
+#define SNAP_EVERY 60
+#define SNAP_MAX   121                     /* two minutes of a phase; past that a seek plays on from the last */
+static uint8_t snaps[SNAP_MAX][VM_STATE_BYTES];
+static int32_t snap_flags;
+static void snap_save(int32_t k) { memcpy(snaps[k], VM_STATE_FIRST(&E), VM_STATE_BYTES); }
+static void snap_load(int32_t k) { memcpy(VM_STATE_FIRST(&E), snaps[k], VM_STATE_BYTES); }
+/* every snapshot from play step `from` on may be wrong now (0: all of them) */
+EXPORT(vmw_seek_dirty) void vmw_seek_dirty(int32_t from)
+{
+    int32_t keep = from <= 0 ? 0 : (from + SNAP_EVERY - 1) / SNAP_EVERY;
+    if (keep < snap_n) snap_n = keep;
+    seek_at = -1;
+}
+/* the phase `phase` at play step `step` with nothing pressed, its draw list built; flags: VM_SEEK_ENDLESS. Returns
+ * the step reached (the step asked), or -1 */
+EXPORT(vmw_seek) int32_t vmw_seek(int32_t phase, int32_t step, int32_t flags)
+{
+    int32_t k, at;
+    if (!E.loaded || phase < 0 || phase >= E.doc.nphase || step < 0) return -1;
+    if (phase != snap_phase || flags != snap_flags) { snap_n = 0; snap_phase = phase; snap_flags = flags; }
+    if (!snap_n) {
+        if (!vm_edit_seek_begin(&E, phase, flags)) return -1;
+        snap_save(0); snap_n = 1;
+    }
+    k = step / SNAP_EVERY;
+    if (k > snap_n - 1) k = snap_n - 1;
+    snap_load(k);
+    at = k * SNAP_EVERY;
+    while (at < step) {
+        vm_edit_seek_step(&E);
+        at++;
+        if (at % SNAP_EVERY == 0 && at / SNAP_EVERY == snap_n && snap_n < SNAP_MAX) snap_save(snap_n++);
+    }
+    vm_edit_seek_draw(&E);
+    seek_at = step;
+    return step;
+}
+EXPORT(vmw_seek_snaps) int32_t vmw_seek_snaps(void) { return snap_n; }
+/* this step's sound cues and events as the seek left them (the step just played) */
+EXPORT(vmw_key_count) int32_t vmw_key_count(void) { return E.doc.nkey; }
+/* key i (over every track in order): its values, in 16.16 (a tint: 0xRRGGBBAA); the caller says which snapshots
+ * that changed (vmw_seek_dirty) */
+EXPORT(vmw_key_set) int32_t vmw_key_set(int32_t i, int32_t a, int32_t b, int32_t ox, int32_t oy, int32_t ix, int32_t iy)
+{
+    vm_key *k;
+    if (i < 0 || i >= E.doc.nkey) return 0;
+    k = &E.doc.key[i];
+    k->a = a; k->b = b; k->ox = ox; k->oy = oy; k->ix = ix; k->iy = iy;
+    return 1;
+}
+/* key i's time (steps into the play): kept a step clear of its track's neighbours, so the keys stay in order */
+EXPORT(vmw_key_at) int32_t vmw_key_at(int32_t i, int32_t at)
+{
+    int32_t t;
+    if (i < 0 || i >= E.doc.nkey || at < 0) return 0;
+    for (t = 0; t < E.doc.ntrack; t++) {
+        const vm_track *tr = &E.doc.track[t];
+        if (i < tr->key0 || i >= tr->key0 + tr->nkey) continue;
+        if (i > tr->key0 && at <= E.doc.key[i - 1].at) return 0;
+        if (i < tr->key0 + tr->nkey - 1 && at >= E.doc.key[i + 1].at) return 0;
+        E.doc.key[i].at = at;
+        return 1;
+    }
+    return 0;
+}
+/* a key put into track t (over every track in order) at its place `pos`, while a drag that makes it is live: the
+ * tables shift as the compiler would lay them out with it. The page's own copy of the document gets the same key, and
+ * the pack the commit brings back replaces all of it. */
+EXPORT(vmw_key_insert) int32_t vmw_key_insert(int32_t t, int32_t pos, int32_t at, int32_t a, int32_t b, int32_t ease)
+{
+    vm_track *tr;
+    int32_t i, at_i;
+    if (t < 0 || t >= E.doc.ntrack || E.doc.nkey >= VM_MAX_KEYS) return 0;
+    tr = &E.doc.track[t];
+    if (pos < 0 || pos > tr->nkey) return 0;
+    if ((pos > 0 && at <= E.doc.key[tr->key0 + pos - 1].at) || (pos < tr->nkey && at >= E.doc.key[tr->key0 + pos].at)) return 0;
+    at_i = tr->key0 + pos;
+    for (i = E.doc.nkey; i > at_i; i--) E.doc.key[i] = E.doc.key[i - 1];
+    E.doc.nkey++;
+    memset(&E.doc.key[at_i], 0, sizeof(vm_key));
+    E.doc.key[at_i].at = at; E.doc.key[at_i].a = a; E.doc.key[at_i].b = b;
+    E.doc.key[at_i].ease = ease; E.doc.key[at_i].curve = -1;
+    tr->nkey++;
+    for (i = 0; i < E.doc.ntrack; i++) if (i != t && E.doc.track[i].key0 >= at_i) E.doc.track[i].key0++;
+    return 1;
 }
