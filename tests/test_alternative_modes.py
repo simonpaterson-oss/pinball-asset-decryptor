@@ -160,3 +160,101 @@ def test_the_online_coop_row(tmp_path):
     eng = inspect.getsource(E)
     assert "show_menu, timer_menu, online_menu], log)" in eng
     assert "online_setting=online_setting," in eng
+
+
+ONLINE_MAIN = r"""
+#include <stdio.h>
+#include <stdint.h>
+#include <stdarg.h>
+#include <string.h>
+@DEFS@
+static struct {
+    pm_addr online_row;
+    int armed;
+    struct feed_report cur;
+} feed;
+@FNS@
+static volatile unsigned row_word;
+static void report(const char *tag)
+{
+    struct feed_report r;
+    char out[2048];
+    memset(&r, 0, sizeof r);
+    r.players = 1;
+    r.scores[0] = 777;
+    feed_online_into(&r);
+    printf("%s %d %s\n", tag, pm_online(), feed_json(out, sizeof out, &r, "x", "y", 0) ? out : "-");
+}
+
+int main(void)
+{
+    feed.armed = 1;
+    strcpy(feed.cur.campaign, "Kaiju War");
+    strcpy(feed.cur.team, "Team G");
+    strcpy(feed.cur.machine, "Dave");
+    feed_count_add(&feed.cur, "cities_saved", 3);
+    report("norow");
+    feed.online_row = (pm_addr)(unsigned long)&row_word;
+    row_word = 1;
+    report("on");
+    row_word = 0;
+    report("off");
+    return 0;
+}
+"""
+
+
+def test_the_online_coop_row_compiled(tmp_path):
+    """PR #54 review: the runtime's own feed_online_into and pm_online, compiled: with no ONLINE CO-OP row and with it
+    On, a report names the campaign and carries the counts; Off, it carries neither and pm_online() answers 0, while
+    the scores still go."""
+    from tests import test_pad1204_score_feed as F
+    from tests import test_spike2_mode_roster as R
+    R._cc()                                             # skips with no ELF toolchain (Windows, macOS)
+    src = _src()
+    i = src.index("#define FEED_TYPES ")
+    defs = "\n".join([src[i:src.index("\n", src.index("#define FEED_RANK_CHALLENGE", i))],   # FEED_COUNTS too
+                      F._struct(src, "feed_report")])
+    fns = "\n".join(R._lift(src, sig) for sig in (
+        "static int str_eq(const char *a, const char *b)",
+        "static int feed_fmt(char *b, unsigned long cap, const char *f, ...)",
+        "static unsigned feed_json_str(char *out, unsigned cap, const char *s)",
+        "static unsigned feed_json(char *out, unsigned cap, const struct feed_report *r, const char *title,",
+        "static int feed_count_name_ok(const char *s)",
+        "static int feed_count_add(struct feed_report *r, const char *name, long long n)",
+        "static void feed_online_into(struct feed_report *r)\n{",
+        "int pm_online(void)\n{"))
+    out = R._host_run(tmp_path, ONLINE_MAIN.replace("@DEFS@", defs).replace("@FNS@", fns),
+                      flags=("-no-pie",)).splitlines()   # pm_addr is 32 bits: the row word at a low address
+    docs = {l.split(" ", 2)[0]: (int(l.split(" ", 2)[1]), json.loads(l.split(" ", 2)[2])) for l in out}
+    for tag in ("norow", "on"):
+        online, doc = docs[tag]
+        assert online == 1 and doc["campaign"] == "Kaiju War" and doc["counts"] == {"cities_saved": 3}, tag
+    online, doc = docs["off"]
+    assert online == 0 and "campaign" not in doc and "counts" not in doc and doc["scores"] == [777]
+
+
+def test_scorefeed_cfg_names_the_online_row_only_with_online_coop(tmp_path, monkeypatch):
+    """PR #54 review: feed_into writes ``online_row`` with the row's address beside the campaign's lines, and never
+    for a feed that carries no online co-op (or with no row on the card)."""
+    import pathlib
+    from pinball_decryptor.plugins.stern import mode_project as MP
+    from pinball_decryptor.plugins.stern import mode_write as MW
+    from pinball_decryptor.plugins.stern import online_coop as OC
+    from tests.test_pad1479_online_coop import _godzilla
+    monkeypatch.setattr(CP, "insider_users", lambda elf: None)
+    p = str(tmp_path / "proj")
+    os.makedirs(p)
+    OC.save(p, url="http://203.0.113.10:8090/", campaign="Kaiju War", machine="Dave", design=OC.EXAMPLES["kaiju_war"])
+    OC.save(p, team="Team King Ghidorah", on=True)
+    prof = _godzilla()
+
+    def cfg(url, setting, name):
+        plan = MW.ModePlan(project=p, profile=prof, port=MP.port_path(prof), build=None)
+        MW.feed_into(plan, b"elf", str(tmp_path / name), url, only=True, online_setting=setting)
+        return pathlib.Path(plan.scorefeed_file).read_text(encoding="utf-8").splitlines()
+
+    lines = cfg("http://203.0.113.10:8090/", 0x7a4e5c, "a")
+    assert "online_row 0x007a4e5c" in lines and lines.index("online Kaiju War") < lines.index("online_row 0x007a4e5c")
+    assert not any(l.startswith("online_row") for l in cfg("http://203.0.113.10:8090/", 0, "b"))   # no row
+    assert not any(l.startswith("online_row") for l in cfg("http://192.168.1.50/", 0x7a4e5c, "c"))  # not its server
