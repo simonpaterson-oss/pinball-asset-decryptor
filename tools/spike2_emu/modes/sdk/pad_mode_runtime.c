@@ -35170,7 +35170,7 @@ static void pad_mode_start(void)
  * eglSwapBuffers through its PLT has it. What IS per title is only where a video mode's ball waits and which buttons
  * it reads (the rollout tickets of the epic).
  *
- * Why not the others (docs/plans/video_mode_maker.md has the measurements):
+ * Why not the others (docs/plans/video_mode_spike2_drawing.md has the measurements):
  *   - Radium node transforms on a pool of baked Sprite nodes: only pictures already baked into the card's hud scene
  *     can move, the pool is per scene and per title (a site and a scene grammar per port), and every move goes
  *     through the game's scene update on its own CPU budget.

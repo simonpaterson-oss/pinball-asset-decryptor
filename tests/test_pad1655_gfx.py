@@ -6,7 +6,7 @@ frame and their memory is let go, quads come out sorted by depth with their turn
 out from the card font's metrics, the cover goes under everything, and - the point of the route - every piece of GL
 state the game had at its swap is exactly as it was after ours. When the mode stops running its list comes off and its
 textures are deleted. The rig half (Godzilla, Uncanny X-Men Pro and LE for five minutes) is in
-docs/plans/video_mode_maker.md.
+docs/plans/video_mode_spike2_drawing.md.
 """
 
 import math

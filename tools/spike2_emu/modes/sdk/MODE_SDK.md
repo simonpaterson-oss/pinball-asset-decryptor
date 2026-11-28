@@ -8001,4 +8001,4 @@ the next frame, the cover with it, and its sets' textures and memory are freed. 
 **The budget**, logged once a minute while armed (`gfx: in the last 60 s ...`): the frames that went to the glass
 and how many carried the list, quads a frame, the runtime's part of a frame in microseconds, a list's build time on
 the tick, the pictures on the GPU and the process's memory. The numbers measured in the emulator are in
-`docs/plans/video_mode_maker.md`.
+`docs/plans/video_mode_spike2_drawing.md`.
