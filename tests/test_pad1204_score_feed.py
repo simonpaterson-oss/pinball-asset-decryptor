@@ -452,7 +452,8 @@ def test_what_keeps_insider_connected_has_a_tab_of_its_own():
     from pinball_decryptor.webui import tabs as T
     from pinball_decryptor.webui.tabs import playopts as PO
     assert ("playopts", "playopts", "Play Options", "Play options", "Make", "gear") in T.TABS
-    assert [t[0] for t in T.TABS].index("playopts") == [t[0] for t in T.TABS].index("defaults") + 1
+    order = [t[0] for t in T.TABS]          # beside Defaults; PAD-1658 put Video modes between them on purpose
+    assert order[order.index("defaults") + 1:order.index("playopts")] == ["vmodes"]
     assert "Play options tab" in MP.INSIDER_TAB_NOTE and "modes or co-op play" in MP.INSIDER_TAB_NOTE
     assert "stays on Insider Connected" in MP.KEEPS_IC_NOTE
     for text in (MP.INSIDER_TAB_NOTE, MP.KEEPS_IC_NOTE, PO.INTRO):

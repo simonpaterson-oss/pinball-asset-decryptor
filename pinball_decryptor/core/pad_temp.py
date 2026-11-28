@@ -128,6 +128,7 @@ NAMES = (
     _n("pad-game-", APP, "game file export"),
     _n("pad-game-code-", APP, "game file code staging"),
     _n("pad_vidbudget_", APP, "video fitting staging"),
+    _n("pad_vmodes_", APP, "Video modes tab scratch"),
     _n("pad-encprobe-", APP, "video encoder check"),
     _n("pad-decprobe-", APP, "video decoder check"),
     _n("pad-audio-", APP, "Audio tab scratch"),

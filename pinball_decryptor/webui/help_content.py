@@ -4521,7 +4521,7 @@ PREVIEW_HELP["modes"]["Video Modes"] = [
     ("Bring art in", [
         "**Bring art in…** reads a picture, a numbered run of PNGs (pick any file of the run), an animated GIF, a "
         "sprite sheet cut by a grid or at its empty gutters, or a few seconds of a video. A video is cut out by a "
-        "key colour (a green or blue screen) or by its own see-through parts (a WebM or a ProRes 4444 MOV). Each "
+        "key color (a green or blue screen) or by its own see-through parts (a WebM or a ProRes 4444 MOV). Each "
         "becomes one picture with its frames.",
         "Pick a picture to set its **frame rate**, whether it **loops** or plays **once**, its **anchor** (the cross: "
         "the point that sits where the thing is placed) and its **hit box** (box or circle: what collides). Drag "

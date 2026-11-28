@@ -36,7 +36,7 @@ const T = {
     gif: "An animated GIF, APNG or WebP, with its own frame times and loop.",
     grid: "A sheet cut into frames of one size, left to right, top to bottom.",
     auto: "A sheet cut where its empty gutters are: the rows, then the columns, holding nothing but its background.",
-    video: "Seconds of a video as frames, cut out by a key colour (a green or blue screen) or by its own alpha.",
+    video: "Seconds of a video as frames, cut out by a key color (a green or blue screen) or by its own alpha.",
   },
 };
 
@@ -337,7 +337,7 @@ function ImportDialog({ d, kinds }) {
           ${d.src_w ? html`<span></span><span class="small muted mono">sheet ${d.src_w} × ${d.src_h}</span>` : null}` : null}
         ${d.kind === "auto" ? html`
           <${OptField} label="Tolerance" k="tolerance" d=${d} opts=${o} min=${0} max=${64}
-            title="How far from the background colour still counts as empty (a sheet with no see-through pixels)" />
+            title="How far from the background color still counts as empty (a sheet with no see-through pixels)" />
           <${OptField} label="Smallest gap" k="min_gap" d=${d} opts=${o} min=${1}
             title="Gutters narrower than this (pixels) do not split frames" />` : null}
         ${d.kind === "video" ? html`
@@ -347,15 +347,15 @@ function ImportDialog({ d, kinds }) {
           <${OptField} label="Width" k="width" d=${d} opts=${o} min=${8} max=${1360} title="Scale the frames to this width (empty: the video's own, up to 1360)" />
           <label class="vm-lbl">Cut out by</label>
           <${Seg} value=${o.cut || "key"} onChange=${(v) => redo("video", { cut: v })}
-            options=${[{ value: "key", label: "Key colour" }, { value: "alpha", label: "Alpha" }, { value: "none", label: "None" }]} />
+            options=${[{ value: "key", label: "Key color" }, { value: "alpha", label: "Alpha" }, { value: "none", label: "None" }]} />
           ${(o.cut || "key") === "key" ? html`
-            <label class="vm-lbl">Key colour</label>
+            <label class="vm-lbl">Key color</label>
             <div class="row" style="gap:6px">
               <input type="color" class="vm-swatch" value=${o.key || "#00ff00"}
                 onChange=${(e) => redo("video", { key: e.target.value })} />
               <span class="mono small">${o.key || "#00ff00"}</span></div>
             <${OptField} label="Tolerance" k="tolerance" d=${d} opts=${o} min=${0} max=${1} step=${0.01}
-              title="0 to 1: how near the key colour a pixel must be to go see-through" />` : null}` : null}
+              title="0 to 1: how near the key color a pixel must be to go see-through" />` : null}` : null}
         ${d.frames > 1 ? html`
           <label class="vm-lbl" ...${tip(T.fps)}>Frame rate</label>
           <${Field} sm type="number" width="72px" min=${1} max=${60} value=${String(fps)} onChange=${(v) => setFps(Number(v) || fps)} />
@@ -432,7 +432,7 @@ function Backgrounds({ s }) {
       extra=${html`<${Select} sm value=${pid} width="200px" options=${phases.map((p) => ({ value: p.id, label: `Phase: ${p.title}` }))} onChange=${setPid} />`}>
     <div class="vm-bg-body">
       <div class="vm-layers">
-        ${layers.length ? null : html`<div class="small muted vm-none">No background on this phase: the stage's colour shows.</div>`}
+        ${layers.length ? null : html`<div class="small muted vm-none">No background on this phase: the stage's color shows.</div>`}
         ${layers.map((l, i) => html`<div class="vm-layer">
           <span class="vm-layer-n mono small muted">${i + 1}</span>
           <${Select} sm value=${l.picture} width="130px" disabled=${s.running}

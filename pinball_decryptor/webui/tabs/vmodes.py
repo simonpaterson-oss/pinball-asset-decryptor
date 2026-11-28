@@ -14,10 +14,10 @@ The rules live in :mod:`...core.video_mode.art` and :mod:`...core.video_mode.pac
 
 import os
 import shutil
-import tempfile
 import threading
 
 from .. import compat
+from ...core import pad_temp
 from .base import TabService, rpc
 
 INTRO = ("Small games played on the screen with the flipper buttons and Action while the ball is held. Bring in "
@@ -80,7 +80,7 @@ class VideoModesTab(TabService):
 
     def _tmpdir(self):
         if not self._tmp or not os.path.isdir(self._tmp):
-            self._tmp = tempfile.mkdtemp(prefix="pad_vmodes_")
+            self._tmp = pad_temp.mkdtemp(prefix="pad_vmodes_")
         return self._tmp
 
     @rpc
