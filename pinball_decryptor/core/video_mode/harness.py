@@ -72,8 +72,8 @@ def parse(out):
             _, s, t, a, b, c = line.split()
             events.append((int(s), int(t), int(a), int(b), int(c)))
         elif line.startswith("C "):
-            _, s, snd, op, duck = line.split()
-            cues.append((int(s), int(snd), int(op), int(duck)))
+            _, s, snd, op, duck, fade = line.split()
+            cues.append((int(s), int(snd), int(op), int(duck), int(fade)))
         elif line.startswith("D "):
             parts = line.split()
             dumps.append((int(parts[1]), [int(x, 16) for x in parts[2:]]))

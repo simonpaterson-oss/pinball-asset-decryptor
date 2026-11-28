@@ -26,7 +26,7 @@
 #include <stdint.h>
 
 #define VM_PACK_MAGIC   0x31504D56u   /* "VMP1" little end first */
-#define VM_PACK_VERSION 1
+#define VM_PACK_VERSION 2   /* 2 (PAD-1667): phases carry their music's fade, cues their fade */
 
 /* ---- limits: sized from the largest column of the plan's budgets (section 5) ---- */
 #define VM_MAX_THINGS     512   /* alive at once (the desk budget is 300) */
@@ -114,10 +114,14 @@ enum {
 enum { VM_ON_FIRE, VM_ON_HIT, VM_ON_KILL, VM_ON_PICKUP, VM_ON_HURT, VM_ON_PROMPT_GOOD,
        VM_ON_PROMPT_PERFECT, VM_ON_PROMPT_MISS, VM_ON_PHASE_START, VM_ON_PHASE_WON,
        VM_ON_PHASE_LOST, VM_ON_WON, VM_ON_LOST };
+/* a sound cue's op (PAD-1667): PLAY a sound once; MUSIC: this bed is the music now (the one before, if any,
+ * fades out over `fade` steps as this one fades in - a music change happens only when the bed changes, so a phase
+ * tried again, or one with the same music, plays on); MUSIC_STOP: the music fades out over `fade` steps (a
+ * cutscene, a phase without music, the end). `duck`: the music goes down under this sound. */
 enum { VM_SND_PLAY, VM_SND_MUSIC, VM_SND_MUSIC_STOP };
 
 typedef struct { int32_t type, a, b, c; } vm_event;
-typedef struct { int32_t sound, op, duck; } vm_sndcue;
+typedef struct { int32_t sound, op, duck, fade; } vm_sndcue;
 
 /* ---- the draw list (plan section 4) ---- */
 enum { PM_BLEND_NORMAL, PM_BLEND_ADD };
@@ -166,7 +170,8 @@ typedef struct { int32_t picture, anim, scale, team, health, points, blend, dept
 typedef struct { int32_t type, speed, dir, path0, npath, easing, loop, target, turn, radius; } vm_mover;
 typedef struct { int32_t x, y, cum; } vm_pathpt;
 typedef struct { int32_t kind, title, objective, length, music, bg0, nbg, place0, nplace,
-                 spawn0, nspawn, win0, nwin, lose0, nlose, layout, ramp_from, ramp_to, settings; } vm_phase;
+                 spawn0, nspawn, win0, nwin, lose0, nlose, layout, ramp_from, ramp_to, settings,
+                 music_fade; } vm_phase;   /* music_fade: steps its music fades in (and out) over */
 typedef struct { int32_t picture, speed, y, tile, alpha; } vm_layer;
 typedef struct { int32_t kind, x, y, scale, turn, depth, hidden; } vm_place;
 typedef struct { int32_t kind, at, every, count, x, y, spread, lane, mover; } vm_spawn;
@@ -248,6 +253,7 @@ typedef struct vm_engine {
     int32_t alt_last, alt_half, rival;
     int32_t combo, combo_t, hitstop, shake, shake_x, shake_y, flash_a, flash_col;
     int32_t callout, callout_t;      /* a string shown big, steps left */
+    int32_t music, music_fade;       /* the music bed playing (-1 none) and the steps it fades out over */
     int32_t spawned[VM_MAX_SPAWNS];
     int32_t serial;
     int32_t nthings;
