@@ -57,7 +57,7 @@ UNPLAYED_WHENS = {"accuracy", "landed", "cashed_out", "busted"}
 LIMITS = {
     "strings": 256, "string_bytes": 8192, "fonts": 8, "pictures": 96, "animations": 192,
     "frames": 2048, "values": 48, "things": 96, "movers": 192, "path_points": 1024,
-    "phases": 32, "layers": 128, "places": 256, "spawns": 256, "conditions": 256,
+    "phases": 32, "layers": 128, "places": 1024, "spawns": 256, "conditions": 256,
     "weak_points": 64, "attacks": 64, "cards": 96, "hud": 64, "cues": 64, "sounds": 64,
     "clips": 32,
 }
@@ -277,7 +277,7 @@ class _Compiler:
         names = {"things": [t["id"] for t in self.things], "phases": [ph["id"] for ph in self.phases],
                  "sounds": list(self.sound_ix), "clips": list(self.clip_ix),
                  "pictures": [pc["id"] for pc in self.pics], "values": [v["id"] for v in self.values],
-                 "fonts": fonts}
+                 "fonts": fonts, "place0": [ph[7] for ph in phases]}
         return Compiled(pack, [], self.notes, names)
 
     def build_fonts(self):

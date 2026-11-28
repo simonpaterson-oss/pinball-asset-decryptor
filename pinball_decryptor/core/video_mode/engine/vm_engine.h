@@ -39,7 +39,7 @@
 #define VM_MAX_PATHPTS    1024
 #define VM_MAX_PHASES     32
 #define VM_MAX_LAYERS     128
-#define VM_MAX_PLACES     256
+#define VM_MAX_PLACES     1024
 #define VM_MAX_SPAWNS     256
 #define VM_MAX_CONDS      256
 #define VM_MAX_SETTINGS   32    /* one record per phase */
@@ -285,6 +285,10 @@ uint32_t vm_list_words(const vm_engine *e, int32_t *out, uint32_t cap);
 int vm_check(const vm_engine *e);
 /* 1 when boss weak point i is open this step */
 int vm_weak_open(const vm_engine *e, int32_t i);
+/* the editor's still (PAD-1661): phase `phase` as its first step leaves it, past the opening transition, with
+ * the title card when flags & 1. Builds the draw list and steps nothing; play state is the phase's start.
+ * Never called on a machine. 0 when there is no such phase. */
+int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags);
 
 /* fixed point helpers, shared with the bot and the harness */
 #define VM_FX(n) ((int32_t)((n) * 65536))

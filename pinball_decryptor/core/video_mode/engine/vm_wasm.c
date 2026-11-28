@@ -94,3 +94,44 @@ EXPORT(vmw_hits) int32_t vmw_hits(void)
 }
 EXPORT(vmw_bot_init) void vmw_bot_init(int32_t clip_steps) { vm_bot_init(&B, clip_steps); }
 EXPORT(vmw_bot_input) uint32_t vmw_bot_input(void) { return vm_bot_input(&B, &E); }
+
+/* PAD-1661, the app's editor: the stage is the engine's own still of a phase, and a drag rewrites the place it
+ * moves in the loaded tables and takes the still again, so what the editor shows is what the engine draws. None of
+ * this is in the machine's object. */
+EXPORT(vmw_edit_still) int32_t vmw_edit_still(int32_t phase, int32_t flags) { return vm_edit_still(&E, phase, flags); }
+EXPORT(vmw_place_count) int32_t vmw_place_count(void) { return E.doc.nplace; }
+/* place i (over every phase, in order): x, y, scale, turn in 16.16, depth (VM's NONE keeps the thing's), hidden */
+EXPORT(vmw_place_set) int32_t vmw_place_set(int32_t i, int32_t x, int32_t y, int32_t scale, int32_t turn, int32_t depth, int32_t hidden)
+{
+    vm_place *p;
+    if (i < 0 || i >= E.doc.nplace || scale <= 0) return 0;
+    p = &E.doc.place[i];
+    p->x = x; p->y = y; p->scale = scale; p->turn = turn; p->depth = depth; p->hidden = hidden ? 1 : 0;
+    return 1;
+}
+/* after vmw_edit_still: each placed thing of the phase as drawn (place j is live thing j, the phase's places spawn
+ * first, in order): alive, hidden, x, y (its anchor), turn, then the frame's corners about the anchor x0, y0, x1, y1
+ * (scaled, unturned), stage px 16.16; 9 words a place */
+static int32_t boxes[VM_MAX_THINGS * 9];
+EXPORT(vmw_place_boxes_buf) int32_t *vmw_place_boxes_buf(void) { return boxes; }
+EXPORT(vmw_place_boxes) int32_t vmw_place_boxes(void)
+{
+    int32_t i, n;
+    const vm_phase *ph;
+    if (!E.loaded || E.phase < 0 || E.phase >= E.doc.nphase) return 0;
+    ph = &E.doc.phase[E.phase];
+    n = ph->nplace < VM_MAX_THINGS ? ph->nplace : VM_MAX_THINGS;
+    for (i = 0; i < n; i++) {
+        const vm_thing *t = &E.th[i];
+        int32_t *o = &boxes[i * 9];
+        if (!t->alive) { o[0] = 0; continue; }
+        {
+            const vm_picture *p = &E.doc.pic[E.doc.kind[t->kind].picture];
+            int32_t w = vm_fxmul(p->w * p->texel, t->scale), h = vm_fxmul(p->h * p->texel, t->scale);
+            int32_t x0 = -vm_fxmul(p->ax, w), y0 = -vm_fxmul(p->ay, h);
+            o[0] = 1; o[1] = t->hidden; o[2] = t->x; o[3] = t->y; o[4] = t->turn;
+            o[5] = x0; o[6] = y0; o[7] = x0 + w; o[8] = y0 + h;
+        }
+    }
+    return n;
+}

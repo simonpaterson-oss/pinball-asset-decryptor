@@ -238,7 +238,7 @@ sound and clip files. The schema is
 `pinball_decryptor/core/video_mode/video_mode.schema.json` (JSON Schema 2020-12); the
 app reads a file only through `pinball_decryptor/core/video_mode/document.py`
 (`load`, `migrate`, `check`), and `tests/test_video_mode_schema.py` loads the same schema.
-The web UI gets it from the app over RPC when the editor lands (PAD-1661); there is no
+The web UI gets it from the app over RPC (the editor, PAD-1661: `vmodes.edit_open` and `edit_commit`); there is no
 second copy.
 
 **Units.** Places and sizes are stage pixels on the 1360x768 stage, origin top left,
@@ -745,6 +745,56 @@ through Web Audio (Edge muted); the machine rate drew 29 frames a second at 60 s
 The Modes tab lists video modes with the rest (a Video pill; picking one opens it on the Video modes tab), and the
 New mode wizard has a fourth way, **Video mode**, that needs a project but no card.
 
+### The editor in the app (PAD-1661)
+
+**Edit** on the Video modes tab opens the editor (`webui/static/js/tabs/vmodes_edit.js`; its Python half is
+`vmodes.py` `edit_open` / `edit_commit` / `edit_undo` / `edit_redo`; the undo history is
+`core/video_mode/history.py`), laid out as section 6 draws it: the toolbar, Layers and Assets on the left, the stage
+with its rulers in the middle, the inspector on the right and a status line under them.
+
+**The stage is the engine.** The engine takes a still of the phase, `vm_edit_still` (its first step as `phase_start`
+leaves it, past the opening transition; the title card only when **Title** is on), and the player's WebGL backend
+draws its draw list under a zoom and pan (`GLStage.setView`). A drag rewrites the places it moves in the engine's
+loaded tables (`vmw_place_set`, editor only, never in the machine's object) and takes the still again on every
+frame, so what the editor shows while dragging is what the engine draws, not a second drawing of it. The selection
+boxes, handles, hit testing and snapping use the engine's own geometry of each placed thing (`vmw_place_boxes`:
+place j is live thing j, since a phase's places spawn first, in order). A change that adds or removes things waits
+for the pack the compiler makes of it (milliseconds). The engine and compiler hold 1024 placed things (they held
+256; a phase may place 300).
+
+**What it does.** Things and pictures dragged from Assets onto the stage (a picture becomes a thing of its own, team
+scenery); move, scale (from the opposite handle) and turn (the round handle) with handles, Shift for steps; snapping
+to the grid, the guides, the stage, the safe area and other things' edges and centres, with the gap to the thing
+snapped to shown in px (Ctrl places freely); zoom at the pointer (Ctrl wheel), pan (wheel, Space drag, middle drag),
+Fit and 100%; rulers with the cursor and the selection marked, guides dragged out of them and back to remove them;
+the safe area and the machine's glass as overlays (the dot-matrix band, or a screen's frame); hit boxes (H) from the
+engine's collisions; multi-select (Shift, a box), group and ungroup, align and distribute (one thing: to the stage),
+copy and paste (between phases too), duplicate (Ctrl D, or Alt drag leaving the original), nudges, lock and hide;
+Layers in draw order with their depth, dragged to reorder (the moved rows take a depth between their new neighbours',
+the rest keep theirs); the inspector for the phase (title, objective, length, stage colour, safe area), for one
+thing (place, size in px, scale, turn, depth, picture, animation, team, health, points, blend, hit box, how it moves)
+and for several (align bar, place, arrange). Number fields scrub on drag and take typed numbers and arrows. A command
+palette (Ctrl K) names every command, which with Tab, the arrows and F6 makes the editor whole from the keyboard;
+`?` shows the shortcut sheet. **Play** (F5) opens the player on the phase's card, and Back to editing returns.
+
+**Every change is one step.** The page sends the whole document after a change to `edit_commit`, which checks it,
+compiles it and saves it (there is no save button), or refuses it whole with every reason and the page puts its copy
+back. The history keeps each step as a diff (`{"p", "a", "b"}` a value set, `{"p", "i", "a", "b"}` a list spliced),
+appended to `<mode>/.video_mode_history.jsonl` with the document's fingerprint, so undo and redo have no limit and
+survive a reload; a file changed by something else starts a new history. The tab's own changes (bring art in, a
+picture's settings, backgrounds) are steps too. Groups and guides live in the document's `editor` object; the view
+(zoom, the overlays, the docks' widths) is the user's own, kept in the browser.
+
+**Proved by** `tests/test_video_mode_editor.py` (300 random documents through a step and back, exactly; 500 mixed
+edits through the tab's calls with the app closed and opened half-way, undone one by one to the empty document and
+redone; a refused change saves nothing; a file changed outside starts afresh; the still of Night Harbour's boss
+phase is where the game's own first 18 steps leave its things, a rewritten place moves in it, and
+`tests/data/video_mode/stage_300.json`'s 300 placed things take a still in well under a frame; 1024 places compile,
+1200 do not) and `scripts/shot_pad1661.py` in Edge: a 3 s drag on the 300-thing stage drew about 76 frames a second
+at about 0.5 ms of work a frame; a phase laid out from nothing with the mouse only (dragged from Assets, a box drawn,
+aligned and distributed) and with the keyboard only (the palette, Tab, arrows, Ctrl D, align), and the keyboard one
+undone, after a reload of the page, back to an empty stage.
+
 ### Sound (PAD-1667)
 
 **One set of rules, written once** in `core/video_mode/sound.py` and followed by the player (Web Audio) and the
@@ -771,7 +821,8 @@ beat grid drawn (bars strong); its role, volume, loop, fade, tempo, first beat a
 phase; within 0.25 a minute and 12 ms on the test beds); music per phase; sounds on events; and the count against
 the machine picked (`sound.machine_plan`), with what is left. A sound with no file yet plays a placeholder the app
 makes (`sound.placeholder_wav`: a blip, a two-note chime, or bars of bass and click on the bed's own grid), as a
-picture without one is a placeholder. Every change on the tab can be undone (Ctrl+Z, Ctrl+Y).
+picture without one is a placeholder. Each sound change is one named step in the editor's undo history
+(PAD-1661), undone from the tab's head or the editor alike (Ctrl+Z, Ctrl+Y).
 
 **On the machine** (Spike 2; Spike 3 has the same mode runtime): `sound.machine_plan` puts the first music a phase
 plays on the mode's own music, every other bed on a further bed by name (`pa_music_bed`'s), and each effect and
@@ -832,7 +883,7 @@ two in step (memory, largest atlas, card space, texel format, how the card holds
 | Sounds | 16 calls, its own music and 6 more beds (the mode sound route; not raised) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
 
 The engine itself is fixed-size (no malloc): its tables are sized from the largest
-column above at compile time (`VM_MAX_*` in `vm_engine.h`: 512 things alive, 3072 draw
+column above at compile time (`VM_MAX_*` in `vm_engine.h`: 512 things alive, 1024 placed things, 3072 draw
 list entries, 96 kinds of thing, 32 phases; about 0.6 MB, kept static).
 
 **Measured on the desk (PAD-1657)**, `tests/data/video_mode/desk_300.json` (306 things
@@ -978,7 +1029,7 @@ Status is kept current here as tickets land.
 | 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | released (v1.643.0; Spike 2 card cost checked by PAD-1679, v1.644.0) |
 | 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | released (v1.647.0) |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
-| 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | queued |
+| 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | released (v1.648.0) |
 | 3 | PAD-1667 | Sound: music per phase, effects on events | PAD-1659 | on its branch |
 | 3 | PAD-1668 | In the pinball game: how it starts, what it pays | PAD-1660 | queued |
 | 3 | PAD-1669 | Try it on the emulator; the app-machine match check | PAD-1659, 1660 | queued |

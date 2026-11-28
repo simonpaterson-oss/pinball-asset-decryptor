@@ -24,12 +24,12 @@ const EV = ["", "clip_start", "clip_stop", "phase_start", "phase_won", "phase_lo
             "fire", "hit", "finished", "prompt_good", "prompt_perfect", "prompt_miss"];
 // a team's hue on the hit box overlay (plan section 6): player, enemy, enemy shot, player shot, pickup, health, scenery
 const TEAM_VAR = ["--info", "--err", "--warn", "--warn", "--ok", "--ok", "--ink-3"];
-const TEAM_HEX = { player: "#5b9bd5", enemy: "#d9534f", enemy_shot: "#e0a030", player_shot: "#e0a030",
+export const TEAM_HEX = { player: "#5b9bd5", enemy: "#d9534f", enemy_shot: "#e0a030", player_shot: "#e0a030",
                    pickup: "#4caf50", health: "#4caf50", scenery: "#888888" };
 
 // ---- the engine module, loaded once ---------------------------------------------------------------------------
 let engineLoad = null;
-async function newEngine(jsPath, wasmPath) {
+export async function newEngine(jsPath, wasmPath) {
   if (!engineLoad) {
     engineLoad = (async () => {
       const mod = await import(mediaUrl(jsPath));
@@ -45,8 +45,8 @@ async function newEngine(jsPath, wasmPath) {
 
 // ---- the WebGL backend ----------------------------------------------------------------------------------------
 const VS = `attribute vec2 a_pos; attribute vec2 a_uv; attribute vec4 a_col;
-uniform vec2 u_stage; varying vec2 v_uv; varying vec4 v_col;
-void main() { vec2 p = a_pos / u_stage * 2.0 - 1.0; gl_Position = vec4(p.x, -p.y, 0.0, 1.0); v_uv = a_uv; v_col = a_col; }`;
+uniform vec2 u_stage; uniform vec4 u_view; varying vec2 v_uv; varying vec4 v_col;
+void main() { vec2 p = (a_pos * u_view.xy + u_view.zw) / u_stage * 2.0 - 1.0; gl_Position = vec4(p.x, -p.y, 0.0, 1.0); v_uv = a_uv; v_col = a_col; }`;
 const FS = `precision mediump float; uniform sampler2D u_tex; varying vec2 v_uv; varying vec4 v_col;
 void main() { gl_FragColor = texture2D(u_tex, v_uv) * v_col; }`;
 const FLOATS = 8;                     // x, y, u, v, r, g, b, a
@@ -84,7 +84,10 @@ export class GLStage {
       gl.vertexAttribPointer(l, n, gl.FLOAT, false, FLOATS * 4, off * 4);
     };
     at("a_pos", 2, 0); at("a_uv", 2, 2); at("a_col", 4, 4);
-    gl.uniform2f(gl.getUniformLocation(p, "u_stage"), W, H);
+    this.uStage = gl.getUniformLocation(p, "u_stage"); this.uView = gl.getUniformLocation(p, "u_view");
+    gl.uniform2f(this.uStage, W, H);
+    gl.uniform4f(this.uView, 1, 1, 0, 0);
+    this.view = null;                 // the editor's zoom and pan (PAD-1661): null = the stage fills the canvas
     gl.uniform1i(gl.getUniformLocation(p, "u_tex"), 0);
     gl.enable(gl.BLEND);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);      // atlases are premultiplied (plan rule 3)
@@ -112,6 +115,12 @@ export class GLStage {
     const old = this.tex.get(atlas);
     if (old) this.gl.deleteTexture(old.t);
     this.tex.set(atlas, this.upload(src));
+  }
+  // PAD-1661: stage px -> canvas px as k * p + (ox, oy), on a canvas of cw x ch; outside: the colour around the stage
+  setView(k, ox, oy, cw, ch, outside) {
+    this.view = { k, ox, oy, cw, ch, outside: outside || [0, 0, 0] };
+    this.gl.uniform2f(this.uStage, cw, ch);
+    this.gl.uniform4f(this.uView, k, k, ox, oy);
   }
   resize(w, h) {
     if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
@@ -183,7 +192,15 @@ export class GLStage {
       } else break;                                  // a word this backend does not know: stop, never guess
     }
     if (flash & 255) rect(0, 0, this.W, this.H, rgba(flash), this.white, 0);       // flash last (rule 6)
-    const cc = rgba(clear | 255);
+    const cc = rgba(clear | 255), vw = this.view;
+    if (vw) {                                        // the editor: its backdrop, then the stage's own rectangle
+      gl.disable(gl.SCISSOR_TEST);
+      gl.clearColor(vw.outside[0], vw.outside[1], vw.outside[2], 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      const x0 = Math.round(vw.ox), y1 = Math.round(vw.ch - vw.oy - this.H * vw.k);
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(x0, y1, Math.round(this.W * vw.k), Math.round(this.H * vw.k));
+    }
     gl.clearColor(cc[0], cc[1], cc[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
@@ -198,11 +215,11 @@ export class GLStage {
 }
 
 // ---- pictures and glyphs as the engine names them -------------------------------------------------------------
-function loadImage(src) {
+export function loadImage(src) {
   return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
 }
 // a picture with no file yet: its frames as team-coloured boxes (the compiler's placeholder size), so play goes on
-function placeholderSheet(p) {
+export function placeholderSheet(p) {
   const c = document.createElement("canvas");
   c.width = Math.max(1, p.w); c.height = Math.max(1, p.h);
   const g = c.getContext("2d"), col = TEAM_HEX[p.team] || TEAM_HEX.scenery;
@@ -217,7 +234,7 @@ function placeholderSheet(p) {
 }
 // the compiler's placeholder font (compiler.py placeholder_font): glyph i of ' '..'~' in a 16-wide grid of
 // cell_w x size cells, white, so the quad's tint colours it
-function glyphSheet(f) {
+export function glyphSheet(f) {
   const c = document.createElement("canvas");
   c.width = 16 * f.cell_w; c.height = 6 * f.size;
   const g = c.getContext("2d");
@@ -344,7 +361,7 @@ class Sounds {
 }
 
 // ---- the run: engine, clock, buttons, clips, recording --------------------------------------------------------------
-function b64bytes(s) { const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+export function b64bytes(s) { const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 function bytesB64(u) { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 
 class Run {
@@ -576,7 +593,7 @@ const T = {
   step_cost: "What one engine step costs on this computer, and drawing a frame. The machine's own step budget is in the plan's budgets.",
 };
 
-export function VideoModePlayer({ s, onClose }) {
+export function VideoModePlayer({ s, onClose, startCard }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState("");
   const [ui, setUi] = useState({});
@@ -614,6 +631,7 @@ export function VideoModePlayer({ s, onClose }) {
         setInfo(inf); setRecs(inf.recordings || []);
         const r = new Run(inf, eng, stage, over.current, clipEl.current, null);
         run.current = r;
+        if (startCard) { const ci = r.cardIndex(startCard); if (ci >= 0) r.restart(ci); }   // PAD-1661: Play from the editor's phase
         const loop = (t) => { r.frame(t); r.raf = requestAnimationFrame(loop); };
         r.raf = requestAnimationFrame(loop);
         window.__vmPlayer = {

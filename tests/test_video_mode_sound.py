@@ -451,14 +451,15 @@ def test_sound_card_edits_undo_and_redo(tmp_path):
         assert rows["chase_music"]["missing"] and rows["chase_music"]["path"].endswith(".wav")     # its placeholder
         assert not rows["zap"]["missing"] and rows["zap"]["machine"] == "zap" and rows["zap"]["priority"] == 3
         assert rows["go_now"]["duck"] and rows["chase_music"]["grid"]["bpm"] == 128
-        assert st["sound_plan"]["count"]["calls"] == 5 and st["can_undo"] is False
+        assert st["sound_plan"]["count"]["calls"] == 5 and not st["history"]["can_undo"]
         assert [p["music"] for p in st["music_phases"]] == ["chase_music", "boss_music", ""]
         before = doc_path.read_text(encoding="utf-8")
         assert w.call("vmodes.set_sound", "chase_music", {"tempo_bpm": 100, "fade_s": 2.5, "volume": 0.5}) is True
         d = json.loads(doc_path.read_text(encoding="utf-8"))
         s = {x["id"]: x for x in d["assets"]["sounds"]}["chase_music"]
         assert (s["tempo_bpm"], s["fade_s"], s["volume"]) == (100, 2.5, 0.5)
-        assert w.state("vmodes")["can_undo"] is True
+        assert w.state("vmodes")["history"]["can_undo"] is True
+        assert w.state("vmodes")["history"]["undo_label"] == "Change a sound"
         assert w.call("vmodes.set_sound", "zap", {"id": "laser"}) is True
         d = json.loads(doc_path.read_text(encoding="utf-8"))
         assert {"on": "fire", "sound": "laser"} in d["cues"]
@@ -468,9 +469,10 @@ def test_sound_card_edits_undo_and_redo(tmp_path):
         assert json.loads(doc_path.read_text(encoding="utf-8"))["cues"] == [{"on": "won", "sound": "go_now", "duck_music": True}]
         assert w.call("vmodes.remove_sound", "boom") is True             # nothing plays it now
         for _ in range(5):
-            assert w.call("vmodes.undo") is True
-        assert doc_path.read_text(encoding="utf-8") == before and w.state("vmodes")["can_undo"] is False
-        assert w.call("vmodes.redo") is True
+            assert w.call("vmodes.edit_undo")["ok"] is True
+        assert json.loads(doc_path.read_text(encoding="utf-8")) == json.loads(before)
+        assert not w.state("vmodes")["history"]["can_undo"]
+        assert w.call("vmodes.edit_redo")["ok"] is True
         assert {x["id"]: x for x in json.loads(doc_path.read_text(encoding="utf-8"))["assets"]["sounds"]}["chase_music"]["tempo_bpm"] == 100
         # a sound brought in: copied into sound/, an effect when short
         src = tmp_path / "Big Hit.wav"

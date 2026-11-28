@@ -17,6 +17,7 @@ The rules live in :mod:`...core.video_mode.art` and :mod:`...core.video_mode.pac
 """
 
 import base64
+import copy
 import json
 import os
 import re
@@ -34,7 +35,6 @@ INTRO = ("Small games played on the screen with the flipper buttons and Action w
 SOUND_TYPES = [("Sounds", "*.wav *.ogg *.mp3 *.flac *.m4a *.aac *.opus"), ("All files", "*.*")]
 #: a sound longer than this comes in as music, a shorter one as an effect
 MUSIC_FROM_S = 8.0
-UNDO_MAX = 100
 ART_TYPES = [("Pictures, GIFs and videos", "*.png *.jpg *.jpeg *.bmp *.gif *.apng *.webp *.tif *.tiff *.mp4 *.mov "
               "*.m4v *.mkv *.avi *.webm *.wmv *.mpg *.mpeg"), ("All files", "*.*")]
 REPLAYS = "replays"       # a mode's input recordings (PAD-1659)
@@ -62,15 +62,15 @@ class VideoModesTab(TabService):
         self._draft_id = 0
         self._pack_id = 0
         self._tmp = None
-        self._undo, self._redo = [], []   # PAD-1667: the file's text before each change, and after each undo
         self._peaks = {}                  # (path, mtime) -> {"seconds", "peaks"}
         self._beat_busy = set()
         self.set(project="", available=False, why="", intro=INTRO, modes=[], slug="", title="", problems=[],
                  pictures=[], phases=[], draft=None, machine="spike2", machines=[], report=None, packing=False,
-                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000", play_mem=None,
-                 sounds=[], cues=[], cue_on=[], sound_plan=None, music_phases=[], peaks={}, can_undo=False,
-                 can_redo=False, beat_busy=[])
+                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000", play_mem=None, history=None,
+                 sounds=[], cues=[], cue_on=[], sound_plan=None, music_phases=[], peaks={}, beat_busy=[])
         self._play_id = 0
+        self._hist = None             # the open mode's undo history (core/video_mode/history.py, PAD-1661)
+        self._saved = None            # the document as last written, what the next step is measured from
 
     # -- the project -------------------------------------------------------------------------------------------
     def _folder(self):
@@ -137,10 +137,8 @@ class VideoModesTab(TabService):
         self._open(slug)
         return True
 
-    def _open(self, slug, keep_history=False):
+    def _open(self, slug):
         _, _, D, _ = _mods()
-        if not keep_history or slug != self._slug:
-            self._undo, self._redo = [], []
         self._slug = slug
         self._doc = None
         problems = []
@@ -149,9 +147,19 @@ class VideoModesTab(TabService):
                 self._doc = D.load(self._doc_path())
             except (OSError, ValueError) as e:
                 problems = list(getattr(e, "problems", None) or [str(e)])
-        self.set(slug=slug, title=(self._doc or {}).get("title", ""), problems=problems, report=None, written="",
-                 can_undo=bool(self._undo), can_redo=bool(self._redo))
+        self.set(slug=slug, title=(self._doc or {}).get("title", ""), problems=problems, report=None, written="")
+        self._hist_open()
         self._paint()
+
+    # -- the undo history: every change to the document is one step (PAD-1661) --------------------------------
+    def _hist_open(self):
+        from ...core.video_mode import history as H
+        self._hist = H.History(self._mode_dir()).open(self._doc) if self._doc is not None else None
+        self._saved = copy.deepcopy(self._doc)
+        self._hist_state()
+
+    def _hist_state(self):
+        self.set(history=self._hist.state() if self._hist else None)
 
     @rpc
     def select(self, slug):
@@ -182,49 +190,19 @@ class VideoModesTab(TabService):
     def _save(self, what=""):
         _, _, D, _ = _mods()
         try:
-            with open(self._doc_path(), encoding="utf-8") as f:
-                before = f.read()
-        except OSError:
-            before = None
-        try:
             D.save(self._doc_path(), self._doc)
         except ValueError as e:
             # the change is not kept: read the file back as it is on disk
-            self._open(self._slug, keep_history=True)
+            self._open(self._slug)
             compat.messagebox.showerror("Video modes", "Not saved: %s" % e)
             return False
-        if before is not None:                          # PAD-1667: every change of the tab can be undone
-            self._undo = (self._undo + [before])[-UNDO_MAX:]
-            self._redo = []
-        self.set(report=None, written="", can_undo=bool(self._undo), can_redo=bool(self._redo))
+        if self._hist is not None and self._saved is not None:
+            self._hist.push(what or "Change", self._saved, self._doc)
+        self._saved = copy.deepcopy(self._doc)
+        self._hist_state()
+        self.set(report=None, written="")
         self._paint()
         return True
-
-    def _step_history(self, take, give):
-        if not take or self._doc is None:
-            return False
-        try:
-            with open(self._doc_path(), encoding="utf-8") as f:
-                now = f.read()
-            text = take.pop()
-            with open(self._doc_path(), "w", encoding="utf-8", newline="\n") as f:
-                f.write(text)
-        except OSError as e:
-            compat.messagebox.showerror("Video modes", "Could not undo: %s" % e)
-            return False
-        give.append(now)
-        self._open(self._slug, keep_history=True)
-        return True
-
-    @rpc
-    def undo(self):
-        """PAD-1667: the video mode's file as it was before the last change made here (Ctrl+Z)."""
-        return self._step_history(self._undo, self._redo)
-
-    @rpc
-    def redo(self):
-        """The change undone last, made again (Ctrl+Y / Ctrl+Shift+Z)."""
-        return self._step_history(self._redo, self._undo)
 
     def _picture(self, pid):
         for p in (self._doc or {}).get("assets", {}).get("pictures") or []:
@@ -384,7 +362,7 @@ class VideoModesTab(TabService):
         if row["role"] == "music":
             row["loop"] = True
         sounds.append(row)
-        return self._save()
+        return self._save("Bring a sound in")
 
     @rpc
     def set_sound(self, sid, changes):
@@ -443,7 +421,7 @@ class VideoModesTab(TabService):
                 if c.get("sound") == sid:
                     c["sound"] = new
             x["id"] = new
-        return self._save()
+        return self._save("Change a sound")
 
     @rpc
     def remove_sound(self, sid):
@@ -457,7 +435,7 @@ class VideoModesTab(TabService):
                                         % (sid, ", ".join(uses)))
             return False
         self._doc["assets"]["sounds"].remove(x)
-        return self._save()
+        return self._save("Remove a sound")
 
     @rpc
     def find_beat(self, sid):
@@ -506,7 +484,7 @@ class VideoModesTab(TabService):
                 ph["music"] = sid
             else:
                 ph.pop("music", None)
-            return self._save()
+            return self._save("Change a phase's music")
         return False
 
     @rpc
@@ -527,7 +505,7 @@ class VideoModesTab(TabService):
             self._doc["cues"] = out
         else:
             self._doc.pop("cues", None)
-        return self._save()
+        return self._save("Change the sounds on events")
 
     # -- bringing art in ---------------------------------------------------------------------------------------
     @rpc
@@ -636,7 +614,7 @@ class VideoModesTab(TabService):
         except A.ArtError as e:
             compat.messagebox.showerror("Video modes", str(e))
             return False
-        if self._save():
+        if self._save("Bring art in"):
             self._draft = None
             self.set(draft=None)
             return pid
@@ -683,7 +661,7 @@ class VideoModesTab(TabService):
                     if lay.get("picture") == pid:
                         lay["picture"] = new
             p["id"] = new
-        return self._save()
+        return self._save("Change a picture")
 
     @rpc
     def remove_picture(self, pid):
@@ -696,7 +674,7 @@ class VideoModesTab(TabService):
                                         % (pid, ", ".join(uses)))
             return False
         self._doc["assets"]["pictures"].remove(p)
-        return self._save()
+        return self._save("Remove a picture")
 
     # -- backgrounds -------------------------------------------------------------------------------------------
     @rpc
@@ -712,7 +690,7 @@ class VideoModesTab(TabService):
         except (A.ArtError, KeyError, ValueError) as e:
             compat.messagebox.showerror("Video modes", str(e))
             return False
-        return self._save()
+        return self._save("Change the backgrounds")
 
     # -- touch-up in the pixel editor --------------------------------------------------------------------------
     def _frame_ref(self, rel):
@@ -1029,6 +1007,114 @@ class VideoModesTab(TabService):
         if not isinstance(meta, dict):
             return None
         return dict(meta, name=name, data=base64.b64encode(data).decode("ascii"))
+
+
+    # -- the editor (PAD-1661): the stage, the layers and the inspector ----------------------------------------
+    def _stage_parts(self, comp, doc):
+        """What the page needs to draw a compiled document: the pack, the engine's files, the pictures and fonts by
+        the index the engine names them, and where each phase's places start in the engine's place table."""
+        from ...core.video_mode import compiler as C
+        names = comp.names
+        eng = os.path.join(os.path.dirname(C.__file__), "engine")
+        stage = doc.get("stage") or {}
+        return {
+            "pack": base64.b64encode(comp.pack).decode("ascii"),
+            "engine_js": os.path.join(eng, "vm_engine.js"), "engine_wasm": os.path.join(eng, "vm_engine.wasm"),
+            "stage": [int(stage.get("width", 1360)), int(stage.get("height", 768))],
+            "pictures": self._play_pictures(doc, names),
+            "fonts": [{"atlas": f["atlas"], "size": f["size"], "cell_w": max(1, int(round(f["size"] * 0.6)))}
+                      for f in names.get("fonts") or []],
+            "place0": names.get("place0") or [], "phases": names.get("phases") or [],
+        }
+
+    def _edit_reply(self, doc, with_doc=False, assets_changed=False):
+        from ...core.video_mode import compiler as C
+        comp = C.compile_doc(doc, self._mode_dir())
+        out = {"ok": True, "history": self._hist.state() if self._hist else None, "notes": comp.notes[:20],
+               "problems": comp.problems[:20]}
+        if comp.ok:
+            parts = self._stage_parts(comp, doc)
+            if not assets_changed and not with_doc:
+                parts.pop("pictures")
+                parts.pop("fonts")
+            out.update(parts)
+        else:
+            out["pack"] = None
+        if with_doc:
+            out["doc"] = doc
+        return out
+
+    @rpc
+    def edit_open(self):
+        """Open the editor on the mode picked: the document, the compiled pack and what draws it, and the history."""
+        if self._doc is None:
+            return {"ok": False, "problems": ["Pick a video mode first."]}
+        _, B, _, _ = _mods()
+        out = self._edit_reply(self._doc, with_doc=True)
+        out["slug"] = self._slug
+        out["machine"] = self.get("machine") or B.DEFAULT
+        return out
+
+    @rpc
+    def edit_commit(self, doc, label=""):
+        """One change made in the editor: the whole document after it. Checked, saved (there is no save button)
+        and kept as one undo step. Refused, with every reason, when it does not check or compile; the page then
+        puts its copy back."""
+        from ...core.video_mode import compiler as C
+        _, _, D, _ = _mods()
+        if self._doc is None:
+            return {"ok": False, "problems": ["Pick a video mode first."]}
+        try:
+            doc = D.migrate(doc)
+        except ValueError as e:
+            return {"ok": False, "problems": list(getattr(e, "problems", None) or [str(e)])}
+        probs = D.check(doc)
+        if not probs:
+            comp = C.compile_doc(doc, self._mode_dir())
+            probs = [] if comp.ok else comp.problems
+        if probs:
+            return {"ok": False, "problems": probs[:12], "doc": self._doc}
+        assets_changed = (doc.get("assets") or {}) != (self._doc.get("assets") or {})
+        self._doc = doc
+        if not self._save(str(label or "Change")[:80]):
+            return {"ok": False, "problems": ["The change was not saved."], "doc": self._doc}
+        return self._edit_reply(self._doc, assets_changed=assets_changed)
+
+    def _edit_move(self, which):
+        _, _, D, _ = _mods()
+        if self._doc is None or self._hist is None:
+            return {"ok": False}
+        label = self._hist.undo_label() if which == "undo" else self._hist.redo_label()
+        doc = self._hist.undo(self._doc) if which == "undo" else self._hist.redo(self._doc)
+        if doc is None:
+            return {"ok": False}
+        assets_changed = (doc.get("assets") or {}) != (self._doc.get("assets") or {})
+        try:
+            D.save(self._doc_path(), doc)
+        except ValueError as e:
+            # a step that no longer leads to a document that checks: step back over it and say so
+            if which == "undo":
+                self._hist.redo(doc)
+            else:
+                self._hist.undo(doc)
+            return {"ok": False, "problems": list(getattr(e, "problems", None) or [str(e)])}
+        self._doc = doc
+        self._saved = copy.deepcopy(doc)
+        self._hist_state()
+        self.set(report=None, written="")
+        self._paint()
+        out = self._edit_reply(doc, with_doc=True, assets_changed=assets_changed)
+        out["label"] = label
+        return out
+
+    @rpc
+    def edit_undo(self):
+        """One step back. Returns the document and its pack, or {"ok": False} at the start of the history."""
+        return self._edit_move("undo")
+
+    @rpc
+    def edit_redo(self):
+        return self._edit_move("redo")
 
 
 TAB = VideoModesTab

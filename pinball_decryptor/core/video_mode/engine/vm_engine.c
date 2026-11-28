@@ -1305,6 +1305,21 @@ static void build_list(vm_engine *e)
     }
 }
 
+int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags)
+{
+    if (!e->loaded || phase < 0 || phase >= e->doc.nphase) return 0;
+    e->score = 0; e->flawless = 1; e->outcome = -1; e->step_no = 0; e->level = 0; e->speed_pct = 100;
+    e->in = e->in_prev = e->pressed = e->released = 0;
+    e->shake = e->shake_x = e->shake_y = 0; e->flash_a = 0; e->flash_col = 0;
+    e->serial = 0; e->card = 0; e->play_seed = 1;
+    phase_start(e, phase, 0);
+    e->state_t = TRANS_STEPS;
+    if (!(flags & 1)) { e->callout = -1; e->callout_t = 0; }
+    build_list(e);
+    e->nevents = 0; e->ncues = 0;
+    return 1;
+}
+
 /* the canonical words of the draw list: header 8, quad 12, box 6 */
 typedef struct { int32_t *out; uint32_t cap, n; uint64_t *h; } wr;
 static void put(wr *w, int32_t v)
