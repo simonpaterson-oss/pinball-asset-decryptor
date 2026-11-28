@@ -19,6 +19,11 @@ const STEP_MS = 1000 / 60;
 const MAX_STEPS_A_FRAME = 4;          // the plan's cadence rule: beyond this the game slows rather than skips
 const MACHINE_FPS = 29;               // what a real Spike 2 draws, about (video_mode_spike2_drawing.md)
 const NO_FILE_CLIP_STEPS = 120;       // a clip with no file yet stands as a card this long, then ends
+const K_RHYTHM = 7;                   // vm_engine.h VM_K_RHYTHM
+const CALIB_KEY = "pad.vmode.audio_offset_ms";   // the player's sound calibration (PAD-1663)
+const SYNC_MAX = 8;                   // a rhythm phase catches up on its music by up to this many steps a frame
+export function readCalib() { const v = Number(localStorage.getItem(CALIB_KEY)); return Number.isFinite(v) ? Math.max(-500, Math.min(500, Math.round(v))) : 0; }
+export function writeCalib(ms) { localStorage.setItem(CALIB_KEY, String(Math.round(ms))); }
 const FX = 65536;
 const EV = ["", "clip_start", "clip_stop", "phase_start", "phase_won", "phase_lost", "score", "kill", "pickup", "hurt",
             "fire", "hit", "finished", "prompt_good", "prompt_perfect", "prompt_miss"];
@@ -294,6 +299,11 @@ class Sounds {
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, end);
     try { c.src.stop(end + 0.02); } catch (e) { /* already stopped */ }
   }
+  // seconds of the bed now playing, by the audio clock, from where it starts (negative: it starts that much later);
+  // null while none plays. A rhythm phase steps by it (PAD-1663).
+  musicPos() { return this.cur && this.ctx && this.cur.i === this.music ? this.ctx.currentTime - this.cur.t0 : null; }
+  loading() { return this.on && this.music >= 0 && !(this.cur && this.cur.i === this.music); }   // cued, not yet started
+  latencyMs() { return this.ctx ? Math.round(((this.ctx.outputLatency || 0) + (this.ctx.baseLatency || 0)) * 1000) : 0; }
   async startBed(i, at, fadeIn) {                      // bed i starts `at` s from now, fading in over fadeIn s
     const s = this.list[i] || {}, b = await this.buffer(i);
     if (!b || !this.on || this.music !== i || (this.cur && this.cur.i === i)) return;
@@ -305,7 +315,7 @@ class Sounds {
     else g.gain.setValueAtTime(v, t);
     src.connect(g); g.connect(this.musicGain);
     src.start(t);
-    this.cur = { i, src, gain: g }; this.musicPlayed++;
+    this.cur = { i, src, gain: g, t0: t }; this.musicPlayed++;
   }
   note(step, c, did) { if (this.log.length < 4000) this.log.push({ step, sound: c.sound, op: c.op, duck: c.duck, fade: c.fade, did }); }
   cue(c, step) {
@@ -368,17 +378,30 @@ class Run {
   constructor(info, eng, stage, overlay, clipEl, onTick) {
     this.info = info; this.e = eng; this.stage = stage; this.overlay = overlay; this.clipEl = clipEl; this.onTick = onTick;
     this.sounds = new Sounds(info.sounds);
-    this.keys = 0; this.mouse = 0; this.pad = 0; this.padStart = false; this.padName = "";
+    this.latch = 0; this.keys = 0; this.mouse = 0; this.pad = 0; this.padStart = false; this.padName = "";
     this.paused = false; this.speed = 1; this.fps = 60; this.hits = false;
     this.acc = 0; this.last = 0; this.lastDraw = 0; this.nextDraw = 0; this.raf = 0;
+    this.calib = readCalib(); this.offset = 0; this.wait = 0; this.drift = null;
     this.perfReset();
     this.restart(null);
   }
+  // the buttons from the keyboard, the on-screen pads and a gamepad. A press is latched until a step has seen it:
+  // a tap that comes and goes between two steps (a frame that runs none) still reaches the engine (PAD-1663)
+  get keys() { return this._keys; }
+  set keys(v) { this.latch |= v & ~(this._keys || 0); this._keys = v; }
+  get mouse() { return this._mouse; }
+  set mouse(v) { this.latch |= v & ~(this._mouse || 0); this._mouse = v; }
+  get pad() { return this._pad; }
+  set pad(v) { this.latch |= v & ~(this._pad || 0); this._pad = v; }
   cardIndex(id) { return this.info.cards.findIndex((c) => c.id === id); }
   // a new play: from the flow's start (card null) or from a card; replay: a recording to feed instead of the buttons
   restart(card, replay = null) {
     const seed = replay ? (replay.seed || this.info.seed) : this.info.seed;
     const c = replay ? (replay.card == null || replay.card < 0 ? null : replay.card) : card;
+    // the sound calibration the play runs with: this computer's output latency and the player's own (Calibrate);
+    // a replay runs with the one it was recorded with, so it ends on the same hash
+    this.offset = replay ? (replay.audio_offset || 0) : (this.sounds.on ? this.sounds.latencyMs() : 0) + this.calib;
+    this.e.audioOffset(this.offset); this.wait = 0; this.drift = null; this.latch = 0;
     if (c == null) this.e.start(seed, 0); else this.e.startAt(seed, 0, c);
     this.seed = seed; this.card = c; this.replay = replay; this.rec = new Uint8Array(1 << 14); this.nrec = 0;
     this.alive = true; this.done = null; this.log = []; this.score = 0; this.kills = 0; this.pickups = 0;
@@ -387,7 +410,8 @@ class Run {
     this.step(true);
   }
   input() {
-    let v = this.keys | this.mouse | this.pad;
+    let v = this.keys | this.mouse | this.pad | this.latch;
+    this.latch = 0;
     if (this.clipDone) { v |= IN.CLIP_DONE; this.clipDone = false; }
     return v & 15;
   }
@@ -438,6 +462,10 @@ class Run {
     else if (ev.type === 9) say = "hurt · health " + ev.a;
     else if (ev.type === 10) return;                 // fire: too many to list
     else if (ev.type === 11) say = "weak point " + ev.a + " hit · " + ev.b + " left";
+    else if (ev.type >= 13 && ev.type <= 15) {       // the button kinds' prompts (PAD-1663)
+      const btn = ["left", "right", "Action"][ev.a] || "";
+      say = ev.type === 15 ? "miss · " + btn : ev.type === 14 ? "perfect · " + btn : (ev.c === 1 ? "early · " : ev.c === 2 ? "late · " : "good · ") + btn;
+    }
     else if (ev.type === 12) say = (ev.a ? "WON" : "LOST") + " · " + ev.b.toLocaleString() + (ev.c ? " · no hit taken" : "");
     this.log.unshift({ s, say, kind: name });
     if (this.log.length > 80) this.log.length = 80;
@@ -498,7 +526,13 @@ class Run {
       this.acc += dt * this.speed;
       let n = Math.floor(this.acc / STEP_MS);
       if (n > MAX_STEPS_A_FRAME) { n = MAX_STEPS_A_FRAME; this.acc = 0; } else this.acc -= n * STEP_MS;
+      const sync = this.musicSync();
+      if (sync != null) { n = sync; this.acc = 0; }
       for (let k = 0; k < n && this.step(); k++);
+      if (sync != null) {                     // how far the engine is from its music once this frame's steps are run
+        const pos = this.sounds.musicPos();
+        if (pos != null) this.drift = { lag: Math.floor(pos * 60) - this.e.songSteps(), ms: Math.round(pos * 1000 - this.e.songSteps() * STEP_MS), pos };
+      }
     } else this.acc = 0;
     this.draw(now);
   }
@@ -552,8 +586,25 @@ class Run {
   recording() {
     return { data: this.rec.slice(0, this.nrec), seed: this.seed, level: 0, card: this.card == null ? -1 : this.card,
              card_id: this.card == null ? this.info.start : (this.info.cards[this.card] || {}).id,
-             steps: this.nrec, hash: this.e.hash(), outcome: this.done ? this.done.outcome : -1, score: this.e.score() };
+             steps: this.nrec, hash: this.e.hash(), outcome: this.done ? this.done.outcome : -1, score: this.e.score(),
+             audio_offset: this.offset };
   }
+  // a rhythm phase with its music playing steps by the music's clock, not the wall's, so the notes stay on the
+  // beat however the frames fall (60 fps or the machine's 29): the steps due are the music's position in steps
+  // less the steps the engine has run since it cued the music. Null: step by the wall as every other phase.
+  musicSync() {
+    if (this.replay || this.speed !== 1 || !this.sounds.on || this.e.kind() !== K_RHYTHM) return null;
+    const st = this.e.state();
+    if (st !== 2 && st !== 3) return null;                     // the title card and the play
+    if (this.sounds.loading()) { this.wait++; return this.wait < 90 ? 0 : null; }   // hold for the decode, at most 1.5 s
+    const pos = this.sounds.musicPos();
+    if (pos == null) return null;
+    this.wait = 0;
+    const lag = Math.floor(pos * 60) - this.e.songSteps();
+    this.drift = { lag, ms: Math.round(pos * 1000 - this.e.songSteps() * STEP_MS), pos };
+    return Math.max(0, Math.min(SYNC_MAX, lag));
+  }
+  setCalib(ms) { this.calib = Math.max(-500, Math.min(500, Math.round(ms))); writeCalib(this.calib); }
   setSound(on) {
     this.sounds.setOn(on);
     const v = this.clipEl && this.clipEl.querySelector("video");
@@ -579,7 +630,104 @@ function Meter({ label, used, budget, fmt = (v) => v.toLocaleString(), title }) 
     <b>${fmt(used)}${budget ? " / " + fmt(budget) : ""}</b></div>`;
 }
 
+// ---- sound calibration (PAD-1663): how late this computer's sound is heard, from a tap-along ------------------
+// Twelve clicks at 100 a minute; the player presses Action (Space) on the last eight. Each press is timed against
+// the click as heard (the audio clock's output timestamp, so the computer's own output latency is already out of
+// it): the middle of those differences is the offset a rhythm phase judges with, on top of the measured latency.
+const CAL_CLICKS = 12, CAL_COUNT_IN = 4, CAL_BEAT = 0.6;
+export function calibOffset(diffsMs) {
+  const d = diffsMs.filter((x) => Math.abs(x) <= 250).sort((a, b) => a - b);
+  if (d.length < 5) return null;
+  return Math.round(d.length % 2 ? d[(d.length - 1) / 2] : (d[d.length / 2 - 1] + d[d.length / 2]) / 2);
+}
+function CalibPanel({ onDone, onCancel }) {
+  const [phase, setPhase] = useState("ready");      // ready -> run -> result
+  const [beat, setBeat] = useState(-1);
+  const [res, setRes] = useState(null);
+  const st = useRef(null);
+  const start = () => {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { setRes({ err: "This computer's browser has no Web Audio." }); setPhase("result"); return; }
+    const ctx = new AC(), t0 = ctx.currentTime + 0.5, clicks = [];
+    for (let k = 0; k < CAL_CLICKS; k++) {
+      const t = t0 + k * CAL_BEAT, o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = k < CAL_COUNT_IN ? 1320 : 880;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.08);
+      clicks.push(t);
+    }
+    st.current = { ctx, clicks, taps: [] };
+    setPhase("run");
+    const tick = () => {
+      const c = st.current;
+      if (!c) return;
+      const heard = c.ctx.getOutputTimestamp ? c.ctx.getOutputTimestamp().contextTime : c.ctx.currentTime;
+      setBeat(Math.floor((heard - t0) / CAL_BEAT));
+      if (heard > c.clicks[CAL_CLICKS - 1] + 0.5) { finish(); return; }
+      c.raf = requestAnimationFrame(tick);
+    };
+    st.current.raf = requestAnimationFrame(tick);
+  };
+  const tap = () => {
+    const c = st.current;
+    if (!c) return;
+    let heard;
+    if (c.ctx.getOutputTimestamp) {                 // the context time being heard right now
+      const ts = c.ctx.getOutputTimestamp();
+      heard = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+    } else heard = c.ctx.currentTime - (c.ctx.outputLatency || 0);
+    c.taps.push(heard);
+  };
+  const finish = () => {
+    const c = st.current;
+    if (!c) return;
+    st.current = null;
+    cancelAnimationFrame(c.raf);
+    const diffs = [];
+    for (const t of c.taps) {
+      let best = null;
+      c.clicks.forEach((k, i) => { if (i >= CAL_COUNT_IN && (best == null || Math.abs(t - k) < Math.abs(t - best))) best = k; });
+      if (best != null) diffs.push((t - best) * 1000);
+    }
+    c.ctx.close();
+    const off = calibOffset(diffs);
+    setRes(off == null ? { err: "Too few presses landed near a click (" + diffs.length + "). Try again, pressing on each low click." }
+      : { off, n: diffs.filter((x) => Math.abs(x) <= 250).length });
+    setPhase("result");
+  };
+  useEffect(() => {
+    const down = (e) => {
+      if (e.code === "Escape") { e.preventDefault(); e.stopPropagation(); onCancel(); return; }
+      if (e.code !== "Space" && e.code !== "Enter") return;
+      e.preventDefault(); e.stopPropagation();
+      if (e.repeat) return;
+      if (phase === "ready" && e.code === "Enter") start();
+      else if (phase === "run") tap();
+    };
+    window.addEventListener("keydown", down, true);
+    return () => window.removeEventListener("keydown", down, true);
+  }, [phase]);
+  useEffect(() => () => { const c = st.current; if (c) { cancelAnimationFrame(c.raf); c.ctx.close(); } }, []);
+  const dots = [];
+  for (let k = CAL_COUNT_IN; k < CAL_CLICKS; k++) dots.push(html`<i class=${cx(beat >= k && "on", beat === k && "now")}></i>`);
+  return html`<div class="vmp-cal" role="dialog" aria-label="Sound calibration">
+    <div class="vmp-cal-t">Sound calibration</div>
+    ${phase === "ready" ? html`<div class="small">Four high clicks count you in, then press <span class="kbd">Space</span> on each of the eight low ones.
+      This measures how late this computer's sound reaches you, so rhythm phases judge you against the beat you hear.</div>
+      <div class="row" style="gap:8px"><${Button} kind="primary" icon="play" onClick=${start}>Start<//><${Button} kind="ghost" onClick=${onCancel}>Cancel<//></div>` : null}
+    ${phase === "run" ? html`<div class="vmp-cal-dots">${dots}</div>
+      <div class="small">${beat < CAL_COUNT_IN ? "Get ready…" : "Press Space on each click"}</div>
+      <${Button} kind="primary" onPointerDown=${tap}>Tap<//>` : null}
+    ${phase === "result" ? html`${res.err ? html`<${Note} kind="warn">${res.err}<//>`
+      : html`<div>Your presses land <b class="mono">${res.off > 0 ? "+" : ""}${res.off} ms</b> from the clicks you hear (${res.n} of 8 counted).</div>`}
+      <div class="row" style="gap:8px">${!res.err ? html`<${Button} kind="primary" icon="check" onClick=${() => onDone(res.off)}>Use ${res.off} ms<//>` : null}
+        <${Button} kind="ghost" icon="refresh" onClick=${() => { setRes(null); setBeat(-1); setPhase("ready"); }}>Again<//>
+        <${Button} kind="ghost" onClick=${onCancel}>Cancel<//></div>` : null}
+  </div>`;
+}
+
 const T = {
+  calib: "Sound offset: how late this computer's sound reaches you, on top of the latency it reports. A rhythm phase judges your presses against the beat as you hear it. Calibrate measures it from a tap-along; a replay keeps the offset it was played with.",
   back: "Back to the pictures and backgrounds. The play stops.",
   pause: "Pause, or carry on (P)",
   step: "One engine step, a sixtieth of a second, while paused (.)",
@@ -598,6 +746,8 @@ export function VideoModePlayer({ s, onClose, startCard }) {
   const [err, setErr] = useState("");
   const [ui, setUi] = useState({});
   const [sound, setSound] = useState(false);
+  const [calib, setCalib] = useState(readCalib());
+  const [calOpen, setCalOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [fps, setFps] = useState(60);
@@ -640,6 +790,8 @@ export function VideoModePlayer({ s, onClose, startCard }) {
           perf: () => r.perf(), perfReset: () => r.perfReset(), recording: () => { const x = r.recording(); return Object.assign(x, { data: bytesB64(x.data) }); },
           replay: (rec) => r.restart(null, Object.assign({}, rec, { data: typeof rec.data === "string" ? b64bytes(rec.data) : rec.data })),
           verdict: () => r.verdict, done: () => r.done, hash: () => eng.hash(),
+          sync: () => ({ drift: r.drift, offset: r.offset, calib: r.calib, kind: eng.kind(), songSteps: eng.songSteps(), latency: r.sounds.latencyMs() }),
+          setCalib: (ms) => r.setCalib(ms),
           sound: () => ({ on: r.sounds.on, state: r.sounds.ctx ? r.sounds.ctx.state : "none", played: r.sounds.played, music: r.sounds.musicPlayed, skipped: r.sounds.skipped, ducking: r.sounds.ducking, log: r.sounds.log.slice() }),
           clip: () => { const v = clipEl.current && clipEl.current.querySelector("video"); return { clip: r.clip, playing: !!(v && !v.hidden && v.currentTime > 0 && !v.paused), t: v ? v.currentTime : 0 }; },
         };
@@ -667,7 +819,7 @@ export function VideoModePlayer({ s, onClose, startCard }) {
       setUi({ step: r.e.stepNo(), card: r.e.card(), phase: r.e.phase(), t: r.e.phaseT(), len: r.e.phaseLen(),
               state: r.e.state(), alive: r.alive, done: r.done, verdict: r.verdict, replay: !!r.replay, nrec: r.nrec,
               log: r.log.slice(0, 14), score: r.e.score(), kills: r.kills, pickups: r.pickups, pad: r.padName,
-              hash: r.e.hash(), pf, clip: r.clip });
+              hash: r.e.hash(), pf, clip: r.clip, sync: { drift: r.drift } });
     }, 200);
     return () => clearInterval(id);
   }, []);
@@ -771,6 +923,8 @@ export function VideoModePlayer({ s, onClose, startCard }) {
             <div class="vmp-clip-card" hidden><${Icon} name="film" /><b></b><span></span></div>
           </div>
           ${!info ? html`<div class="vmp-loading"><${Spinner} /> Building the mode for the browser…</div>` : null}
+          ${calOpen ? html`<${CalibPanel} onCancel=${() => { setCalOpen(false); set.paused(false); }}
+            onDone=${(ms) => { setCalOpen(false); setCalib(ms); set.paused(false); if (r) { r.setCalib(ms); r.restart(r.card); } else writeCalib(ms); }} />` : null}
           ${ui.done && !ui.replay ? html`<div class="vmp-done">
             <div class="vmp-done-t">${ui.done.outcome === 1 ? "Won" : "Lost"} · ${ui.done.score.toLocaleString()}</div>
             <div class="small">Press Enter (or Start) to play again.</div></div>` : null}
@@ -834,6 +988,10 @@ export function VideoModePlayer({ s, onClose, startCard }) {
       <span class="vsep"></span>
       <span ...${tip(T.speed)}><${Seg} value=${speed} onChange=${set.speed} options=${[{ value: 0.25, label: "¼×" }, { value: 0.5, label: "½×" }, { value: 1, label: "1×" }]} /></span>
       <span ...${tip(T.fps)}><${Seg} value=${fps} onChange=${set.fps} options=${[{ value: 60, label: "60 fps" }, { value: MACHINE_FPS, label: "Machine · " + MACHINE_FPS + " fps" }]} /></span>
+      <span class="vsep"></span>
+      <span class="vmp-meter" ...${tip(T.calib)}>Sound offset <b class="mono">${calib > 0 ? "+" : ""}${calib} ms</b></span>
+      <${Button} kind="ghost" icon="audio" title="Measure this computer's sound offset with a short tap-along" onClick=${() => { set.paused(true); setCalOpen(true); }}>Calibrate<//>
+      ${ui.sync && ui.sync.drift ? html`<span class="vmp-meter" ...${tip("A rhythm phase steps by its music's clock: how far the engine is from the music right now")}>Music <b class="mono">${ui.sync.drift.ms > 0 ? "+" : ""}${ui.sync.drift.ms} ms</b></span>` : null}
       <span class="vsep"></span>
       ${ui.verdict ? html`<span class=${cx("vmp-rec", ui.verdict.same ? "ok" : "bad")} ...${tip(ui.verdict.same ? "The replay ended on the recorded draw list hash, " + ui.verdict.hash : "Recorded " + ui.verdict.wantSteps + " steps, hash " + ui.verdict.want + "; the replay " + ui.verdict.steps + " steps, hash " + ui.verdict.hash)}>
           <${Icon} name=${ui.verdict.same ? "check" : "warn"} />${ui.verdict.same ? "Replay matched" : "Replay differs"} · <span class="mono">${ui.verdict.steps}</span> steps</span>`

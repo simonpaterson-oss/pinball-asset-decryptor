@@ -151,7 +151,7 @@
 .vmp-ph.on { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
 .vmp-ph .st { font-size: 11.5px; color: var(--ink-2); }
 .vmp-log { display: flex; flex-direction: column; gap: 2px; font-size: 12px; height: 132px; overflow: hidden; }
-.vmp-log > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vmp-log > div { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* rows never squash: a busy log runs off the foot */
 .vmp-log .s { display: inline-block; width: 44px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .vmp-kv { display: grid; grid-template-columns: 80px 1fr; gap: 4px 8px; font-size: 12.5px; }
 .vmp-kv > span { color: var(--ink-3); }
@@ -333,3 +333,12 @@ body.vme-resizing, body.vme-scrubbing { cursor: ew-resize !important; user-selec
 
 /* PAD-1664: the top bar gained the storyboard; on narrow windows the crumb goes first, then the toggles' words */
 @media (max-width: 1700px) { .vme-crumb { display: none; } }
+/* the sound calibration panel (PAD-1663) */
+.vmp-cal { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, 90%);
+  display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; border-radius: var(--r-3, 10px);
+  background: var(--panel, #1b1e24); border: 1px solid var(--line, #2c313a); box-shadow: 0 12px 40px rgba(0,0,0,.45); z-index: 5; }
+.vmp-cal-t { font-weight: 600; }
+.vmp-cal-dots { display: flex; gap: 10px; justify-content: center; }
+.vmp-cal-dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--line, #2c313a); transition: background .08s; }
+.vmp-cal-dots i.on { background: var(--ink-3, #7b8494); }
+.vmp-cal-dots i.now { background: var(--accent, #e5483b); }

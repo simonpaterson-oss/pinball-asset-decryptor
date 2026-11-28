@@ -1,6 +1,6 @@
 // vm_run.mjs - vmrun's twin on WebAssembly (PAD-1657): same arguments, same lines out,
 // so a test can hold the two side by side.
-//   node vm_run.mjs WASM PACK [--inputs FILE | --bot] [--record FILE] [--seed N] [--level N] [--max N] [--dump N] [--quiet] [--clip N] [--card N]
+//   node vm_run.mjs WASM PACK [--inputs FILE | --bot] [--record FILE] [--seed N] [--level N] [--max N] [--dump N] [--quiet] [--clip N] [--card N] [--audio-offset MS]
 //   node vm_run.mjs WASM PACK --seek PHASE --at S1,S2,... [--endless]   (PAD-1664: the editor's scrub, through its snapshots)
 import { readFileSync, writeFileSync } from "node:fs";
 import { VideoModeEngine } from "./vm_engine.js";
@@ -14,12 +14,13 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--quiet") opt.quiet = true;
   else if (a === "--endless") opt.endless = true;
   else if (a === "--time") opt.time = true;
-  else if (["--inputs", "--record", "--seed", "--level", "--max", "--dump", "--clip", "--card", "--seek", "--at"].includes(a)) opt[a.slice(2)] = argv[++i];
+  else if (["--inputs", "--record", "--seed", "--level", "--max", "--dump", "--clip", "--card", "--seek", "--at", "--audio-offset"].includes(a)) opt[a.slice(2).replace("-", "_")] = argv[++i];
   else pos.push(a);
 }
 const vm = await VideoModeEngine.create(readFileSync(pos[0]));
 const err = vm.load(readFileSync(pos[1]));
 if (err) { console.log(`LOADERR ${err} at=${vm.errAt()}`); process.exit(3); }
+if (opt.audio_offset !== undefined) vm.audioOffset(Number(opt.audio_offset));
 if (opt.seek !== undefined) {
   const lines = [], ms = [];
   for (const s of String(opt.at || "0").split(",")) {

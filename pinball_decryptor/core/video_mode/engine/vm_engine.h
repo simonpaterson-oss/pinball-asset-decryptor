@@ -27,7 +27,7 @@
 #include <stdint.h>
 
 #define VM_PACK_MAGIC   0x31504D56u   /* "VMP1" little end first */
-#define VM_PACK_VERSION 2   /* 2 (PAD-1667): phases carry their music's fade, cues their fade */
+#define VM_PACK_VERSION 3   /* 2 (PAD-1667): phases carry their music's fade, cues their fade; 3 (PAD-1663): the notes table, after PAD-1664's timeline tables */
 
 /* ---- limits: sized from the largest column of the plan's budgets (section 5) ---- */
 #define VM_MAX_THINGS     512   /* alive at once (the desk budget is 300) */
@@ -67,6 +67,8 @@
 #define VM_MAX_CURVES     128
 #define VM_CURVE_PTS      33    /* an easing curve baked to 33 heights at even steps across */
 #define VM_MAX_TSOUNDS    256
+#define VM_MAX_NOTES      2048  /* rhythm charts and fixed button runs, the whole document */
+#define VM_MAX_SEQ        48    /* one button run */
 
 /* ---- input: one word a step ---- */
 #define VM_IN_LEFT      0x01u   /* left flipper button held */
@@ -97,7 +99,12 @@ enum { VM_TR_CUT, VM_TR_FADE, VM_TR_WHITE_FLASH, VM_TR_WIPE, VM_TR_IRIS };
 enum { VM_BTN_LEFT, VM_BTN_RIGHT, VM_BTN_ACTION };
 /* fixed strings the compiler puts first in the string table */
 enum { VM_S_CLEAR, VM_S_FAILED, VM_S_TRY_AGAIN, VM_S_STEER, VM_S_FIRE, VM_S_LEFT,
-       VM_S_RIGHT, VM_S_ACTION, VM_S_MASH, VM_S_BOSS_DOWN, VM_S_HOLD, VM_S_COUNT };
+       VM_S_RIGHT, VM_S_ACTION, VM_S_MASH, VM_S_BOSS_DOWN, VM_S_HOLD,
+       /* the button kinds (PAD-1663) */
+       VM_S_PERFECT, VM_S_GOOD, VM_S_EARLY, VM_S_LATE, VM_S_MISS, VM_S_SHAKE, VM_S_DODGE, VM_S_BLOCK,
+       VM_S_TOO_EARLY, VM_S_HIT, VM_S_DODGED, VM_S_BLOCKED, VM_S_WATCH, VM_S_GO, VM_S_GLYPH_L, VM_S_GLYPH_R,
+       VM_S_GLYPH_A, VM_S_ALTERNATE, VM_S_PULL,
+       VM_S_COUNT };
 
 /* ---- events for the pinball side, and the triggers sounds are cued on ---- */
 enum {
@@ -198,6 +205,7 @@ typedef struct { int32_t kind, every, aim; } vm_attack;
 typedef struct { int32_t type, a, next, lost, tries, skippable; } vm_card;
 typedef struct { int32_t part, x, y, w, h, value, look, font, colour, accent, text, phases; } vm_hud;
 typedef struct { int32_t on, sound, duck; } vm_cue;
+typedef struct { int32_t at, button, hold; } vm_note;   /* rhythm: ms in the music; a run: at = place in it */
 typedef struct { int32_t adv, sx, sy, sw, sh; } vm_glyph;
 typedef struct { int32_t size, line_h, atlas, texel; vm_glyph g[VM_GLYPHS]; } vm_font;
 typedef struct { int32_t off, len; } vm_str;
@@ -206,7 +214,7 @@ typedef struct {
     int32_t sps, stage_w, stage_h, background, seed, style, transition, skip_clips,
             speed_step_pct, start_card, nsounds, nclips, callout_font, title_font;
     int32_t nstr, nfont, npic, nanim, nframe, nvalue, nkind, nmover, npath, nphase, nlayer,
-            nplace, nspawn, ncond, nsettings, nweak, natk, ncard, nhud, ncue, ntrack, nkey, ncurve, ntsnd;
+            nplace, nspawn, ncond, nsettings, nweak, natk, ncard, nhud, ncue, ntrack, nkey, ncurve, ntsnd, nnote;
     char strbytes[VM_MAX_STRBYTES];
     vm_str str[VM_MAX_STRINGS];
     vm_font font[VM_MAX_FONTS];
@@ -232,6 +240,7 @@ typedef struct {
     vm_key key[VM_MAX_KEYS];
     vm_curve curve[VM_MAX_CURVES];
     vm_tsound tsnd[VM_MAX_TSOUNDS];
+    vm_note note[VM_MAX_NOTES];
 } vm_doc;
 
 /* ---- the running game ---- */
@@ -287,6 +296,17 @@ typedef struct vm_engine {
     vm_thing th[VM_MAX_THINGS];
     vm_particle pt[VM_MAX_PARTICLES];
     int32_t order[VM_MAX_THINGS];
+    /* the button kinds (PAD-1663): mash, alternate, tug, rhythm, sequence, dodge, shield. Play state: before
+     * the draw list, so the editor's snapshots (VM_STATE_BYTES) carry it */
+    int32_t kind_won, kind_lost;     /* a kind's own verdict; judge ends the phase on it */
+    int32_t audio_offset_ms;         /* the host: how late this place's sound is heard (vm_set_audio_offset) */
+    int32_t song_steps;              /* steps since the phase's music was cued */
+    int32_t bk_state, bk_t, bk_n, bk_btn, bk_i, bk_round, bk_len, bk_pairs, bk_last, bk_side, bk_grab, bk_done;
+    int32_t press_t[3];              /* steps since each button was last pressed (the prompts' animations) */
+    int32_t judge_word, judge_t, judge_x, judge_col;
+    int32_t seq[VM_MAX_SEQ];
+    int32_t note_next;               /* the first chart note not yet over */
+    uint8_t note_st[VM_MAX_NOTES];   /* VM_NOTE_* */
     /* this step's output */
     pm_vm_list list;
     vm_event events[VM_MAX_EVENTS];
@@ -296,6 +316,9 @@ typedef struct vm_engine {
     int32_t ncues;
     uint64_t hash;                   /* FNV-1a over every step's draw list words and events */
 } vm_engine;
+enum { VM_NOTE_WAIT, VM_NOTE_HOLDING, VM_NOTE_HIT, VM_NOTE_MISSED };
+/* bk_state: where a button kind is in its beat */
+enum { VM_BK_GAP, VM_BK_TELL, VM_BK_WINDOW, VM_BK_RESULT, VM_BK_SHOW, VM_BK_ENTER };
 
 /* vm_load's verdicts */
 enum { VM_OK = 0, VM_ERR_MAGIC, VM_ERR_VERSION, VM_ERR_SHORT, VM_ERR_LIMIT, VM_ERR_INDEX,
@@ -316,6 +339,10 @@ int vm_weak_open(const vm_engine *e, int32_t i);
  * the title card when flags & 1. Builds the draw list and steps nothing; play state is the phase's start.
  * Never called on a machine. 0 when there is no such phase. */
 int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags);
+/* the host's calibration (PAD-1663): its sound is heard `ms` after the step that cued it (negative: early). A
+ * rhythm phase judges presses and draws its notes against the music as heard. Kept across vm_start; a replay must
+ * set the same value to end on the same hash. */
+void vm_set_audio_offset(vm_engine *e, int32_t ms);
 /* the editor's timeline (PAD-1664): scrubbing is replaying. vm_edit_seek_begin puts phase `phase` at the first step
  * of its play exactly as starting on its card and pressing nothing for the title card's 90 steps leaves it;
  * vm_edit_seek_step plays one step of it with no button held (and, with VM_SEEK_ENDLESS, never ends the phase, so

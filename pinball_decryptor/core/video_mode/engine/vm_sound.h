@@ -17,6 +17,7 @@
  *     static struct pa_assets own = { .folder = "my_video_mode" };
  *     static const char *const names[] = { "music", "boss_music", "zap", ... };   indexed as the engine's sounds
  *     static struct vm_sound snd = { &own, names, 7 };
+ *     load:     vm_sound_calibrate(&E);          the machine's sound offset (below), before vm_start
  *     start:    vm_sound_start(&snd);            the game's music fades; the mode's begins quiet
  *     a step:   vm_step(&E, in); vm_sound_cues(&snd, &E);
  *     tick:     pa_tick(&own);                   every tick, running or not
@@ -42,6 +43,16 @@ static PA_UNUSED const char *vm_sound_name(const struct vm_sound *s, int32_t snd
 {
     return snd >= 0 && snd < s->nnames && s->names[snd] ? s->names[snd] : "";
 }
+
+/* The machine's sound calibration (PAD-1663): how long after the step that cues it the mode's music is heard. A
+ * rhythm phase judges presses and draws its notes against the music as heard (vm_set_audio_offset). Measured on
+ * the emulator (James Bond LE 1.06, scripts/proof_pad1663_rig.py): the game's sound worker takes a bed's request
+ * 13 ms after its cue's step and the mode sees it start at 14 ms; 3 minutes of steps stay within 6 ms of the
+ * machine's 60 a second clock. A build that measures its machine otherwise sets -DVM_SOUND_AUDIO_OFFSET_MS=<ms>. */
+#ifndef VM_SOUND_AUDIO_OFFSET_MS
+#define VM_SOUND_AUDIO_OFFSET_MS 14
+#endif
+static PA_UNUSED void vm_sound_calibrate(vm_engine *e) { vm_set_audio_offset(e, VM_SOUND_AUDIO_OFFSET_MS); }
 
 static PA_UNUSED void vm_sound_start(struct vm_sound *s)
 {

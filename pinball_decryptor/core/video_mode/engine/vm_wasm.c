@@ -54,6 +54,11 @@ EXPORT(vmw_start_at) int32_t vmw_start_at(uint32_t seed, int32_t level, int32_t 
     return 1;
 }
 EXPORT(vmw_card) int32_t vmw_card(void) { return E.card; }
+/* the place's sound calibration (PAD-1663): its sound is heard ms after the step that cued it */
+EXPORT(vmw_audio_offset) void vmw_audio_offset(int32_t ms) { vm_set_audio_offset(&E, ms); }
+EXPORT(vmw_song_ms) int32_t vmw_song_ms(void) { return (int32_t)(((int64_t)E.song_steps * 1000) / (E.doc.sps ? E.doc.sps : 60)); }
+EXPORT(vmw_song_steps) int32_t vmw_song_steps(void) { return E.song_steps; }
+EXPORT(vmw_kind) int32_t vmw_kind(void) { return E.doc.nphase ? E.doc.phase[E.phase].kind : -1; }
 EXPORT(vmw_phase) int32_t vmw_phase(void) { return E.phase; }
 EXPORT(vmw_phase_t) int32_t vmw_phase_t(void) { return E.t; }
 EXPORT(vmw_phase_len) int32_t vmw_phase_len(void) { return E.doc.nphase ? E.doc.phase[E.phase].length : 0; }

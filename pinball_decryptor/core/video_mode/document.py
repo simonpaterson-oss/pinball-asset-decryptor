@@ -571,9 +571,9 @@ def phase_template(doc, kind, phase_id=None):
         d["things"].append(t)
         return tid
 
-    def meter(base, goal=100):
+    def meter(base, goal=100, start=0):
         vid = fresh(base, taken)
-        d.setdefault("values", []).append({"id": vid, "type": "meter", "start": 0, "min": 0, "max": goal})
+        d.setdefault("values", []).append({"id": vid, "type": "meter", "start": start, "min": 0, "max": goal})
         return vid
 
     pid = phase_id if phase_id and phase_id not in taken else fresh(kind, taken)
@@ -610,7 +610,8 @@ def phase_template(doc, kind, phase_id=None):
         ph["lose"] = [{"when": "time_up"}]
         ph["length_s"] = 40
     elif kind in ("mash", "alternate", "tug"):
-        s["meter"] = meter({"mash": "power", "alternate": "charge", "tug": "pull"}[kind])
+        # a tug of war starts half way: full wins, empty loses (PAD-1663)
+        s["meter"] = meter({"mash": "power", "alternate": "charge", "tug": "pull"}[kind], start=50 if kind == "tug" else 0)
         if kind == "mash":
             s.update(button="action", per_press=6, drain_per_s=10, goal=100)
         elif kind == "alternate":
@@ -629,16 +630,21 @@ def phase_template(doc, kind, phase_id=None):
         s.update(music=music, tempo_bpm=120, travel_beats=4,
                  chart=[{"beat": 4 + 2 * i, "button": ["left", "right", "action"][i % 3]} for i in range(24)])
         ph["music"] = music
-        ph["win"] = [{"when": "time_up"}]
+        # PAD-1663: a rhythm phase is over when its chart is, then judged on its good presses
+        ph["win"] = [{"when": "accuracy", "value": 70}]
+        ph["lose"] = [{"when": "misses", "value": 12}]
     elif kind == "sequence":
         s.update(length=4, shown=True, per_press_s=2, rounds=3)
-        ph["win"] = [{"when": "time_up"}]
+        ph["win"] = [{"when": "goal"}]          # PAD-1663: its run done is its goal; three misses lose it
+        ph["lose"] = [{"when": "misses", "value": 3}]
     elif kind == "dodge":
         s.update(buttons=["left", "right"], tell_s=1, window_s=0.8, count=8)
-        ph["win"] = [{"when": "time_up"}]
+        ph["win"] = [{"when": "goal"}]          # PAD-1663: its run done is its goal; three misses lose it
+        ph["lose"] = [{"when": "misses", "value": 3}]
     elif kind == "shield":
         s.update(button="action", tell_s=1, hold_s=1.5, count=6)
-        ph["win"] = [{"when": "time_up"}]
+        ph["win"] = [{"when": "goal"}]          # PAD-1663: its run done is its goal; three misses lose it
+        ph["lose"] = [{"when": "misses", "value": 3}]
     elif kind == "timing":
         s.update(input="press", button="action", sweep_s=1.5, window_from=0.45, window_to=0.6, shrink_pct=10, rounds=5)
         ph["win"] = [{"when": "time_up"}]
