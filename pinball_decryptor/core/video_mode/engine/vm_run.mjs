@@ -1,6 +1,6 @@
 // vm_run.mjs - vmrun's twin on WebAssembly (PAD-1657): same arguments, same lines out,
 // so a test can hold the two side by side.
-//   node vm_run.mjs WASM PACK [--inputs FILE | --bot] [--record FILE] [--seed N] [--level N] [--max N] [--dump N] [--quiet] [--clip N]
+//   node vm_run.mjs WASM PACK [--inputs FILE | --bot] [--record FILE] [--seed N] [--level N] [--max N] [--dump N] [--quiet] [--clip N] [--card N]
 import { readFileSync, writeFileSync } from "node:fs";
 import { VideoModeEngine } from "./vm_engine.js";
 
@@ -11,13 +11,15 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--bot") opt.bot = true;
   else if (a === "--quiet") opt.quiet = true;
-  else if (["--inputs", "--record", "--seed", "--level", "--max", "--dump", "--clip"].includes(a)) opt[a.slice(2)] = argv[++i];
+  else if (["--inputs", "--record", "--seed", "--level", "--max", "--dump", "--clip", "--card"].includes(a)) opt[a.slice(2)] = argv[++i];
   else pos.push(a);
 }
 const vm = await VideoModeEngine.create(readFileSync(pos[0]));
 const err = vm.load(readFileSync(pos[1]));
 if (err) { console.log(`LOADERR ${err} at=${vm.errAt()}`); process.exit(3); }
-vm.start(Number(opt.seed), Number(opt.level));
+if (opt.card !== undefined) {
+  if (!vm.startAt(Number(opt.seed), Number(opt.level), Number(opt.card))) { console.log("LOADERR 5 at=card"); process.exit(3); }
+} else vm.start(Number(opt.seed), Number(opt.level));
 vm.botInit(Number(opt.clip));
 const inputs = opt.inputs ? readFileSync(opt.inputs) : new Uint8Array(0);
 const rec = [];

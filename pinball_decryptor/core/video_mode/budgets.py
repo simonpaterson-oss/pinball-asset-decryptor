@@ -39,6 +39,19 @@ MACHINES = {
     "dots": {"label": "Dot-matrix screens (CGC, Spike 1)", "memory": 4 * MB, "atlas": 512, "card": 16 * MB,
              "texel_bytes": 4, "backend": "dots", "art_scale": 0.125},
 }
+#: What the screen draws each frame and the engine keeps alive (the plan's "Things alive at once", "Quads drawn a
+#: frame" and "Draw calls a frame" rows; 0 = not limited there). The app's player (PAD-1659) meters against them.
+PLAY = {
+    "spike2": {"things": 300, "quads": 1500, "draw_calls": 16},
+    "spike3": {"things": 500, "quads": 3000, "draw_calls": 32},
+    "jjp": {"things": 400, "quads": 2000, "draw_calls": 24},
+    "spooky": {"things": 400, "quads": 2000, "draw_calls": 24},
+    "dots": {"things": 100, "quads": 400, "draw_calls": 0},
+}
+for _k, _v in PLAY.items():
+    MACHINES[_k].update(_v)
+del _k, _v
+
 ORDER = ("spike2", "spike3", "jjp", "spooky", "dots")
 DEFAULT = "spike2"
 

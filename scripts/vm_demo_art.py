@@ -1,12 +1,13 @@
 """Original placeholder art for the video mode maker's worked example, Night Harbour (PAD-1658).
 
-    python scripts/vm_demo_art.py <mode folder> [--sources <folder>]
+    python scripts/vm_demo_art.py <mode folder> [--sources <folder>] [--media]
 
 Draws every picture docs/plans/video_mode_maker.md's example names (a sea and a skyline to tile, a boat, a
 drone, a mine, a bolt, a crate, a warship, a sight, a shell) into <mode folder>/art at the sizes its document
 gives, and copies the example document in as video_mode.json. With --sources it also writes files to bring in
 by each import kind: an animated GIF, a numbered PNG run, a sprite sheet with gutters, a grid sheet and a
-green-screen video (needs ffmpeg). All shapes are drawn here; PAD ships no game content.
+green-screen video (needs ffmpeg). With --media (PAD-1659) it also makes the example's sounds and clips: tones, noise and
+gradients (the music and clips need ffmpeg). All shapes and sounds are made here; PAD ships no game content.
 """
 import json
 import math
@@ -202,7 +203,90 @@ def make_sources(folder, ffmpeg=None):
     return out
 
 
+# ---- sounds and clips (PAD-1659): synthesized here, so the app's player has something to play -------------------------
+RATE = 22050
+
+
+def _wav(path, samples):
+    import struct
+    import wave
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, v)) * 30000)) for v in samples))
+
+
+def _tone(freqs, secs, decay=6.0, kind="sine", seed=1):
+    import math
+    import random
+    rnd = random.Random(seed)
+    out, ph = [], 0.0
+    n = int(RATE * secs)
+    for i in range(n):
+        t = i / RATE
+        f = freqs[0] + (freqs[-1] - freqs[0]) * (i / max(1, n - 1))
+        ph += 2 * math.pi * f / RATE
+        v = rnd.uniform(-1, 1) if kind == "noise" else (1.0 if math.sin(ph) > 0 else -1.0) * 0.5 if kind == "square"             else math.sin(ph)
+        out.append(v * math.exp(-decay * t) * 0.8)
+    return out
+
+
+def _music(secs, root, seed):
+    """A plain arpeggio over a bass note, looping cleanly: original placeholder music."""
+    import math
+    out = []
+    steps = [0, 4, 7, 12, 7, 4]
+    beat = 0.18
+    for i in range(int(RATE * secs)):
+        t = i / RATE
+        k = int(t / beat)
+        f = root * 2 ** (steps[(k + seed) % len(steps)] / 12.0)
+        tt = t - k * beat
+        v = 0.35 * math.sin(2 * math.pi * f * 2 * t) * math.exp(-8 * tt) + 0.25 * math.sin(2 * math.pi * root / 2 * t)
+        out.append(v)
+    return out
+
+
+def make_media(mode_dir, ffmpeg=None):
+    """The example's sounds (sound/*.wav and the two music beds) and clips (clips/*.mp4), all made here: tones,
+    noise and gradients. Music and clips need ffmpeg (for .ogg and .mp4); without it only the effects are made.
+    Returns the files written."""
+    snd = os.path.join(mode_dir, "sound")
+    made = []
+    effects = {"zap": _tone([1400, 300], 0.14, 18, "square"), "boom": _tone([120, 40], 0.6, 5, "noise"),
+               "ouch": _tone([420, 180], 0.3, 7, "square"), "chime": _tone([1320, 1320], 0.45, 6) ,
+               "go_now": _tone([660, 990], 0.5, 3)}
+    for name, smp in effects.items():
+        path = os.path.join(snd, name + ".wav")
+        _wav(path, smp)
+        made.append(path)
+    ff = ffmpeg or shutil.which("ffmpeg")
+    if not ff:
+        return made
+    for name, root, seed in (("chase", 110.0, 0), ("boss", 98.0, 2)):
+        wav = os.path.join(snd, "_%s.wav" % name)
+        _wav(wav, _music(8.0, root, seed))
+        out = os.path.join(snd, name + ".ogg")
+        subprocess.run([ff, "-v", "error", "-y", "-i", wav, "-c:a", "libvorbis", "-q:a", "3", out], check=True)
+        os.remove(wav)
+        made.append(out)
+    clips = os.path.join(mode_dir, "clips")
+    os.makedirs(clips, exist_ok=True)
+    for name, cols in (("intro", "0x0b1630:0x1f6fb2"), ("won", "0x10351c:0xe0b040"), ("lost", "0x2a0a0a:0x902020")):
+        a, b = cols.split(":")
+        out = os.path.join(clips, name + ".mp4")
+        subprocess.run([ff, "-v", "error", "-y", "-f", "lavfi", "-i",
+                        "gradients=s=680x384:d=2:speed=0.03:c0=%s:c1=%s:n=2:r=30" % (a, b),
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", out], check=True)
+        made.append(out)
+    return made
+
+
 if __name__ == "__main__":
     make_mode(os.path.abspath(sys.argv[1]))
+    if "--media" in sys.argv:
+        print(json.dumps(make_media(os.path.abspath(sys.argv[1]))))
     if "--sources" in sys.argv:
         print(json.dumps(make_sources(os.path.abspath(sys.argv[sys.argv.index("--sources") + 1]))))

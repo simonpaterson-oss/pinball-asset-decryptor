@@ -23,6 +23,7 @@ is the Tk tab's code, ported; every rule a mode obeys is the plugins' (mode_proj
 mode_tryit, code_modes, stock_modes, film_cut), called as the Tk tab called them.
 """
 
+import json
 import os
 import re
 import shutil
@@ -2322,6 +2323,62 @@ class ModesTab(JjpModesMixin, SpookyModesMixin, TitleReadMixin, TryItMixin, Game
             return "", ""
         return fix_chip(problems), "To fix before it can be built: " + " ".join(problems)
 
+    # -- video modes (PAD-1659): listed here, made and played on the Video modes tab --------------
+    def _video_rows(self):
+        """A row per ``<project>/modes/<slug>/video_mode.json``, after the person's other modes."""
+        from ...core.video_mode import document as VD
+        project = self.project()
+        if not project:
+            return []
+        base = os.path.join(project, "modes")
+        try:
+            names = sorted(os.listdir(base))
+        except OSError:
+            return []
+        rows = []
+        for slug in names:
+            path = os.path.join(base, slug, VD.FILE_NAME)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    title = (json.load(f) or {}).get("title") or slug
+                chip, tip = "", "A video mode: a short game on the screen while the ball is held. Opens on the Video modes tab."
+            except (OSError, ValueError, AttributeError):
+                title, chip, tip = slug, "to fix", "Its video_mode.json does not load. Opens on the Video modes tab."
+            rows.append({"slug": slug, "kind": "video", "name": str(title), "chip": chip, "chip_tip": tip,
+                         "video": True})
+        return rows
+
+    def _open_video_mode(self, slug):
+        vm = self.window.service("vmodes")
+        if vm is None or not self.project():
+            return False
+        self._save_if_edited()
+        vm.refresh()
+        vm.select(slug)
+        self.window.select_tab("vmodes")
+        return True
+
+    @rpc
+    def new_video_mode(self, name):
+        """The New mode wizard's Video mode way: a new, empty video mode in this project, opened on the Video
+        modes tab (where its pictures come in and Play plays it)."""
+        if not self.project():
+            self._tryit_note(MP.NO_PROJECT_HELP)
+            return None
+        if not name or not str(name).strip():
+            return None
+        vm = self.window.service("vmodes")
+        if vm is None:
+            return None
+        self._save_if_edited()
+        vm.refresh()
+        slug = vm.new_mode(str(name).strip())
+        self._publish_rows()
+        self.window.select_tab("vmodes")
+        return slug
+
     def _publish_rows(self):
         rows = []
         for slug in self._slugs:
@@ -2351,6 +2408,7 @@ class ModesTab(JjpModesMixin, SpookyModesMixin, TitleReadMixin, TryItMixin, Game
                 chip, tip = "", ""
             rows.append({"slug": slug, "kind": "code", "name": name, "chip": chip,
                          "chip_tip": tip, "blocks": BM.is_blocks(self.project(), slug)})
+        rows.extend(self._video_rows())
         sel = ({"slug": str(self._game_mode), "kind": "game"} if self._game_mode is not None else
                {"slug": self._code_slug, "kind": "code"} if self._code_slug else
                {"slug": self._slug, "kind": "form"} if self._slug else None)
@@ -2359,7 +2417,10 @@ class ModesTab(JjpModesMixin, SpookyModesMixin, TitleReadMixin, TryItMixin, Game
     @rpc
     def select(self, slug, kind="form"):
         """A row of the list was picked: one of the person's modes (``form``), a code mode
-        (``code``) or one of the game's own modes (``game``, ``slug`` its id)."""
+        (``code``), a video mode (``video``: it opens on the Video modes tab) or one of the
+        game's own modes (``game``, ``slug`` its id)."""
+        if kind == "video":
+            return self._open_video_mode(slug)
         if kind == "game":
             try:
                 mode_id = int(slug)

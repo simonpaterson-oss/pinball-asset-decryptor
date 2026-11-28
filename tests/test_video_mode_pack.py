@@ -485,6 +485,11 @@ def test_budgets_match_the_plan():
         assert mb(row("Card space")[i]) == m["card"], key
         mm = B.machine(key)
         assert row("Texel format")[i] == "RGBA8, %d bytes" % mm["texel_bytes"], key
+        # PAD-1659: the player's meters
+        assert int(row("Things alive at once")[i]) == m["things"], key
+        assert int(row("Quads drawn a frame")[i]) == m["quads"], key
+        calls = row("Draw calls a frame")[i]
+        assert (0 if calls == "n/a" else int(calls)) == m["draw_calls"], key
         assert row("Atlases on the card")[i].split()[0] == {"raw": "raw", "zlib": "compressed"}[mm["card_atlas"]], key
 
 

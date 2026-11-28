@@ -88,3 +88,80 @@
 @media (prefers-reduced-motion: reduce) {
   .vm-mode, .vm-sprite, .vm-bar > span { transition: none; }
 }
+
+/* ---- the player (PAD-1659, js/tabs/vmodes_play.js): plan section 6, and play.html's mock-up ---------------------- */
+.vm-page.vm-playing { padding: 0; overflow: hidden; gap: 0; }
+.vmp { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: 44px minmax(0, 1fr) 36px; background: var(--bg); }
+.vmp-top { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--bg-2); min-width: 0; }
+.vmp-top .grow, .vmp-bar .grow { flex: 1 1 auto; }
+.vmp-name { font-size: 15px; font-weight: 600; white-space: nowrap; }
+.vmp-crumb { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vmp-main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0; }
+.vmp-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px; gap: 10px; }
+.vmp-stage { position: relative; flex: 1 1 auto; min-height: 120px; display: grid; place-items: center; overflow: hidden; }
+.vmp-stage > canvas, .vmp-stage > .vmp-clip { grid-area: 1 / 1; display: block; }
+.vmp-gl { box-shadow: 0 0 0 1px var(--line), 0 8px 28px rgba(0, 0, 0, .35); border-radius: 2px; background: #000; }
+.vmp-over { pointer-events: none; }
+.vmp-clip { position: relative; background: #000; display: grid; place-items: center; }
+.vmp-clip[hidden] { display: none; }
+.vmp-clip video { width: 100%; height: 100%; object-fit: contain; }
+.vmp-clip-card { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #e8e8e8; text-align: center; padding: 16px; }
+.vmp-clip-card[hidden], .vmp-clip video[hidden] { display: none; }
+.vmp-clip-card b { font-size: 20px; font-weight: 600; }
+.vmp-clip-card span { font-size: 13px; color: #a8a8a8; max-width: 420px; }
+.vmp-clip-card .i { width: 28px; height: 28px; opacity: .7; }
+.vmp-loading, .vmp-done { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; pointer-events: none; }
+.vmp-loading { color: var(--ink-2); font-size: 13px; flex-direction: row; }
+.vmp-done { color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, .8); }
+.vmp-done-t { font-size: 20px; font-weight: 600; }
+.vmp-pads { display: flex; justify-content: center; gap: 8px; flex: 0 0 auto; }
+.vmp-pad { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line-2);
+           background: var(--panel); color: var(--ink); font: 500 13px var(--sans); cursor: pointer; user-select: none; touch-action: none;
+           transition: background .12s cubic-bezier(.2, .75, .25, 1); }
+.vmp-pad:hover { background: var(--panel-2); }
+.vmp-pad:active { background: var(--panel-3); }
+.vmp-pad.act { min-width: 160px; justify-content: center; }
+.vmp-pad.start { margin-left: 16px; }
+.vmp-dock { border-left: 1px solid var(--line); background: var(--bg-2); padding: 12px; display: flex; flex-direction: column; gap: 16px; overflow: auto; min-height: 0; }
+.vmp-group { display: flex; flex-direction: column; gap: 8px; }
+.vmp-group > .lab { font-family: var(--cond); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.vmp-phases { display: flex; flex-direction: column; gap: 4px; }
+.vmp-ph { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px;
+          border: 1px solid var(--line); background: var(--panel); font-size: 12.5px; }
+.vmp-ph.on { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.vmp-ph .st { font-size: 11.5px; color: var(--ink-2); }
+.vmp-log { display: flex; flex-direction: column; gap: 2px; font-size: 12px; height: 132px; overflow: hidden; }
+.vmp-log > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vmp-log .s { display: inline-block; width: 44px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.vmp-kv { display: grid; grid-template-columns: 80px 1fr; gap: 4px 8px; font-size: 12.5px; }
+.vmp-kv > span { color: var(--ink-3); }
+.vmp-recs { display: flex; flex-direction: column; gap: 2px; }
+.vmp-recs .li { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border-radius: 6px; background: none; border: 0; color: var(--ink); font: 12px var(--sans); cursor: pointer; text-align: left; }
+.vmp-recs .li:hover { background: var(--panel-2); }
+.vmp-recs .li .r { margin-left: auto; color: var(--ink-3); }
+.vmp-verdict { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); word-break: break-all; }
+.vmp-verdict.ok { color: var(--ok); border-color: var(--ok); }
+.vmp-verdict.bad { color: var(--err); border-color: var(--err); }
+.vmp-notes > div { margin-bottom: 4px; }
+.vmp-err { padding: 24px; }
+.vmp-bar { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-top: 1px solid var(--line); background: var(--bg-2); min-width: 0; overflow: hidden; white-space: nowrap; }
+.vmp-bar .seg button { min-height: 24px; font-size: 12px; }
+.vmp-time { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 66px; }
+.vmp-rec { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+.vmp-rec .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+.vmp-rec .dot.on { background: var(--err); }
+.vmp-meter { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-3); }
+.vmp-meter b { font-family: var(--mono); font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+.vmp-meter .bar { width: 32px; height: 4px; border-radius: 2px; background: var(--panel-3); overflow: hidden; }
+.vmp-meter .bar i { display: block; height: 100%; }
+.vmp-hash { font-size: 11.5px; font-weight: 400; }
+.vmp-budgets { display: flex; flex-direction: column; gap: 6px; }
+.vmp-bud { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); }
+.vmp-bud .bar { height: 4px; border-radius: 2px; background: var(--panel-3); overflow: hidden; }
+.vmp-bud .bar i { display: block; height: 100%; transition: width .12s cubic-bezier(.2, .75, .25, 1); }
+.vmp-bud b { font-family: var(--mono); font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 112px; text-align: right; }
+.vmp-rec.ok { color: var(--ok); }
+.vmp-rec.bad { color: var(--err); }
+.vmp-rec .i { width: 14px; height: 14px; }
+@media (prefers-reduced-motion: reduce) { .vmp-pad, .vmp-bud .bar i { transition: none; } }
+.vmp .kbd { font-family: var(--mono); font-size: 11px; color: var(--ink-3); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; line-height: 16px; background: var(--bg); }

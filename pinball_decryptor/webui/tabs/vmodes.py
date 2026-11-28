@@ -9,12 +9,20 @@ own speed); a frame opened in the pixel editor for touch-up; and **Pack for the 
 premultiplies the pictures into atlases and reports what the mode costs against the machine's budgets before
 anything is written. The editor proper (stage, layers, inspector) is PAD-1661's.
 
+**Play** (PAD-1659) opens the player (static/js/tabs/vmodes_play.js): the machine's own engine, built for the browser
+(core/video_mode/engine/vm_engine.wasm), plays the mode at 60 steps a second and WebGL draws its draw list. This
+side compiles the document (:meth:`play_open`) and keeps the input recordings (``<mode>/replays/``).
+
 The rules live in :mod:`...core.video_mode.art` and :mod:`...core.video_mode.pack`; this is the page.
 """
 
+import base64
+import json
 import os
+import re
 import shutil
 import threading
+import time
 
 from .. import compat
 from .base import TabService, rpc
@@ -23,6 +31,7 @@ INTRO = ("Small games played on the screen with the flipper buttons and Action w
          "their pictures here and see what they cost on the machine.")
 ART_TYPES = [("Pictures, GIFs and videos", "*.png *.jpg *.jpeg *.bmp *.gif *.apng *.webp *.tif *.tiff *.mp4 *.mov "
               "*.m4v *.mkv *.avi *.webm *.wmv *.mpg *.mpeg"), ("All files", "*.*")]
+REPLAYS = "replays"       # a mode's input recordings (PAD-1659)
 TOUCH_MAX = 512          # the pixel editor's canvas: a frame up to this a side
 
 
@@ -49,7 +58,8 @@ class VideoModesTab(TabService):
         self._tmp = None
         self.set(project="", available=False, why="", intro=INTRO, modes=[], slug="", title="", problems=[],
                  pictures=[], phases=[], draft=None, machine="spike2", machines=[], report=None, packing=False,
-                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000")
+                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000", play_mem=None)
+        self._play_id = 0
 
     # -- the project -------------------------------------------------------------------------------------------
     def _folder(self):
@@ -493,6 +503,203 @@ class VideoModesTab(TabService):
         if pid != self._pack_id:
             return
         self.set(packing=False, report=report, written=written)
+
+    # -- playing it in the app (PAD-1659) ----------------------------------------------------------------------
+    def _replays_dir(self):
+        return os.path.join(self._mode_dir(), REPLAYS)
+
+    def _recordings(self):
+        out = []
+        d = self._replays_dir()
+        try:
+            names = sorted(os.listdir(d), reverse=True)
+        except OSError:
+            return out
+        for n in names:
+            if not n.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(d, n), encoding="utf-8") as f:
+                    meta = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if isinstance(meta, dict) and os.path.isfile(os.path.join(d, n[:-5] + ".inputs")):
+                out.append(dict(meta, name=n[:-5]))
+        return out[:20]
+
+    def _play_pictures(self, doc, names):
+        """Each picture the engine names by index (its quads' ``atlas``), as the player loads it: the sheet's file
+        and size, or a placeholder of the size the compiler gave it (compiler.py build_pictures)."""
+        A, _, _, _ = _mods()
+        teams = {}
+        for t in doc.get("things") or []:
+            teams.setdefault(t.get("picture"), t.get("team", "scenery"))
+        by_id = {p["id"]: p for p in (doc.get("assets") or {}).get("pictures") or []}
+        md = self._mode_dir()
+        out = []
+        for pid in names.get("pictures") or []:
+            p = by_id.get(pid) or {}
+            path = A.picture_path(md, p) if p.get("file") else ""
+            size = None
+            if path and os.path.isfile(path):
+                try:
+                    from PIL import Image
+                    with Image.open(path) as im:
+                        size = im.size
+                except OSError:
+                    size = None
+            n = int(p.get("frames") or 1)
+            if size:
+                fw, fh = int(p.get("frame_w") or size[0]), int(p.get("frame_h") or p.get("frame_w") or size[1])
+                out.append({"id": pid, "path": path, "w": size[0], "h": size[1], "team": teams.get(pid, "scenery"),
+                            "v": int(os.path.getmtime(path)), "fw": fw, "fh": fh, "frames": n,
+                            "cols": max(1, size[0] // max(1, fw))})
+                continue
+            if p.get("frame_w"):
+                fw, fh = int(p["frame_w"]), int(p.get("frame_h", p["frame_w"]))
+            else:
+                hb = p.get("hitbox") or {}
+                if hb.get("shape") == "circle":
+                    fw = fh = int(round(2 * hb.get("r", 32)))
+                elif hb.get("shape") == "box":
+                    fw, fh = int(round(hb.get("w", 64))), int(round(hb.get("h", 64)))
+                else:
+                    fw = fh = 64
+            fw, fh = max(1, fw), max(1, fh)
+            out.append({"id": pid, "path": "", "w": fw, "h": fh * n, "fw": fw, "fh": fh, "frames": n, "cols": 1,
+                        "team": teams.get(pid, "scenery")})
+        return out
+
+    @rpc
+    def play_open(self):
+        """Compile the mode for the player. Returns what it needs to play, or {"problems": [...]}: the pack (base64),
+        the engine's files, each picture / font / sound / clip by the index the engine names it, the flow's cards
+        (for Start here), the budgets of the machine picked and the recordings kept."""
+        from ...core.video_mode import compiler as C
+        _, B, _, P = _mods()
+        if self._doc is None:
+            return {"problems": ["Pick a video mode first."]}
+        comp = C.compile_doc(self._doc, self._mode_dir())
+        if not comp.ok:
+            return {"problems": comp.problems[:20]}
+        doc, names, md = self._doc, comp.names, self._mode_dir()
+        assets = doc.get("assets") or {}
+
+        def files(kind, ids):
+            by_id = {a["id"]: a for a in assets.get(kind) or []}
+            out = []
+            for i in ids:
+                a = by_id.get(i) or {}
+                path = os.path.join(md, *str(a.get("file") or "").split("/")) if a.get("file") else ""
+                out.append({"id": i, "path": path if path and os.path.isfile(path) else "", "file": a.get("file", ""),
+                            "loop": bool(a.get("loop", False)), "volume": float(a.get("volume", 1.0)),
+                            "role": a.get("role", ""), "loop_start_s": float(a.get("loop_start_s", 0) or 0)})
+            return out
+        phases = {ph["id"]: ph for ph in doc.get("phases") or []}
+        cards = []
+        for c in (doc.get("flow") or {}).get("cards") or []:
+            ph = phases.get(c.get("phase")) or {}
+            if c.get("card") == "phase":
+                label, kind = ph.get("title") or c.get("phase"), ph.get("kind", "")
+            elif c.get("card") == "clip":
+                label, kind = c.get("clip", ""), "clip"
+            else:
+                label, kind = "Ends: " + str(c.get("outcome", "")), "end"
+            cards.append({"id": c["id"], "card": c.get("card"), "label": label, "kind": kind,
+                          "phase": c.get("phase", ""), "length_s": ph.get("length_s")})
+        machine = self.get("machine") or B.DEFAULT
+        m = B.MACHINES.get(machine) or B.MACHINES[B.DEFAULT]
+        eng = os.path.join(os.path.dirname(C.__file__), "engine")
+        fonts = [{"atlas": f["atlas"], "size": f["size"], "cell_w": max(1, int(round(f["size"] * 0.6)))}
+                 for f in names.get("fonts") or []]
+        self._play_id += 1
+        pid = self._play_id
+        self.set(play_mem=None)
+
+        pic_ix = {pid: i for i, pid in enumerate(names.get("pictures") or [])}
+        font_ix = {"font:%s" % f.get("id"): fm["atlas"]
+                   for f, fm in zip(assets.get("fonts") or [], names.get("fonts") or [])}
+
+        def work():
+            """What the pictures cost the machine, and which of its atlases each frame lands in (so the player counts
+            draw calls as the machine makes them: one per atlas and blend run): PAD-1658's pack, off the page's
+            thread."""
+            try:
+                pk = P.pack(md, doc, machine)
+                atlas = {}
+                for it in pk.items:
+                    if it.place is None:
+                        continue
+                    if it.owner in font_ix:
+                        atlas.setdefault(str(font_ix[it.owner]), [it.place[0]])
+                    elif it.owner in pic_ix:
+                        fr = atlas.setdefault(str(pic_ix[it.owner]), [])
+                        while len(fr) <= it.index:
+                            fr.append(it.place[0])
+                        fr[it.index] = it.place[0]
+                mem = {"used": int(pk.report.get("memory") or 0), "budget": int(m["memory"]), "atlas": atlas,
+                       "atlases": len(pk.atlases)}
+            except Exception:             # noqa: BLE001 - the meters just stay as the app counts
+                mem = None
+            self.ctx.loop.post(lambda: pid == self._play_id and self.set(play_mem=mem))
+        threading.Thread(target=work, daemon=True, name="vmodes-play-cost").start()
+        stage = doc.get("stage") or {}
+        return {
+            "problems": [], "notes": comp.notes[:20], "slug": self._slug, "title": doc.get("title") or self._slug,
+            "pack": base64.b64encode(comp.pack).decode("ascii"),
+            "engine_js": os.path.join(eng, "vm_engine.js"), "engine_wasm": os.path.join(eng, "vm_engine.wasm"),
+            "stage": [int(stage.get("width", 1360)), int(stage.get("height", 768))],
+            "seed": 1, "pictures": self._play_pictures(doc, names), "fonts": fonts,
+            "sounds": files("sounds", names.get("sounds") or []), "clips": files("clips", names.get("clips") or []),
+            "things": names.get("things") or [], "phases": names.get("phases") or [], "cards": cards,
+            "start": (doc.get("flow") or {}).get("start", ""),
+            "skip_clips": (doc.get("entry") or {}).get("skip_clips", "none"),
+            "machine": {"key": machine, "label": m["label"], "things": m.get("things", 0), "quads": m.get("quads", 0),
+                        "draw_calls": m.get("draw_calls", 0), "memory": m["memory"]},
+            "recordings": self._recordings(),
+        }
+
+    @rpc
+    def play_save(self, data_b64, meta):
+        """Keep a recording of the buttons a play was given (one byte a step, the engine's input word) beside its
+        seed, start card, steps and the run's draw list hash, in ``<mode>/replays/``. Returns its name."""
+        if self._doc is None:
+            return ""
+        data = base64.b64decode(data_b64 or "")
+        if not data:
+            return ""
+        d = self._replays_dir()
+        os.makedirs(d, exist_ok=True)
+        name = time.strftime("%Y%m%d-%H%M%S")
+        base, n = name, 2
+        while os.path.exists(os.path.join(d, name + ".inputs")):
+            name = "%s-%d" % (base, n)
+            n += 1
+        keep = {k: meta.get(k) for k in ("seed", "level", "card", "card_id", "steps", "hash", "outcome", "score")
+                if isinstance(meta, dict) and k in meta}
+        keep["made"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(os.path.join(d, name + ".inputs"), "wb") as f:
+            f.write(data)
+        with open(os.path.join(d, name + ".json"), "w", encoding="utf-8", newline="\n") as f:
+            json.dump(keep, f, indent=1, sort_keys=True)
+        return name
+
+    @rpc
+    def play_recording(self, name):
+        """A kept recording: {"data": base64 inputs, ...its meta}, or None."""
+        if self._doc is None or not re.fullmatch(r"[0-9A-Za-z_-]{1,64}", str(name or "")):
+            return None
+        d = self._replays_dir()
+        try:
+            with open(os.path.join(d, name + ".inputs"), "rb") as f:
+                data = f.read()
+            with open(os.path.join(d, name + ".json"), encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            return None
+        if not isinstance(meta, dict):
+            return None
+        return dict(meta, name=name, data=base64.b64encode(data).decode("ascii"))
 
 
 TAB = VideoModesTab

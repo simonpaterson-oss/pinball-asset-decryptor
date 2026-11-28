@@ -2,7 +2,7 @@
  * Not part of the engine: it has stdio, a clock and an allocator.
  *
  *   vmrun PACK [--inputs FILE | --bot] [--record FILE] [--seed N] [--level N] [--max N]
- *              [--dump N] [--quiet] [--clip N] [--fuzz N] [--bench N]
+ *              [--dump N] [--quiet] [--clip N] [--card N] [--fuzz N] [--bench N]
  *
  * Prints one line per event ("E step type a b c") and sound cue ("C step sound op duck"),
  * the draw list every N steps with --dump ("D step w0 w1 ..." in hex), and last
@@ -38,7 +38,7 @@ int main(int argc, char **argv)
     const char *pack = 0, *inputs = 0, *record = 0;
     long plen = 0, ilen = 0, i;
     unsigned long seed = 1, max = 200000, dump = 0, fuzz = 0, bench = 0;
-    long level = 0, clip = 120;
+    long level = 0, clip = 120, card = -1;
     int bot = 0, quiet = 0, err, running = 1;
     unsigned long step = 0;
     FILE *rec = 0;
@@ -54,6 +54,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--clip") && i + 1 < argc) clip = strtol(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--fuzz") && i + 1 < argc) fuzz = strtoul(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--bench") && i + 1 < argc) bench = strtoul(argv[++i], 0, 0);
+        else if (!strcmp(argv[i], "--card") && i + 1 < argc) card = strtol(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
         else if (!pack) pack = argv[i];
         else { fprintf(stderr, "vmrun: what is %s?\n", argv[i]); return 2; }
@@ -63,6 +64,10 @@ int main(int argc, char **argv)
     if (inputs) ib = slurp(inputs, &ilen);
     err = vm_load(&E, pb, (uint32_t)plen);
     if (err) { printf("LOADERR %d at=%d\n", err, E.err_at); return 3; }
+    if (card >= 0) {   /* start at another card (the app's "Start here", PAD-1659) */
+        if (card >= E.doc.ncard) { printf("LOADERR %d at=card\n", VM_ERR_INDEX); return 3; }
+        E.doc.start_card = (int32_t)card;
+    }
     vm_start(&E, (uint32_t)seed, (int32_t)level);
     vm_bot_init(&B, (int32_t)clip);
 
