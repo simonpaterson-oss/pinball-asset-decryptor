@@ -77,9 +77,9 @@ def test_format_2_reads_format_1_unchanged_but_its_number():
     with open(os.path.join(FIXTURES, "format_1.json"), encoding="utf-8") as f:
         raw = json.load(f)
     doc = vm.migrate(raw)
-    assert doc["format"] == 2 and vm.FORMAT == 2
+    assert doc["format"] == vm.FORMAT and vm.FORMAT >= 2      # format 3 (PAD-1664) adds nothing a format 1 file holds
     raw2 = copy.deepcopy(raw)
-    raw2["format"] = 2
+    raw2["format"] = vm.FORMAT
     assert doc == raw2
     assert vm.check(doc) == []
 

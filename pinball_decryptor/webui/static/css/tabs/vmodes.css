@@ -190,13 +190,14 @@
 .vm-page.vm-editing { padding: 0; overflow: hidden; gap: 0; }
 .vme { flex: 1 1 auto; min-height: 0; display: grid; background: var(--bg);
        grid-template-columns: var(--vme-left, 240px) minmax(0, 1fr) var(--vme-right, 300px);
-       grid-template-rows: 44px minmax(0, 1fr) 28px; grid-template-areas: "top top top" "left centre right" "bar bar bar"; }
+       grid-template-rows: 44px minmax(0, 1fr) var(--vme-tl, 220px) 28px;
+       grid-template-areas: "top top top" "left centre right" "tl tl tl" "bar bar bar"; }
 .vme-top { grid-area: top; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--bg-2); min-width: 0; }
 .vme-top .sp, .vme-dock-h .sp, .vme-bar .sp, .vme-keys-h .sp { flex: 1 1 auto; }
-.vme-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.vme-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; min-width: 60px; flex: 0 1 auto; }
 .vme-crumb { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
 .vme-vsep { width: 1px; height: 20px; background: var(--line); flex: 0 0 auto; margin: 0 4px; }
-.vme-phase-pick { width: 230px; flex: 0 0 auto; }
+.vme-phase-pick { width: 200px; flex: 0 1 auto; min-width: 120px; }
 .vme-status { min-width: 64px; justify-content: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .vme-opt { font-family: var(--cond); color: var(--ink-2); }
 .vme-opt.on { background: var(--accent-soft); color: var(--ink); }
@@ -329,3 +330,6 @@ body.vme-resizing, body.vme-scrubbing { cursor: ew-resize !important; user-selec
 .vme-key-row .kbd { justify-self: start; }
 .vme-xy { min-width: 116px; }
 .vme-xy:empty::before { content: "x \00b7  y"; color: var(--ink-3); }
+
+/* PAD-1664: the top bar gained the storyboard; on narrow windows the crumb goes first, then the toggles' words */
+@media (max-width: 1700px) { .vme-crumb { display: none; } }

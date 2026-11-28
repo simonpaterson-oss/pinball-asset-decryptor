@@ -68,6 +68,22 @@ export class VideoModeEngine {
   // each placed thing of the still as drawn: {alive, hidden, x, y, turn, x0, y0, x1, y1} (stage px)
   editStill(phase, flags = 0) { return this.x.vmw_edit_still(phase | 0, flags | 0) !== 0; }
   placeCount() { return this.x.vmw_place_count(); }
+  // PAD-1664, the timeline: the phase at a play step with nothing pressed, its draw list built (flags 2: the phase
+  // never ends, so all of its timeline can be seen); snapshots a second apart make it instant. seekDirty(from) says
+  // every play step from `from` on may have changed; keySet rewrites key i (over every track in order) in the tables.
+  seek(phase, step, flags = 0) { return this.x.vmw_seek(phase | 0, step | 0, flags | 0); }
+  seekDirty(from = 0) { this.x.vmw_seek_dirty(from | 0); }
+  seekSnaps() { return this.x.vmw_seek_snaps(); }
+  keyCount() { return this.x.vmw_key_count(); }
+  keySet(i, a, b = 0, ox = 0, oy = 0, ix = 0, iy = 0, raw = false) {
+    const f = (v) => Math.round(v * 65536) | 0;
+    return this.x.vmw_key_set(i | 0, raw ? a | 0 : f(a), f(b), f(ox), f(oy), f(ix), f(iy)) !== 0;
+  }
+  keyAt(i, step) { return this.x.vmw_key_at(i | 0, step | 0) !== 0; }
+  keyInsert(track, pos, step, a, b = 0, ease = 0, raw = false) {
+    const f = (v) => Math.round(v * 65536) | 0;
+    return this.x.vmw_key_insert(track | 0, pos | 0, step | 0, raw ? a | 0 : f(a), f(b), ease | 0) !== 0;
+  }
   placeSet(i, x, y, scale, turn, depth, hidden) {
     const f = (v) => Math.round(v * 65536) | 0;
     return this.x.vmw_place_set(i | 0, f(x), f(y), f(scale), f(turn), depth == null ? NONE : depth | 0, hidden ? 1 : 0) !== 0;

@@ -59,8 +59,10 @@ LIMITS = {
     "frames": 2048, "values": 48, "things": 96, "movers": 192, "path_points": 1024,
     "phases": 32, "layers": 128, "places": 1024, "spawns": 256, "conditions": 256,
     "weak_points": 64, "attacks": 64, "cards": 96, "hud": 64, "cues": 64, "sounds": 64,
-    "clips": 32,
+    "clips": 32, "tracks": 256, "keys": 4096, "curves": 128, "timed_sounds": 256,
 }
+CURVE_PTS = 33
+TRACK_PROPS = ["motion", "scale", "turn", "alpha", "tint"]
 LIMIT_WORDS = {
     "strings": "texts", "string_bytes": "bytes of text", "fonts": "fonts", "pictures": "pictures",
     "animations": "animations", "frames": "animation frames", "values": "values", "things": "things",
@@ -68,7 +70,8 @@ LIMIT_WORDS = {
     "layers": "background layers", "places": "placed things", "spawns": "spawns",
     "conditions": "win and lose conditions", "weak_points": "weak points", "attacks": "boss attacks",
     "cards": "storyboard cards", "hud": "HUD parts", "cues": "sound cues", "sounds": "sounds",
-    "clips": "clips",
+    "clips": "clips", "tracks": "timeline tracks", "keys": "keyframes", "curves": "easing curves of their own",
+    "timed_sounds": "sounds on the timeline",
 }
 
 
@@ -110,6 +113,31 @@ def colour(c, default=0xFFFFFFFF):
         return int(h, 16)
     except ValueError:
         return default
+
+
+def bake_curve(c):
+    """A CSS cubic-bezier(x1, y1, x2, y2) as CURVE_PTS heights (16.16) at even steps across 0..1: the engine reads
+    it straight between them, so the C side never solves a cubic (PAD-1664)."""
+    x1, y1, x2, y2 = (float(v) for v in c)
+
+    def bz(a, b, t):
+        m = 1 - t
+        return 3 * m * m * t * a + 3 * m * t * t * b + t * t * t
+
+    out = []
+    for i in range(CURVE_PTS):
+        u = i / (CURVE_PTS - 1)
+        lo, hi = 0.0, 1.0
+        for _ in range(60):             # x(t) rises with t when x1, x2 are within 0..1
+            mid = (lo + hi) / 2
+            if bz(x1, x2, mid) < u:
+                lo = mid
+            else:
+                hi = mid
+        y = bz(y1, y2, (lo + hi) / 2)
+        out.append(max(-2 * ONE, min(3 * ONE, int(round(y * ONE)))))
+    out[0], out[-1] = 0, ONE
+    return out
 
 
 def png_size(path):
@@ -241,6 +269,10 @@ class _Compiler:
         cues = self.build_cues()
         self.check_limits(fonts, pics, anims, frames, values, kinds, phases, layers, places, spawns,
                           conds, weak, atk, cards, hud, cues)
+        for k, n in (("tracks", len(self.tracks)), ("keys", len(self.keys)), ("curves", len(self.curves)),
+                     ("timed_sounds", len(self.tsnds))):
+            if n > LIMITS[k]:
+                self.problems.append("the document has %d %s; the engine holds up to %d" % (n, LIMIT_WORDS[k], LIMITS[k]))
         if self.problems:
             return Compiled(problems=self.problems, notes=self.notes)
 
@@ -269,7 +301,7 @@ class _Compiler:
             for g in f["glyphs"]:
                 p.put(*g)
         for t in (pics, anims, frames, values, kinds, self.movers, self.path, phases, layers, places,
-                  spawns, conds, settings, weak, atk, cards, hud, cues):
+                  spawns, conds, settings, weak, atk, cards, hud, cues, self.tracks, self.keys, self.curves, self.tsnds):
             p.table(t)
         p.put(END_MAGIC)
         p.w[2] = len(p.w)
@@ -277,7 +309,7 @@ class _Compiler:
         names = {"things": [t["id"] for t in self.things], "phases": [ph["id"] for ph in self.phases],
                  "sounds": list(self.sound_ix), "clips": list(self.clip_ix),
                  "pictures": [pc["id"] for pc in self.pics], "values": [v["id"] for v in self.values],
-                 "fonts": fonts, "place0": [ph[7] for ph in phases]}
+                 "fonts": fonts, "place0": [ph[7] for ph in phases], "track_keys": self.track_keys}
         return Compiled(pack, [], self.notes, names)
 
     def build_fonts(self):
@@ -409,8 +441,54 @@ class _Compiler:
                 self.kind_ix.get(of, -1) if of in self.kind_ix else -1,
                 self.value_ix.get(of, -1) if of in self.value_ix and of not in self.kind_ix else -1]
 
+    def build_tracks(self, ph, where, kind):
+        """PAD-1664: the phase's timeline into the track, key, curve and timed sound tables."""
+        stage = self.doc.get("stage", {})
+        W, H = float(stage.get("width", 1360)), float(stage.get("height", 768))
+        player = (ph.get("settings") or {}).get("player") if kind in ("chase", "thrust") else None
+        places = ph.get("place", [])
+        t0, tk = len(self.tracks), []
+        for n, tr in enumerate(ph.get("tracks", [])):
+            tw = where + ["tracks", n]
+            prop = tr["prop"]
+            if prop == "motion" and tr["place"] < len(places) and places[tr["place"]].get("thing") == player:
+                self.note(tw, "moves the phase's player by keys: its steering does nothing while the keys run")
+            k0 = len(self.keys)
+            tk.append(k0)
+            for j, key in enumerate(tr["keys"]):
+                ease, curve = EASINGS.index(key.get("ease", "linear")), -1
+                if key.get("curve"):
+                    baked = bake_curve(key["curve"])
+                    t = tuple(baked)
+                    if t not in self.curve_ix:
+                        self.curve_ix[t] = len(self.curves)
+                        self.curves.append(baked)
+                    curve = self.curve_ix[t]
+                a = b = ox = oy = ix = iy = 0
+                if prop == "motion":
+                    x, y = float(key["x"]), float(key["y"])
+                    if not (-W <= x <= 2 * W and -H <= y <= 2 * H):
+                        self.problem(tw + ["keys", j], "is %g, %g: more than a stage's width or height off the stage, "
+                                                       "past where the engine keeps things" % (x, y))
+                    a, b = fx(x), fx(y)
+                    ox, oy = (fx(v) for v in key.get("out", (0, 0)))
+                    ix, iy = (fx(v) for v in key.get("in", (0, 0)))
+                elif prop == "tint":
+                    a = colour(key["tint"])
+                    a = a - (1 << 32) if a >= 1 << 31 else a
+                else:
+                    a = fx(key["v"])
+                self.keys.append([steps(key["at_s"]), a, b, ease, curve, ox, oy, ix, iy])
+            self.tracks.append([tr["place"], TRACK_PROPS.index(prop), k0, len(self.keys) - k0])
+        s0 = len(self.tsnds)
+        for ts in ph.get("sound_track", []):
+            self.tsnds.append([steps(ts["at_s"]), self.sound_ix[ts["sound"]]])
+        self.track_keys.append(tk)
+        return [t0, len(self.tracks) - t0, s0, len(self.tsnds) - s0]
+
     def build_phases(self):
         phases, layers, places, spawns, conds, settings, weak, atk = [], [], [], [], [], [], [], []
+        self.tracks, self.keys, self.curves, self.curve_ix, self.tsnds, self.track_keys = [], [], [], {}, [], []
         for i, ph in enumerate(self.phases):
             where = ["phases", i]
             kind = ph["kind"]
@@ -514,7 +592,12 @@ class _Compiler:
                 layers.append([self.pic_ix[l["picture"]], per_step(l.get("speed", 0)), fx(l.get("y", 0)),
                                1 if l.get("tile") else 0, int(round(255 * float(l.get("alpha", 1))))])
             pl0 = len(places)
-            for pl in ph.get("place", []):
+            stage = self.doc.get("stage", {})
+            W, H = float(stage.get("width", 1360)), float(stage.get("height", 768))
+            for j, pl in enumerate(ph.get("place", [])):
+                if not (-W <= float(pl.get("x", 0)) <= 2 * W and -H <= float(pl.get("y", 0)) <= 2 * H):
+                    self.problem(where + ["place", j], "is more than a stage's width or height off the stage, past where "
+                                                      "the engine keeps things")
                 places.append([self.kind_ix[pl["thing"]], fx(pl.get("x", 0)), fx(pl.get("y", 0)), fx(pl.get("scale", 1)),
                                fx(pl.get("turn", 0)), int(pl["depth"]) if "depth" in pl else NONE, 1 if pl.get("hidden") else 0])
             sp0 = len(spawns)
@@ -537,7 +620,8 @@ class _Compiler:
                            bg0, len(layers) - bg0, pl0, len(places) - pl0, sp0, len(spawns) - sp0,
                            w0, l0 - w0, l0, len(conds) - l0, 1 if ph.get("layout") == "fixed" else 0,
                            fx(ramp.get("speed_from", 1)), fx(ramp.get("speed_to", ramp.get("speed_from", 1))), i,
-                           steps(SND.fade_s(self.sound_by_id.get(SND.phase_music(ph))))])
+                           steps(SND.fade_s(self.sound_by_id.get(SND.phase_music(ph))))]
+                          + self.build_tracks(ph, where, kind))
         return phases, layers, places, spawns, conds, settings, weak, atk
 
     def build_cards(self):

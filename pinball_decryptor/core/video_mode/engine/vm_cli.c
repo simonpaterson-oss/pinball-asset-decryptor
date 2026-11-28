@@ -3,6 +3,7 @@
  *
  *   vmrun PACK [--inputs FILE | --bot] [--record FILE] [--seed N] [--level N] [--max N]
  *              [--dump N] [--quiet] [--clip N] [--card N] [--fuzz N] [--bench N]
+ *   vmrun PACK --seek PHASE --at S1,S2,... [--endless]   (PAD-1664: the editor's scrub; "D step ..." per step)
  *
  * Prints one line per event ("E step type a b c") and sound cue ("C step sound op duck fade"),
  * the draw list every N steps with --dump ("D step w0 w1 ..." in hex), and last
@@ -35,6 +36,9 @@ static double now_us(void) { return (double)clock() * 1e6 / CLOCKS_PER_SEC; }
 
 int main(int argc, char **argv)
 {
+    long seek = -1;
+    const char *at = 0;
+    int endless = 0;
     const char *pack = 0, *inputs = 0, *record = 0;
     long plen = 0, ilen = 0, i;
     unsigned long seed = 1, max = 200000, dump = 0, fuzz = 0, bench = 0;
@@ -56,6 +60,9 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--bench") && i + 1 < argc) bench = strtoul(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--card") && i + 1 < argc) card = strtol(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
+        else if (!strcmp(argv[i], "--seek") && i + 1 < argc) seek = strtol(argv[++i], 0, 0);
+        else if (!strcmp(argv[i], "--at") && i + 1 < argc) at = argv[++i];
+        else if (!strcmp(argv[i], "--endless")) endless = 1;
         else if (!pack) pack = argv[i];
         else { fprintf(stderr, "vmrun: what is %s?\n", argv[i]); return 2; }
     }
@@ -64,6 +71,24 @@ int main(int argc, char **argv)
     if (inputs) ib = slurp(inputs, &ilen);
     err = vm_load(&E, pb, (uint32_t)plen);
     if (err) { printf("LOADERR %d at=%d\n", err, E.err_at); return 3; }
+    if (seek >= 0) {   /* PAD-1664: the phase at each play step asked, played from its start with nothing pressed */
+        unsigned long want, have = 0;
+        const char *p = at ? at : "0";
+        if (!vm_edit_seek_begin(&E, (int32_t)seek, endless ? VM_SEEK_ENDLESS : 0)) { printf("LOADERR %d at=phase\n", VM_ERR_INDEX); return 3; }
+        while (*p) {
+            uint32_t n, w;
+            want = strtoul(p, (char **)&p, 10);
+            if (*p == ',') p++;
+            if (want < have) { vm_edit_seek_begin(&E, (int32_t)seek, endless ? VM_SEEK_ENDLESS : 0); have = 0; }
+            for (; have < want; have++) vm_edit_seek_step(&E);
+            vm_edit_seek_draw(&E);
+            n = vm_list_words(&E, words, sizeof(words) / sizeof(words[0]));
+            printf("D %lu", want);
+            for (w = 0; w < n; w++) printf(" %x", (unsigned)words[w]);
+            printf("\n");
+        }
+        return 0;
+    }
     if (card >= 0) {   /* start at another card (the app's "Start here", PAD-1659) */
         if (card >= E.doc.ncard) { printf("LOADERR %d at=card\n", VM_ERR_INDEX); return 3; }
         E.doc.start_card = (int32_t)card;

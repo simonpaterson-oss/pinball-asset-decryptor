@@ -23,6 +23,7 @@
 #ifndef VM_ENGINE_H
 #define VM_ENGINE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define VM_PACK_MAGIC   0x31504D56u   /* "VMP1" little end first */
@@ -60,6 +61,12 @@
 #define VM_MAX_EVENTS     64    /* a step */
 #define VM_MAX_SNDCUES    16    /* a step */
 #define VM_LANES_MAX      7
+/* PAD-1664, the timeline: keyframed motion of placed things, and sounds at set times */
+#define VM_MAX_TRACKS     256
+#define VM_MAX_KEYS       4096
+#define VM_MAX_CURVES     128
+#define VM_CURVE_PTS      33    /* an easing curve baked to 33 heights at even steps across */
+#define VM_MAX_TSOUNDS    256
 
 /* ---- input: one word a step ---- */
 #define VM_IN_LEFT      0x01u   /* left flipper button held */
@@ -81,6 +88,7 @@ enum { VM_W_TIME_UP, VM_W_SURVIVE, VM_W_SCORE, VM_W_KILLS, VM_W_PICKUPS, VM_W_GO
        VM_W_HEALTH_GONE, VM_W_MISSES, VM_W_BOSS_DOWN, VM_W_HITS, VM_W_ACCURACY,
        VM_W_AMMO_OUT, VM_W_LANDED, VM_W_CRASHED, VM_W_CASHED_OUT, VM_W_BUSTED };
 enum { VM_CARD_CLIP, VM_CARD_PHASE, VM_CARD_END };
+enum { VM_TK_MOTION, VM_TK_SCALE, VM_TK_TURN, VM_TK_ALPHA, VM_TK_TINT };
 enum { VM_HUD_HEALTH, VM_HUD_METER, VM_HUD_SCORE, VM_HUD_COMBO, VM_HUD_TIMER, VM_HUD_LIVES,
        VM_HUD_PROGRESS, VM_HUD_PROMPTS, VM_HUD_CALLOUT, VM_HUD_COUNTER, VM_HUD_TEXT };
 enum { VM_LOOK_DEFAULT, VM_LOOK_BAR, VM_LOOK_PIPS, VM_LOOK_HEARTS, VM_LOOK_RING,
@@ -171,7 +179,16 @@ typedef struct { int32_t type, speed, dir, path0, npath, easing, loop, target, t
 typedef struct { int32_t x, y, cum; } vm_pathpt;
 typedef struct { int32_t kind, title, objective, length, music, bg0, nbg, place0, nplace,
                  spawn0, nspawn, win0, nwin, lose0, nlose, layout, ramp_from, ramp_to, settings,
-                 music_fade; } vm_phase;   /* music_fade: steps its music fades in (and out) over */
+                 music_fade,            /* steps its music fades in (and out) over */
+                 track0, ntrack, tsnd0, ntsnd; } vm_phase;
+/* PAD-1664: a track drives one property of one placed thing (place: its index among the phase's places) through
+ * its keys. A key holds its time (steps into the phase's play), its value (a: x, scale, turn, alpha 0..1 or the tint
+ * 0xRRGGBBAA; b: y), the easing into the next key (a preset, or curve >= 0: a baked curve), and for motion the
+ * bezier handles about it, out (ox, oy) towards the next key and in (ix, iy) from the one before. */
+typedef struct { int32_t place, prop, key0, nkey; } vm_track;
+typedef struct { int32_t at, a, b, ease, curve, ox, oy, ix, iy; } vm_key;
+typedef struct { int32_t y[VM_CURVE_PTS]; } vm_curve;
+typedef struct { int32_t at, sound; } vm_tsound;
 typedef struct { int32_t picture, speed, y, tile, alpha; } vm_layer;
 typedef struct { int32_t kind, x, y, scale, turn, depth, hidden; } vm_place;
 typedef struct { int32_t kind, at, every, count, x, y, spread, lane, mover; } vm_spawn;
@@ -189,7 +206,7 @@ typedef struct {
     int32_t sps, stage_w, stage_h, background, seed, style, transition, skip_clips,
             speed_step_pct, start_card, nsounds, nclips, callout_font, title_font;
     int32_t nstr, nfont, npic, nanim, nframe, nvalue, nkind, nmover, npath, nphase, nlayer,
-            nplace, nspawn, ncond, nsettings, nweak, natk, ncard, nhud, ncue;
+            nplace, nspawn, ncond, nsettings, nweak, natk, ncard, nhud, ncue, ntrack, nkey, ncurve, ntsnd;
     char strbytes[VM_MAX_STRBYTES];
     vm_str str[VM_MAX_STRINGS];
     vm_font font[VM_MAX_FONTS];
@@ -211,6 +228,10 @@ typedef struct {
     vm_card card[VM_MAX_CARDS];
     vm_hud hud[VM_MAX_HUD];
     vm_cue cue[VM_MAX_CUES];
+    vm_track track[VM_MAX_TRACKS];
+    vm_key key[VM_MAX_KEYS];
+    vm_curve curve[VM_MAX_CURVES];
+    vm_tsound tsnd[VM_MAX_TSOUNDS];
 } vm_doc;
 
 /* ---- the running game ---- */
@@ -224,6 +245,10 @@ typedef struct {
     int32_t heading;             /* 16.16 degrees: straight and home movers */
     int32_t target;              /* thing slot a homer chases, -1 none */
     int32_t role;                /* 0, or VM_ROLE_* */
+    int32_t place;               /* PAD-1664: the phase's place it was put on the stage from, or -1 (spawned) */
+    int32_t alpha;               /* 0..255, its tracks' own */
+    int32_t tint;                /* 0xRRGGBBAA, its tracks' own; -1 (0xFFFFFFFF) none */
+    int32_t keyed;               /* 1: a motion track places it, and it is not lost off the stage */
 } vm_thing;
 enum { VM_ROLE_NONE, VM_ROLE_PLAYER, VM_ROLE_BOSS, VM_ROLE_SIGHT };
 typedef struct { int32_t alive, x, y, vx, vy, life, colour; } vm_particle;
@@ -255,6 +280,8 @@ typedef struct vm_engine {
     int32_t callout, callout_t;      /* a string shown big, steps left */
     int32_t music, music_fade;       /* the music bed playing (-1 none) and the steps it fades out over */
     int32_t spawned[VM_MAX_SPAWNS];
+    int32_t place_th[VM_MAX_PLACES]; /* PAD-1664: the thing slot each of the phase's places went to, -1 none */
+    int32_t edit_flags;              /* PAD-1664: the editor's seek (VM_SEEK_*); 0 in a game */
     int32_t serial;
     int32_t nthings;
     vm_thing th[VM_MAX_THINGS];
@@ -289,6 +316,18 @@ int vm_weak_open(const vm_engine *e, int32_t i);
  * the title card when flags & 1. Builds the draw list and steps nothing; play state is the phase's start.
  * Never called on a machine. 0 when there is no such phase. */
 int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags);
+/* the editor's timeline (PAD-1664): scrubbing is replaying. vm_edit_seek_begin puts phase `phase` at the first step
+ * of its play exactly as starting on its card and pressing nothing for the title card's 90 steps leaves it;
+ * vm_edit_seek_step plays one step of it with no button held (and, with VM_SEEK_ENDLESS, never ends the phase, so
+ * the whole of its timeline can be seen); vm_edit_seek_draw builds the draw list of where it is. Between them they
+ * draw what the game draws at that step with nothing pressed. Never called on a machine. */
+#define VM_SEEK_ENDLESS 2
+int vm_edit_seek_begin(vm_engine *e, int32_t phase, int32_t flags);
+void vm_edit_seek_step(vm_engine *e);
+void vm_edit_seek_draw(vm_engine *e);
+/* where the play state lives in the engine (for the editor's snapshots): from `err` up to the draw list */
+#define VM_STATE_FIRST(e) ((uint8_t *)&(e)->err)
+#define VM_STATE_BYTES    (offsetof(vm_engine, list) - offsetof(vm_engine, err))
 
 /* fixed point helpers, shared with the bot and the harness */
 #define VM_FX(n) ((int32_t)((n) * 65536))

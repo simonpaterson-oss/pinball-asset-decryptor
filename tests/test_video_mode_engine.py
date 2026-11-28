@@ -173,7 +173,8 @@ def test_compiler_limits_match_the_engine():
              "animations": "ANIMS", "frames": "FRAMES", "values": "VALUES", "things": "KINDS", "movers": "MOVERS",
              "path_points": "PATHPTS", "phases": "PHASES", "layers": "LAYERS", "places": "PLACES",
              "spawns": "SPAWNS", "conditions": "CONDS", "weak_points": "WEAKPTS", "attacks": "ATTACKS",
-             "cards": "CARDS", "hud": "HUD", "cues": "CUES", "sounds": "SOUNDS", "clips": "CLIPS"}
+             "cards": "CARDS", "hud": "HUD", "cues": "CUES", "sounds": "SOUNDS", "clips": "CLIPS",
+             "tracks": "TRACKS", "keys": "KEYS", "curves": "CURVES", "timed_sounds": "TSOUNDS"}
     for py, c in pairs.items():
         assert compiler.LIMITS[py] == caps[c], py
     assert caps["SETTINGS"] >= compiler.LIMITS["phases"]
@@ -417,6 +418,11 @@ def regenerate():
                                  "inputs": "random:1657:40000", "seed": 9, "level": 2, "max": 40000},
         "desk_300_random": {"doc": "tests/data/video_mode/desk_300.json",
                             "inputs": "random:300:6000", "seed": 4, "level": 0, "max": 6000},
+        # PAD-1664: every kind of track and easing, alone (nothing pressed) and under a game played at random
+        "keyframes_idle": {"doc": "tests/data/video_mode/keyframes.json",
+                           "inputs": "random:0:0", "seed": 1, "level": 0, "max": 6000},
+        "keyframes_random": {"doc": "tests/data/video_mode/keyframes.json",
+                             "inputs": "random:1664:6000", "seed": 3, "level": 1, "max": 6000},
     }
     for name, spec in runs.items():
         pk, args = run_args(spec)
