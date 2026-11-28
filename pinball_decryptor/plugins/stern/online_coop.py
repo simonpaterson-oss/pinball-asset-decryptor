@@ -255,6 +255,10 @@ def wanted(project):
     return s if s["on"] and not problems(s) else None
 
 
+#: Simon (2026-11-27): the ONLINE CO-OP row's help (63 characters at most)
+MENU_HELP = "Off: this machine sends no online co-op counts. Scores still go"
+
+
 def cfg_lines(settings):
     """``scorefeed.cfg``'s online co-op lines for *settings*."""
     out = ["# PAD-1479: online co-op - the campaign this machine plays in",

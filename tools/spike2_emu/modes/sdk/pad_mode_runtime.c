@@ -20131,6 +20131,8 @@ static struct {
     unsigned rowsty;                     /* coop.cfg `styles service` (1) / `styles both` (2), with `switch`: the row is
                                           * 1 Off, 2 Normal, 3 Characters, 4 Enhanced (a named row, from 1) and picks the
                                           * style - 1: no start menu step, 2: the step starts on it (PR #53 review) */
+    int alt;                             /* Simon (2026-11-28): coop.cfg `styles alt`, with `switch`: the row is
+                                          * ALTERNATIVE MODES, 0 Off / 1 On / 2 Enhanced (coop_alt_value) */
     unsigned teams_always;               /* PAD-1042: coop.cfg `teams on` (4: 2v2) or `teams 2v1` (3); `teams 3v1` (5) */
     unsigned teams;                      /* PAD-1042: this game is a team game (coop.n players, turn = the player up) */
     unsigned team_n[3];                  /* PAD-1042: players in team 1 and team 2 */
@@ -20410,6 +20412,29 @@ static unsigned coop_card_style(void)
     return coop.style_default;
 }
 
+/* Simon (2026-11-28, with Nathan Hestley; David: "give users the most options we can"): where the Modes tab's co-op
+ * style is picked as Alternative Modes (coop.cfg `styles alt`, beside `switch`), the row is ALTERNATIVE MODES - 0 Off,
+ * 1 On, 2 Enhanced. Only checks in front of the chooser, never a change to it ("As long as the code doesn't change
+ * anything - just basically "IF service menu item = this then.."): at 2, on a card without the row or with another
+ * place's row, nothing below acts. -1: no such row. */
+static int coop_alt_value(void)
+{
+    if (!coop.setting || !coop.onoff || !coop.alt) return -1;
+    return (int)coop_row_mode(*(volatile const unsigned *)(unsigned long)coop.setting);
+}
+
+/* 1 On: co-op and the team games at NORMAL only - CO-OP and STANDARD open no version step, TEAMS only its team step */
+static int coop_regular_only(void)
+{
+    return coop_alt_value() == 1;
+}
+
+/* 0 Off: no co-op or team game, a card of coop.cfg `teams` too */
+static int coop_alt_off(void)
+{
+    return coop_alt_value() == 0;
+}
+
 /* PAD-1065: CO-OP PLAY says Classic: the characters are picked but have no abilities */
 static int coop_classic(void)
 {
@@ -20427,6 +20452,7 @@ static unsigned team_kind_most(unsigned kind)
  * (`teams 2v1`, `teams 3v1`), else (PAD-1073) the start menu's TEAM PLAY pick being filled now (tm.size) */
 static unsigned coop_teams_kind(void)
 {
+    if (coop.teams_always && coop_alt_off()) return tm.size;  /* Simon: ALTERNATIVE MODES Off - no team game */
     return coop.teams_always ? coop.teams_always : tm.size;
 }
 
@@ -22052,6 +22078,10 @@ static int sty_menu_go_style(int open, int shaping, int at, int taken)
 static unsigned sty_menu_kind(void)
 {
     if (!sty_wanted()) return 0u;
+    if (coop_alt_off()) return 0u;                            /* Simon: ALTERNATIVE MODES Off - no chooser */
+    if (coop_regular_only() && !(tm.pending && (tm.kind == 3u || tm.kind == 4u || tm.kind == 5u ||
+                                                tm.kind == TEAM_TEAMS)))
+        return 0u;                                            /* Simon: ALTERNATIVE MODES On - no version step */
     if (tm.pending)
         return tm.kind == 1u || tm.kind == 3u || tm.kind == 4u || tm.kind == 5u || tm.kind == TEAM_TEAMS ? tm.kind : 0u;
     return tm.own;
@@ -22173,6 +22203,11 @@ static int sty_default_for(unsigned kind, unsigned dflt)
 static void coop_style_held(void)
 {
     unsigned d = coop_card_style();
+    if (coop_regular_only()) {                                /* Simon: ALTERNATIVE MODES On - NORMAL */
+        coop.style = 1u;
+        coop.plain = 1;
+        return;
+    }
     if (!d || coop_row_styles()) return;
     coop.style = d <= 3u ? d : 3u;
     coop.plain = coop.style == 1u;
@@ -22195,6 +22230,7 @@ static void sty_menu_go(void)
     smn.go_style = sty_menu_go_style(smn.open, smn.shaping, smn.at, smn.taken);
     if (!smn.taken && !(smn.open && !smn.shaping))            /* PAD-1558: none chosen - the card's default */
         smn.go_style = sty_default_for(kind, coop_card_style());
+    if (coop_regular_only()) smn.go_style = 1;               /* Simon: ALTERNATIVE MODES On - NORMAL */
     smn.go_kind = kind;
     smn.go_team = team;
     smn.go_ms = pm_ms() | 1ul;
@@ -22385,6 +22421,23 @@ static void sty_menu_hint(int chooser)
 
 /* from the menu's frame (team_menu_frame), after its cursor is read: `c` the entry under it, `teams` it is TEAMS,
  * `ours` one of ours: an Action since the last frame works the step; the entry's name line says it */
+/* Simon (2026-11-27, with Nathan Hestley): ALTERNATIVE MODES 1 On - Action on TEAMS' team step takes the team game
+ * shown and plays it NORMAL, with no version step after it (the step's own code, below, is not run). Returns the
+ * Action as used (0) */
+static int sty_alt_team_taken(void)
+{
+    unsigned team = TEAM_SHAPES[smn.shape_at];
+    smn.kind = smn.team = team;
+    tm.kind = team;
+    smn.shaping = smn.open = 0;
+    smn.taken = 1;
+    smn.taken_kind = team;
+    smn.walk_ms = pm_ms();
+    say("teams: TEAMS %s taken on the start menu - NORMAL (ALTERNATIVE MODES On) - Start begins it", sty_label(team));
+    if (smn.go_ms) sty_menu_go();
+    return 0;
+}
+
 static unsigned sty_challenge_indices(unsigned *ch);
 static void sty_menu_frame(unsigned c, int teams, int ours, unsigned std_msg, unsigned index)
 {
@@ -22393,6 +22446,8 @@ static void sty_menu_frame(unsigned c, int teams, int ours, unsigned std_msg, un
     char key[32];
     act = smn.act;
     smn.act = 0;
+    if ((coop_alt_off() && (smn.taken || smn.team || smn.open)) || (coop_regular_only() && smn.taken > 1))
+        sty_menu_reset("ALTERNATIVE MODES changed");          /* Simon: a pick kept from before the row changed */
     if ((long)c != smn.entry) {                               /* the cursor moved (no step was up: it has the flippers) */
         if (smn.home_ms && smn.entry >= 0 && !smn.home_walk) {   /* round 6: a mode walked on the Home Team screen's
                                                               * mode list (its GAME MODE SELECT, or after the game's
@@ -22408,6 +22463,8 @@ static void sty_menu_frame(unsigned c, int teams, int ours, unsigned std_msg, un
         smn.walk_ms = pm_ms();
     }
     if (teams) kind = TEAM_TEAMS;                             /* (a team game taken: the entry is TEAMS still) */
+    if (act && coop_regular_only() && smn.open && smn.shaping)   /* Simon: ALTERNATIVE MODES On - the team game */
+        act = sty_alt_team_taken();                           /* taken plays NORMAL: no version step after it */
     if (act) switch (sty_menu_act(smn.open, smn.shaping, teams, kind != 0u)) {
     case 1:
         smn.kind = kind;
@@ -22505,6 +22562,7 @@ static int sty_default_normal(int preset, int menu_steps)
 static void sty_begin(unsigned kind)
 {
     sty.preset = sty_menu_preset(kind);
+    if (coop_regular_only()) sty.preset = 1;                  /* Simon: ALTERNATIVE MODES On - NORMAL, no chooser */
     if (sty_default_normal(sty.preset, smn.frame_ms != 0)) {   /* PAD-1449 round 5 */
         sty.preset = sty_default_for(kind, coop_card_style());   /* PAD-1558: the card's default, else NORMAL */
         say("styles: no version chosen on the start menu (its Action was the game's: the Home Team screen) - %s%s",
@@ -26497,6 +26555,7 @@ static void coop_line(const char *s)
     if (str_starts(s, "switch")) coop.onoff = 1;         /* Simon: an Off / On row (coop_row_styles) */
     if (str_starts(s, "styles service")) coop.rowsty = 1u;   /* PR #53 review: the row picks the style */
     if (str_starts(s, "styles both")) coop.rowsty = 2u;
+    if (str_starts(s, "styles alt")) coop.alt = 1;           /* Simon (2026-11-28): ALTERNATIVE MODES 0 / 1 / 2 */
 }
 
 /* round 2: the CO-OP PLAY row's live value from coop.cfg when the card carries no modes ("only"), read before the gate
@@ -27898,6 +27957,7 @@ static struct {
     char host[FEED_HOST_MAX], path[FEED_PATH_MAX], title[64];
     unsigned port;
     pm_addr mgr;                                /* the logins' tables (0: not known; a PIE's moved by game_base) */
+    pm_addr online_row;                         /* Simon: ONLINE CO-OP's value (0: no such row - online as set) */
     unsigned off[2];
     unsigned type_flag[FEED_TYPES], n_types;    /* PAD-1344: scorefeed.cfg's type lines, the strongest first */
     char type_name[FEED_TYPES][16];
@@ -28317,6 +28377,11 @@ static int feed_login(unsigned p, unsigned char out[16])
 static void feed_online_into(struct feed_report *r)
 {
     unsigned i, k;
+    if (feed.online_row && !*(volatile const unsigned *)(unsigned long)feed.online_row) {   /* Simon: ONLINE CO-OP Off */
+        r->campaign[0] = 0;
+        r->n_counts = 0;
+        return;
+    }
     for (k = 0; k < sizeof r->campaign; k++) r->campaign[k] = feed.cur.campaign[k];
     for (k = 0; k < sizeof r->team; k++) r->team[k] = feed.cur.team[k];
     for (k = 0; k < sizeof r->machine; k++) r->machine[k] = feed.cur.machine[k];
@@ -29112,6 +29177,7 @@ long long pm_online_count(const char *name)
 
 int pm_online(void)
 {
+    if (feed.online_row && !*(volatile const unsigned *)(unsigned long)feed.online_row) return 0;   /* Simon: Off */
     return feed.armed && feed.cur.campaign[0];
 }
 
@@ -29163,6 +29229,10 @@ static void feed_arm(void)
             if (ok) feed.off[1] = (unsigned)number(&p, &ok);
             if (!ok || feed.off[0] > 0x1000u || feed.off[1] > 0x1000u) feed.mgr = 0;
             if (feed.mgr) feed.mgr += (pm_addr)game_base;               /* PAD-1326: a PIE's (0 on Spike 2) */
+        } else if (str_starts(raw + i, "online_row ")) {  /* Simon (2026-11-27): ONLINE CO-OP Off / On */
+            p = raw + i + 11;
+            feed.online_row = (pm_addr)number(&p, &ok);
+            feed.online_row = ok ? setting_addr(feed.online_row) : 0;
         } else if (str_starts(raw + i, "online ")) {      /* PAD-1479: online co-op */
             feed_cfg_word(raw + i + 7, feed.cur.campaign, sizeof feed.cur.campaign);
         } else if (str_starts(raw + i, "team ")) {
@@ -29281,6 +29351,7 @@ static void feed_arm(void)
 static unsigned team_menu_kinds(unsigned *kinds)
 {
     unsigned n;
+    if (coop.teams_always && coop_alt_off()) return 0;     /* Simon: ALTERNATIVE MODES Off - no team game */
     if (coop.teams_always) {
         kinds[0] = coop.teams_always;
         return 1;
@@ -29457,6 +29528,21 @@ static const char *team_kind_caption(unsigned k)
     return k == 1u || k == 6u ? team_cap_coop : k == 3u || k == 4u || k == 5u || k == TEAM_TEAMS ? team_cap_teams : 0;
 }
 
+/* Simon (2026-11-27, with Nathan Hestley): ALTERNATIVE MODES 0 Off - with no entries of ours the menu's frame does no
+ * more (team_menu_frame returns), so the words lettered while co-op was on go back now and a pick kept from before is
+ * forgotten (emulator: STANDARD still lettered TEAMS / START TO PLAY after On's TEAMS 2 VS 1, then Off) */
+static void sty_alt_off_tidy(void)
+{
+    if (!team_frame_msg && !team_frame_cap && !smn.msg && !sty_hint_on && !smn.taken && !smn.team && !tm.pending)
+        return;
+    team_frame_restore();
+    sty_menu_reset("ALTERNATIVE MODES Off");
+    sty_menu_letter(0, 0, 0);
+    sty_menu_hint(0);
+    tm.pending = 0;
+    team_frame_n = 0;
+}
+
 static void team_menu_frame(pm_reg *r)
 {
     unsigned char *sp = (unsigned char *)(r + 14);
@@ -29473,6 +29559,7 @@ static void team_menu_frame(pm_reg *r)
     unsigned n = *count + last, c, j, kinds[TEAM_KIND_LAST], nk = team_menu_kinds(kinds), was_kind = tm.kind;
     static int room_said;
     int was = tm.pending;
+    if (!nk && coop_alt_off()) sty_alt_off_tidy();     /* Simon: ALTERNATIVE MODES Off - the game's words back */
     if (creg > 12 || breg > 12 || !idx || !msg || n > cap || !nk) return;
     if ((unsigned long)sp != team_frame_sp || !team_frame_n || team_frame_at + team_frame_n > n
         || list[team_frame_at] != idx) {                                        /* a new menu */

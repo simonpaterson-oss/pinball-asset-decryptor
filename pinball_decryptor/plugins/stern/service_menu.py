@@ -80,6 +80,9 @@ def wanted(project, honour_off=True):
         jobs.append(E._BootShowMenu(log))
     if TIMER_KEY in on_keys(project):
         jobs.append(E._BootTimerMenu(log))
+    from . import online_coop as OC                     # Simon (2026-11-27): ONLINE CO-OP, ticked and set up
+    if ONLINE_KEY in on_keys(project) and OC.wanted(project):
+        jobs.append(E._OnlineCoopMenu(log))
     if honour_off:
         off = off_keys(project)
         jobs = [j for j in jobs if j.KEY not in off]
@@ -145,8 +148,10 @@ FLIP_KEY = "boot_flip"
 #: placeholders
 SHOW_KEY = "boot_show"
 TIMER_KEY = "boot_timer"
+#: Simon (2026-11-27): ONLINE CO-OP, ticked here only; on the card when the project's score feed carries online co-op
+ONLINE_KEY = "online_coop"
 #: every row the "on" list can hold
-TICK_KEYS = OFF_KEYS + (FLIP_KEY, SHOW_KEY, TIMER_KEY)
+TICK_KEYS = OFF_KEYS + (FLIP_KEY, SHOW_KEY, TIMER_KEY, ONLINE_KEY)
 #: the rows that need nothing in the project (the boot menu's)
 BOOT_KEYS = (FLIP_KEY, SHOW_KEY, TIMER_KEY)
 

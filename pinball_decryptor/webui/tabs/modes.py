@@ -1780,7 +1780,10 @@ class ModesTab(JjpModesMixin, SpookyModesMixin, TitleReadMixin, TryItMixin, Game
                       "Off or On. In the service menu: the operator picks the style once, in the service menu's CO-OP "
                       "PLAY row (Off, Normal, Characters, Enhanced), and every co-op and team game plays it, with no "
                       "step on the start menu. Both: that row sets the style the start menu's step starts on, and "
-                      "players can still change it there. The row starts on the style chosen above.")
+                      "players can still change it there. The row starts on the style chosen above. Alternative "
+                      "Modes: the service menu's row is ALTERNATIVE MODES, 0 Off (the stock game), 1 On (the co-op "
+                      "and team games, regular only, with no step but TEAMS' team step) or 2 Enhanced (everything, "
+                      "with the start menu's step, as On the start menu); 2 to start with.")
 
     @rpc
     def set_coop_place(self, place):

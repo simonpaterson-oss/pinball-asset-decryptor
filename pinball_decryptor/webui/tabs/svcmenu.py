@@ -26,7 +26,9 @@ REAL_NOTE = ("Boots the game in the emulator, hidden and muted, with this projec
 #: PAD-1640: the Co-op Play row's style-picking form, told only while the Modes tab (where "Style picked" is) is
 #: shown: with the mode maker a preview switched off, no tab names it
 COOP_STYLE_WHERE = (" Where the Modes tab's co-op \"Style picked\" says the service menu (or both), the row is Off, "
-                    "Normal, Characters or Enhanced instead and picks the style.")
+                    "Normal, Characters or Enhanced instead and picks the style. Where it says Alternative Modes, the "
+                    "row is ALTERNATIVE MODES: 0 Off; 1 On, the co-op and team games regular only; 2 Enhanced, "
+                    "everything with the start menu's version step (as with no row).")
 
 #: each setting of ours, its name, and where it is switched when not here
 SETTINGS = (
@@ -38,6 +40,8 @@ SETTINGS = (
     ("coop_play", "Co-op Play", "Ticking it switches co-op play on too. On the machine the row is Off / On: On, the "
                                 "start menu offers the co-op and team games (as with no row); Off, the stock game, "
                                 "reporting to Insider Connected as it always has."),
+    ("online_coop", "Online Co-op", "Set up on the Network tab (Online co-op). On the machine Off / On: Off, its "
+                                    "score feed reports carry no online co-op counts; the scores still go."),
     ("handicap", "Handicap", ""),
     ("colour_blind", "Color Blind", "Play options tab: color-blind insert colors."),
     ("spoken_scores", "Spoken Scores", "Play options tab: the machine says each player's score."),
@@ -167,6 +171,14 @@ class ServiceMenuTab(TabService):
                 row.update(can=not why, on=on, note=why or ("" if on else (
                     "Not on the card: co-op play is always on. Tick to let the operator switch it." if coop else
                     "Not on the card: tick to add its row (and co-op play).")))
+            elif key == "online_coop":                  # Simon (2026-11-27): ticked here, needs online co-op set up
+                from ...plugins.stern import online_coop as OC
+                on = key in ticked
+                set_up = bool(OC.wanted(project))
+                row.update(can=set_up or on, on=on, note="" if on and set_up else (
+                    "Ticked, but online co-op is not set up (Network tab): not on the card." if on else
+                    "Not on the card: tick to add its row." if set_up else
+                    "Set up online co-op on the Network tab first."))
             elif key == "handicap":
                 on = HC.load(project)
                 row.update(can=True, on=on, note="" if on else "Not on the card: tick to add its row.")
