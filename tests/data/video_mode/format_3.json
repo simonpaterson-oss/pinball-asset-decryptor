@@ -345,10 +345,6 @@
           ]
         ],
         "easing": "in_out"
-      },
-      "trail": {
-        "particles": "spark",
-        "every_s": 0.25
       }
     },
     {

@@ -30,6 +30,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from pinball_decryptor.core.video_mode import compiler, harness  # noqa: E402
+from pinball_decryptor.core.video_mode import document as D  # noqa: E402
 
 ENGINE = os.path.join(ROOT, "pinball_decryptor", "core", "video_mode", "engine")
 EXAMPLE = os.path.join(ROOT, "pinball_decryptor", "core", "video_mode", "examples", "night_harbour.json")
@@ -223,7 +224,11 @@ def test_play_open_save_and_recordings(tmp_path):
         assert w.state("vmodes")["slug"] == "night-harbour"
         info = w.call("vmodes.play_open")
         assert info["problems"] == []
-        assert base64.b64decode(info["pack"]) == pack_of(str(md / "video_mode.json"))
+        # PAD-1666: compiled with its fonts as baked (the face's own metrics), as the machine's pack carries them
+        from pinball_decryptor.core.video_mode import fonts as VF
+        _files, metrics = VF.sheets(str(md), D.load(str(md / "video_mode.json")), str(tmp_path / "sheets"))
+        assert base64.b64decode(info["pack"]) == compiler.compile_doc(D.load(str(md / "video_mode.json")), str(md), fonts=metrics).pack
+        assert all(os.path.isfile(f["path"]) for f in info["fonts"])
         assert os.path.isfile(info["engine_js"]) and os.path.isfile(info["engine_wasm"])
         comp = compiler.compile_file(str(md / "video_mode.json"))
         assert [p["id"] for p in info["pictures"]] == comp.names["pictures"]

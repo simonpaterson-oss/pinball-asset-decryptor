@@ -246,6 +246,16 @@ export function glyphSheet(f) {
   return c;
 }
 
+// PAD-1666: a font as baked by core/video_mode/fonts.py (the card's own face, or the file it names): its sheet of
+// fill, outline and gradient glyphs, placed where the compiled metrics say; the stand-in grid only when there is none
+export async function fontTexture(f) {
+  if (f.path) {
+    try { return await loadImage(mediaUrl(f.path) + "&v=" + (f.v || 0)); } catch (e) { /* the stand-in grid */ }
+  }
+  try { await document.fonts.load("700 32px 'IBM Plex Mono'"); } catch (e) { /* the fallback face draws */ }
+  return glyphSheet(f);
+}
+
 // ---- sound: Web Audio, muted until turned on ----------------------------------------------------------------------
 // PAD-1667: played by the machine's own rules (core/video_mode/sound.py), so what plays here is what the machine plays:
 // ONE music voice - a change fades the bed playing out over the new one's fade, then the new one in over the same; a
@@ -625,8 +635,7 @@ export function VideoModePlayer({ s, onClose, startCard }) {
           stage.setTexture(i, src);
           stage.setSheet(i, p.fw || p.w, p.fh || p.h, p.cols || 1);
         }));
-        try { await document.fonts.load("700 32px 'IBM Plex Mono'"); } catch (e) { /* the fallback face draws */ }
-        inf.fonts.forEach((f) => stage.setTexture(f.atlas, glyphSheet(f)));
+        await Promise.all(inf.fonts.map(async (f) => stage.setTexture(f.atlas, await fontTexture(f))));
         if (!live) { stage.dispose(); return; }
         setInfo(inf); setRecs(inf.recordings || []);
         const r = new Run(inf, eng, stage, over.current, clipEl.current, null);

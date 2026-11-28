@@ -14,7 +14,8 @@
 
 import { html, useEffect, useLayoutEffect, useMemo, useRef, useState, Button, Select, Icon, Empty, tip, call, cx,
          mediaUrl } from "../core/ui.js";
-import { GLStage, TEAM_HEX, newEngine, loadImage, placeholderSheet, glyphSheet, b64bytes } from "./vmodes_play.js";
+import { GLStage, TEAM_HEX, newEngine, loadImage, placeholderSheet, fontTexture, b64bytes } from "./vmodes_play.js";
+import { HudInspector, StylePanel, HudPalette, HudLayers, PARTS, newPart } from "./vmodes_hud.js";
 
 const TEAMS = ["player", "enemy", "enemy_shot", "player_shot", "pickup", "health", "scenery"];
 const TEAM_LABEL = { player: "Player", enemy: "Enemy", enemy_shot: "Enemy shot", player_shot: "Player shot",
@@ -36,13 +37,14 @@ const T = {
   saved: "Every change is saved as you make it, and every change is a step you can undo, even after a reload",
   grid: "Show the grid; things snap to it while Snap is on",
   snap: "Snap to the grid, the guides, the stage, the safe area and to other things, with the distance shown. Hold Ctrl while dragging to place freely",
-  hits: "Show the hit boxes, in the team's colour (H)",
+  hits: "Show the hit boxes, in the team's color (H)",
   safe: "Show the safe area: inside every machine's visible glass",
   bezel: "Show the machine's glass around the stage: the dot-matrix band, or the frame of a screen",
   title: "Show the phase's title card on the stage, as the game opens the phase",
   fit: "Zoom to fit (Ctrl 0)", one: "100% (Ctrl 1)",
   palette: "Every command, by name (Ctrl K)",
   keys: "The shortcuts (?)",
+  feel: "The HUD's style presets, every effect's switch and what it costs the machine, transitions, bursts and particles",
   scrub: "Drag the label sideways to change it (Shift: 10 times as fast, Alt: a tenth); or type a number",
   shared: (n) => (n > 1 ? "Shared by the " + n + " placed things of this kind, in every phase" : "This kind of thing's own settings"),
 };
@@ -143,6 +145,10 @@ class Ed {
     this.boxes = []; this.hitList = null; this.preview = null; this.drag = null; this.snaps = [];
     this.space = false; this.queue = Promise.resolve(); this.dirtyFlag = false; this.raf = 0; this.needSync = true;
     this.cursor = null; this.perfReset();
+    // PAD-1666: the HUD part picked (-1 none) and under the pointer, each part's box as the engine drew it, a part's
+    // place while it is dragged, the Look and feel panel, a particle's preview, and what the effects cost
+    this.hudSel = -1; this.hudHover = -1; this.hudBoxesList = []; this.hudPrev = null; this.panel = null; this.burst = null;
+    this.feel = info.feel || null; this.emitters = info.emitters || [];
     this.colours();
   }
   counts(doc) { return (doc.phases || []).map((p) => (p.place || []).length); }
@@ -186,6 +192,9 @@ class Ed {
   sync() {
     // the document's places into the engine's tables (a change not yet in the pack: a move, a hide, a depth)
     const doc = this.doc;
+    const hud = doc.hud || [];
+    this.hudSync = this.packOk && hud.length === this.e.hudCount();
+    if (this.hudSync) hud.forEach((h, i) => this.e.hudSet(i, h.x, h.y, h.w || 0, h.h || 0));
     const same = this.counts(doc).every((n, i) => n === this.packCounts[i]) && this.counts(doc).length === this.packCounts.length;
     this.syncOk = same;
     if (!same || !this.packOk) return;
@@ -212,7 +221,18 @@ class Ed {
             pl.depth == null ? null : pl.depth, !!pl.hidden);
         }
       }
-      this.e.editStill(this.ph, this.opts.title ? 1 : 0);
+      if (this.hudPrev && this.hudSync) {      // a HUD part being dragged or scrubbed: where it is now
+        const p = this.hudPrev;
+        this.e.hudSet(p.i, p.x, p.y, p.w || 0, p.h || 0);
+        this.needSync = true;                 // the next frame starts again from the document
+      }
+      this.e.editStill(this.ph, (this.opts.title ? 1 : 0) | 2);
+      this.hudBoxesList = this.e.hudBoxes();
+      if (this.burst) {                       // a particle's preview: the engine bursts it in the middle of the stage
+        const steps = Math.floor((performance.now() - this.burst.t0) / (1000 / 60));
+        if (steps > this.burst.max || this.burst.em < 0) this.burst = null;
+        else { this.e.editBurst(this.burst.em, this.info.stage[0] / 2, this.info.stage[1] / 2, steps); this.dirty(); }
+      }
       this.drawn = gl.draw(this.e.drawWords());
       this.boxes = this.e.placeBoxes();
       this.hitList = this.opts.hits ? this.e.hitBoxes() : null;
@@ -334,6 +354,24 @@ class Ed {
         g.fillStyle = c.panel; g.strokeStyle = c.line; g.beginPath(); g.roundRect(x - 22, y + 4, 18, 18, 4); g.fill(); g.stroke();
         g.strokeStyle = c.ink; g.lineWidth = 1.4;
         g.strokeRect(x - 17.5, y + 12.5, 9, 6); g.beginPath(); g.arc(x - 13, y + 12, 3, Math.PI, 0); g.stroke();
+      }
+    }
+    // HUD parts: the one under the pointer and the one picked, with its name
+    const hb = (i) => this.hudBox(i);
+    const hudRect = (b) => { const [a, b0] = P(b.x0, b.y0), [a1, b1] = P(b.x1, b.y1); g.strokeRect(Math.round(a) - 1.5, Math.round(b0) - 1.5, Math.round(a1 - a) + 3, Math.round(b1 - b0) + 3); };
+    if (this.hudHover >= 0 && this.hudHover !== this.hudSel && !this.drag) {
+      const b = hb(this.hudHover);
+      if (b) { g.strokeStyle = c.accentLine; g.lineWidth = 1; g.setLineDash([4, 3]); hudRect(b); g.setLineDash([]); }
+    }
+    if (this.hudSel >= 0) {
+      const b = hb(this.hudSel), h = (this.doc.hud || [])[this.hudSel];
+      if (b && h) {
+        g.strokeStyle = c.accent; g.lineWidth = 1; hudRect(b);
+        const [a, b0] = P(b.x0, b.y0);
+        g.font = "500 11px " + c.mono; g.textBaseline = "middle"; g.textAlign = "left";
+        const tw = g.measureText(h.id).width + 10;
+        g.fillStyle = c.accent; g.beginPath(); g.roundRect(Math.round(a) - 1, Math.round(b0) - 21, tw, 16, 4); g.fill();
+        g.fillStyle = c.bg; g.fillText(h.id, Math.round(a) + 4, Math.round(b0) - 12.5);
       }
     }
     // the selection
@@ -571,6 +609,14 @@ class Ed {
     if (this.space || e.button === 1) { this.drag = { type: "pan", cx, cy, ox: this.view.ox, oy: this.view.oy }; this.els.view.style.cursor = "grabbing"; return; }
     const hk = this.handleAt(cx, cy);
     if (hk >= 0) { this.startTransform(hk === 8 ? "turn" : "scale", hk, x, y); return; }
+    const hi = e.shiftKey ? -1 : this.hudAt(x, y);       // the HUD is drawn over everything: it is picked first
+    if (hi >= 0) {
+      const b = this.hudBox(hi), h = this.doc.hud[hi];
+      this.setHud(hi);
+      this.drag = { type: "hud", i: hi, x0: x, y0: y, orig: { x: h.x, y: h.y }, u: { l: b.x0, r: b.x1, t: b.y0, b: b.y1 },
+                    targets: this.snapTargets(new Set()) };
+      return;
+    }
     const gi = this.guideAt(cx, cy);
     const i = this.hitTest(x, y);
     if (gi && i < 0) {
@@ -589,6 +635,7 @@ class Ed {
       return;
     }
     if (!e.shiftKey && this.sel.length) this.setSel([]);
+    if (this.hudSel >= 0) this.setHud(-1);
     this.drag = { type: "marquee", x0: x, y0: y, x1: x, y1: y, base: e.shiftKey ? this.sel.slice() : [] };
   }
   startMove(x, y, dup, clicked) {
@@ -619,8 +666,10 @@ class Ed {
       const i = hk < 0 ? this.hitTest(x, y) : -1;
       const li = hk < 0 && i < 0 ? this.hitTest(x, y, true) : -1;
       const gi = hk < 0 && i < 0 ? this.guideAt(cx, cy) : null;
+      const hh = hk < 0 ? this.hudAt(x, y) : -1;
+      if (hh !== this.hudHover) this.hudHover = hh;
       this.els.view.style.cursor = this.space ? "grab" : hk === 8 ? "alias" : hk >= 0 ? (["nwse-resize", "ns-resize", "nesw-resize", "ew-resize"][hk % 4])
-        : i >= 0 ? "move" : li >= 0 ? "not-allowed" : gi ? (gi.axis === "x" ? "ew-resize" : "ns-resize") : "default";
+        : i >= 0 || hh >= 0 ? "move" : li >= 0 ? "not-allowed" : gi ? (gi.axis === "x" ? "ew-resize" : "ns-resize") : "default";
       if (i !== this.hover || li !== this.hoverLocked) { this.hover = i; this.hoverLocked = li; }
       this.dirty(true);
       return;
@@ -643,6 +692,15 @@ class Ed {
         });
         this.setSel([...hit], true);
       }
+      this.dirty(); return;
+    }
+    if (d.type === "hud") {
+      let hx = x - d.x0, hy = y - d.y0;
+      if (!d.moved && Math.hypot(hx, hy) * this.view.k < 3) return;
+      d.moved = true;
+      if (e.shiftKey) { if (Math.abs(hx) > Math.abs(hy)) hy = 0; else hx = 0; }
+      [hx, hy] = this.snapMove(d.u, hx, hy, d.targets, e.ctrlKey || e.metaKey);
+      this.hudPrev = Object.assign({ i: d.i }, this.doc.hud[d.i], { x: r2(d.orig.x + hx), y: r2(d.orig.y + hy) });
       this.dirty(); return;
     }
     let dx = x - d.x0, dy = y - d.y0;
@@ -700,6 +758,13 @@ class Ed {
       return;
     }
     if (d.type === "marquee") { this.dirty(); this.notify.panels(); return; }
+    if (d.type === "hud") {
+      const p = this.hudPrev;
+      this.hudPrev = null; this.needSync = true;
+      if (!d.moved || !p) { this.dirty(); return; }
+      this.setHudPart("Move " + p.id, { x: p.x, y: p.y }, d.i);
+      return;
+    }
     const prev = this.preview;
     if (!d.moved || !prev) {
       this.preview = null;
@@ -754,6 +819,7 @@ class Ed {
   setSel(list, quiet = false) {
     const n = this.places().length;
     this.sel = [...new Set(list)].filter((i) => i >= 0 && i < n);
+    if (this.sel.length) { this.hudSel = -1; this.panel = null; }
     this.dirty(true);
     if (!quiet) this.notify.panels();
   }
@@ -770,7 +836,8 @@ class Ed {
     this.doc = doc;
     if (this.ph >= doc.phases.length) this.ph = 0;
     this.sel = (sel || this.sel).filter((i) => i < this.places().length);
-    this.preview = null;
+    if (this.hudSel >= (doc.hud || []).length) this.hudSel = -1;
+    this.preview = null; this.hudPrev = null;
     this.needSync = true;
     this.dirty(true);
     this.notify.panels();
@@ -813,6 +880,8 @@ class Ed {
   }
   async applyReply(r, committed) {
     if (r.history) this.hist = r.history;
+    if (r.feel) this.feel = r.feel;
+    if (r.emitters) this.emitters = r.emitters;
     if (r.pack) {
       const v = this.e.load(b64bytes(r.pack));
       this.packOk = !v;
@@ -843,8 +912,83 @@ class Ed {
   }
   setPhase(i) {
     this.ph = clamp(i, 0, this.doc.phases.length - 1);
-    this.sel = []; this.preview = null; this.hover = -1;
+    this.sel = []; this.preview = null; this.hover = -1; this.hudHover = -1;
     this.dirty(true); this.notify.panels();
+  }
+
+  // -- the HUD and the feel (PAD-1666) --------------------------------------------------------------------------------
+  hudBox(i) { const b = this.hudBoxesList[i]; return b && b.drawn ? b : null; }
+  hudAt(x, y) {
+    const hud = this.doc.hud || [], pad = 4 / this.view.k;
+    for (let i = hud.length - 1; i >= 0; i--) {
+      const b = this.hudBox(i);
+      if (b && x >= b.x0 - pad && x <= b.x1 + pad && y >= b.y0 - pad && y <= b.y1 + pad) return i;
+    }
+    return -1;
+  }
+  setHud(i) {
+    this.hudSel = i;
+    if (i >= 0) { this.sel = []; this.panel = null; }
+    this.dirty(true); this.notify.panels();
+  }
+  showStyle() { this.sel = []; this.hudSel = -1; this.panel = "style"; this.dirty(true); this.notify.panels(); }
+  editDoc(label, fn) {
+    const doc = clone(this.doc);
+    if (fn(doc) === false) return null;
+    return this.commit(doc, label);
+  }
+  setHudPart(label, patch, i = this.hudSel) {
+    return this.editDoc(label, (doc) => {
+      const h = (doc.hud || [])[i];
+      if (!h) return false;
+      for (const [k, v] of Object.entries(patch)) { if (v == null) delete h[k]; else h[k] = v; }
+    });
+  }
+  addHud(part, x, y) {
+    if (x == null) {
+      x = part === "prompts" ? 0 : this.info.stage[0] / 2 - 60;
+      y = part === "prompts" ? this.info.stage[1] - 40 : this.info.stage[1] / 2 - 20;
+    }
+    if (this.opts.snap && this.opts.grid) { const gr = this.grid(); x = Math.round(x / gr) * gr; y = Math.round(y / gr) * gr; }
+    const doc = clone(this.doc), h = newPart(doc, part, x, y);
+    doc.hud = [...(doc.hud || []), h];
+    this.sel = []; this.panel = null;
+    const q = this.commit(doc, "Add " + h.id);
+    this.hudSel = doc.hud.length - 1;
+    this.notify.panels();
+    return q;
+  }
+  removeHud() {
+    const i = this.hudSel, h = (this.doc.hud || [])[i];
+    if (!h) return;
+    this.hudSel = -1;
+    this.editDoc("Remove " + h.id, (doc) => { doc.hud.splice(i, 1); if (!doc.hud.length) delete doc.hud; });
+  }
+  nudgeHud(dx, dy) {
+    const h = (this.doc.hud || [])[this.hudSel];
+    if (h) this.setHudPart("Nudge", { x: r2(h.x + dx), y: r2(h.y + dy) });
+  }
+  // a style preset on the whole HUD and feel, worked out by Python (core/video_mode/feel.py), one undo step
+  async preset(key) {
+    await this.queue;
+    this.status = { kind: "busy", text: "Saving…" }; this.notify.panels();
+    let r;
+    try { r = await call("vmodes.edit_preset", key); } catch (err) { r = { ok: false, problems: [String(err && err.message || err)] }; }
+    if (!r || !r.ok) { this.status = { kind: "err", text: "Not kept", why: (r && r.problems) || [] }; this.notify.panels(); return; }
+    this.status = { kind: "ok", text: "Saved" };
+    this.doc = r.doc;
+    await this.applyReply(r, r.doc);
+    this.setDoc(r.doc);
+  }
+  // a particle (the document's own or a preset) bursting in the middle of the stage, played by the engine itself
+  previewBurst(name) {
+    const em = (this.emitters || []).indexOf(name);
+    if (em < 0) return;
+    const own = ((this.doc.assets || {}).particles || []).find((p) => p.id === name);
+    const pre = (this.info.particle_presets || {})[own ? own.preset || "spark" : name] || {};
+    const life = Number((own && own.life_s) || pre.life_s || 1);
+    this.burst = { em, t0: performance.now(), max: Math.min(1200, Math.ceil(life * 60) + 12) };
+    this.dirty();
   }
 
   // -- the commands --------------------------------------------------------------------------------------------------
@@ -983,7 +1127,7 @@ class Ed {
         default: return [0, all.b - b.b];
       }
     };
-    const names = { left: "Align left", centre: "Align centres", right: "Align right", top: "Align tops", middle: "Align middles", bottom: "Align bottoms" };
+    const names = { left: "Align left", centre: "Align centers", right: "Align right", top: "Align tops", middle: "Align middles", bottom: "Align bottoms" };
     this.setPlaces(names[how] || "Align", (p, i) => { const [dx, dy] = d(i); return { x: p.x + dx, y: p.y + dy }; }, sel);
   }
   // the layers' order, front first: one change. The things that moved take a depth between their new neighbours'
@@ -1084,6 +1228,7 @@ function TextIn({ value, onCommit, placeholder, max = 60 }) {
 
 const Group = ({ label, children, extra }) => html`<div class="vme-group">
   <div class="vme-lab"><span>${label}</span>${extra || null}</div>${children}</div>`;
+const UI = { Scrub, TextIn, Group };    // the HUD panels (vmodes_hud.js) use the inspector's own fields
 
 // ---- the inspector -------------------------------------------------------------------------------------------
 function Inspector({ ed, pics }) {
@@ -1111,7 +1256,7 @@ function Inspector({ ed, pics }) {
       <${Group} label="Stage">
         <div class="vme-row"><span class="vme-k">Background</span>
           <input type="color" class="vme-colour" value=${(st.background || "#000000").slice(0, 7)}
-            onChange=${(e) => ed.edit("Change the background colour", (d) => { d.stage.background = e.target.value; })} /></div>
+            onChange=${(e) => ed.edit("Change the background color", (d) => { d.stage.background = e.target.value; })} /></div>
         ${st.safe ? html`<div class="vme-two">
           <${Scrub} label="Safe X" value=${st.safe.x} min=${0} max=${1360} onCommit=${(v) => ed.edit("Change the safe area", (d) => { d.stage.safe.x = v; })} />
           <${Scrub} label="Y" value=${st.safe.y} min=${0} max=${768} onCommit=${(v) => ed.edit("Change the safe area", (d) => { d.stage.safe.y = v; })} />
@@ -1268,7 +1413,7 @@ function AlignBar({ ed }) {
     onClick=${() => ed.align(act)} ...${tip(label + (n === 1 ? " (to the stage)" : ""))}>
     <svg class="vme-al" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d=${ALIGN_SVG[act]} /></svg></button>`;
   return html`<div class="vme-align">
-    ${b("left", "", "Align left edges")}${b("centre", "", "Align centres across")}${b("right", "", "Align right edges")}
+    ${b("left", "", "Align left edges")}${b("centre", "", "Align centers across")}${b("right", "", "Align right edges")}
     <span class="vme-vsep"></span>
     ${b("top", "", "Align top edges")}${b("middle", "", "Align middles")}${b("bottom", "", "Align bottom edges")}
     <span class="vme-vsep"></span>
@@ -1436,7 +1581,7 @@ function commands(ed, ctx) {
   add("Select everything", () => ed.setSel(ed.places().map((_, i) => i)), "Ctrl A");
   add("Undo" + (ed.hist.undo_label ? ": " + ed.hist.undo_label : ""), () => ed.undoRedo("undo"), "Ctrl Z", ed.hist.can_undo);
   add("Redo" + (ed.hist.redo_label ? ": " + ed.hist.redo_label : ""), () => ed.undoRedo("redo"), "Ctrl Shift Z", ed.hist.can_redo);
-  for (const [k, l] of [["left", "Align left"], ["centre", "Align centres"], ["right", "Align right"], ["top", "Align top"], ["middle", "Align middles"], ["bottom", "Align bottom"]])
+  for (const [k, l] of [["left", "Align left"], ["centre", "Align centers"], ["right", "Align right"], ["top", "Align top"], ["middle", "Align middles"], ["bottom", "Align bottom"]])
     add(l, () => ed.align(k), "", has);
   add("Distribute across", () => ed.align("dist_x"), "", ed.sel.length > 2);
   add("Distribute down", () => ed.align("dist_y"), "", ed.sel.length > 2);
@@ -1458,6 +1603,11 @@ function commands(ed, ctx) {
     add((ed.opts[k] ? "Hide the " : "Show the ") + l, () => ctx.toggleOpt(k), k === "hits" ? "H" : "");
   for (const m of ctx.machines || []) add("Glass of " + m.label, () => ctx.setMachine(m.key), "", m.key !== ed.info.machine || !ed.opts.bezel);
   for (const g of [4, 8, 16, 32]) add("Grid of " + g + " px", () => ed.edit("Grid " + g, (d) => { d.editor = Object.assign({}, d.editor || {}, { grid: g }); }), "", ed.grid() !== g);
+  // PAD-1666: the HUD and the feel
+  add("Look and feel", () => ed.showStyle());
+  for (const p of ed.info.presets || []) add("Style preset: " + p.label, () => ed.preset(p.key));
+  for (const [k, l] of PARTS) add("Add HUD part: " + l, () => ed.addHud(k));
+  add("Remove the HUD part", () => ed.removeHud(), "Delete", ed.hudSel >= 0);
   add("Play this phase", () => ctx.play(), "F5");
   add("Shortcuts", () => ctx.keys(), "?");
   return out;
@@ -1554,8 +1704,7 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
             gl.setTexture(i, src);
             gl.setSheet(i, p.fw || p.w, p.fh || p.h, p.cols || 1);
           }));
-          try { await document.fonts.load("700 32px 'IBM Plex Mono'"); } catch (e) { /* the fallback face draws */ }
-          (r.fonts || []).forEach((f) => gl.setTexture(f.atlas, glyphSheet(f)));
+          await Promise.all((r.fonts || []).map(async (f) => gl.setTexture(f.atlas, await fontTexture(f))));
           if (live) setPics(r.pictures || []);
         };
         if (inf.pack) {
@@ -1581,6 +1730,11 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
           toPage: (x, y) => { const r = e.els.view.getBoundingClientRect(), [a, b] = e.toView(x, y); return [r.left + a, r.top + b]; },
           perf: () => e.perf(), perfReset: () => e.perfReset(),
           canUndo: () => !!e.hist.can_undo, settled: () => e.queue.then(() => true),
+          // PAD-1666
+          selectHud: (id) => e.setHud((e.doc.hud || []).findIndex((h) => h.id === id)),
+          hudBox: (id) => e.hudBox((e.doc.hud || []).findIndex((h) => h.id === id)),
+          showStyle: () => e.showStyle(), preset: (k) => e.preset(k), burst: (n) => e.previewBurst(n),
+          addHud: (part, x, y) => e.addHud(part, x, y), feel: () => e.feel,
         };
       } catch (x) { if (live) setErr(String(x && x.message || x)); }
     })();
@@ -1668,11 +1822,20 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
       if (mod && k === "-") { ev.preventDefault(); e.zoomTo(e.view.k / 1.25); return; }
       if (mod && (k === "]" || k === "}")) { ev.preventDefault(); e.arrange(ev.shiftKey ? "front" : "forward"); return; }
       if (mod && (k === "[" || k === "{")) { ev.preventDefault(); e.arrange(ev.shiftKey ? "back" : "backward"); return; }
-      if (k === "Delete" || k === "Backspace") { ev.preventDefault(); e.remove(); return; }
-      if (k === "Escape") { if (e.sel.length) { ev.preventDefault(); e.setSel([]); } return; }
+      if (k === "Delete" || k === "Backspace") { ev.preventDefault(); if (e.hudSel >= 0) e.removeHud(); else e.remove(); return; }
+      if (k === "Escape") {
+        if (e.sel.length || e.hudSel >= 0 || e.panel) { ev.preventDefault(); e.panel = null; e.setSel([]); e.setHud(-1); }
+        return;
+      }
       if (k === "Tab" && document.activeElement === view.current) { ev.preventDefault(); e.cycle(ev.shiftKey); return; }
       if ((k === "h" || k === "H") && !mod) { ev.preventDefault(); toggleOpt("hits"); return; }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (arrows[k] && e.hudSel >= 0) {
+        ev.preventDefault();
+        const f = ev.shiftKey ? NUDGE_BIG : 1;
+        e.nudgeHud(arrows[k][0] * f, arrows[k][1] * f);
+        return;
+      }
       if (arrows[k] && e.sel.length) {
         ev.preventDefault();
         const f = ev.shiftKey ? NUDGE_BIG : 1;
@@ -1726,15 +1889,16 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
       </div>
       <${Button} kind="ghost" size="sm" icon="search" title=${T.palette} onClick=${() => setPal({ start: "" })} />
       <${Button} kind="ghost" size="sm" icon="question" title=${T.keys} onClick=${() => setKeys(true)} />
+      <${Button} kind="ghost" size="sm" icon="palette" cls=${cx("vme-opt", ed && ed.panel === "style" && "on")} title=${T.feel} onClick=${() => ed && ed.showStyle()}>Style<//>
       <${Button} kind="primary" size="sm" icon="play" title=${T.play} disabled=${!ed || !ed.packOk} onClick=${play}>Play<//>
     </div>
     <div class=${cx("vme-dock left", !docks.leftOpen && "shut")}>
       ${docks.leftOpen ? html`
         <div class="vme-dock-h"><span class="t">Layers</span><span class="sp"></span><span class="chip sm mono">${pls.length}</span>
           <button type="button" class="btn ghost icon xs" onClick=${() => dockOpen("left", false)} ...${tip("Fold the layers away")}><${Icon} name="left" /></button></div>
-        <div class="vme-dock-scroll">${ed ? html`<${Layers} ed=${ed} />` : null}</div>
+        <div class="vme-dock-scroll">${ed ? html`<${Layers} ed=${ed} /><div class="vme-lab"><span>HUD</span></div><${HudLayers} ed=${ed} />` : null}</div>
         <div class="vme-dock-h sub"><span class="t">Assets</span></div>
-        <div class="vme-dock-scroll assets">${ed ? html`<${Assets} ed=${ed} pics=${pics} />` : null}</div>
+        <div class="vme-dock-scroll assets">${ed ? html`<${Assets} ed=${ed} pics=${pics} /><div class="vme-lab"><span>HUD</span></div><${HudPalette} ed=${ed} />` : null}</div>
         <div class="vme-split" onPointerDown=${resize("left")}></div>`
       : html`<button type="button" class="vme-rail" onClick=${() => dockOpen("left", true)} ...${tip("Layers and assets")}><${Icon} name="list" /></button>`}
     </div>
@@ -1765,18 +1929,21 @@ export function VideoModeEditor({ s, onClose, onPlay }) {
       ${docks.rightOpen ? html`
         <div class="vme-split" onPointerDown=${resize("right")}></div>
         <div class="vme-dock-h">
-          ${sel1 ? html`<span class="team" style=${{ background: ed.teamColour((selThing || {}).team) }}></span><span class="t">${sel1.thing}</span>`
+          ${ed && ed.hudSel >= 0 && (doc.hud || [])[ed.hudSel] ? html`<span class="team hud"></span><span class="t">HUD · ${doc.hud[ed.hudSel].id}</span>`
+            : ed && ed.panel === "style" ? html`<${Icon} name="palette" /><span class="t">Look and feel</span>`
+            : sel1 ? html`<span class="team" style=${{ background: ed.teamColour((selThing || {}).team) }}></span><span class="t">${sel1.thing}</span>`
             : ed && ed.sel.length > 1 ? html`<span class="t">${ed.sel.length} things</span>` : html`<span class="t">${ph ? (ph.title || ph.id) : "Inspector"}</span>`}
           <span class="sp"></span>
           <button type="button" class="btn ghost icon xs" onClick=${() => dockOpen("right", false)} ...${tip("Fold the inspector away")}><${Icon} name="right" /></button>
         </div>
-        <div class="vme-dock-scroll">${ed ? html`<${Inspector} ed=${ed} pics=${pics} />` : null}</div>`
+        <div class="vme-dock-scroll">${!ed ? null : ed.hudSel >= 0 ? html`<${HudInspector} ed=${ed} ui=${UI} />`
+          : ed.panel === "style" && !ed.sel.length ? html`<${StylePanel} ed=${ed} ui=${UI} />` : html`<${Inspector} ed=${ed} pics=${pics} />`}</div>`
       : html`<button type="button" class="vme-rail" onClick=${() => dockOpen("right", true)} ...${tip("The inspector")}><${Icon} name="edit" /></button>`}
     </div>
     <div class="vme-bar">
       <span class="mono vme-xy" ref=${coords}></span>
       <span class="vme-vsep"></span>
-      <span class="mono">${ed && ed.sel.length ? (() => { const b = ed.selBounds(); return b ? ed.sel.length + " picked · " + Math.round(b.r - b.l) + " × " + Math.round(b.b - b.t) + " px" : ""; })() : "Nothing picked"}</span>
+      <span class="mono">${ed && ed.hudSel >= 0 && (doc.hud || [])[ed.hudSel] ? "HUD · " + doc.hud[ed.hudSel].id : ed && ed.sel.length ? (() => { const b = ed.selBounds(); return b ? ed.sel.length + " picked · " + Math.round(b.r - b.l) + " × " + Math.round(b.b - b.t) + " px" : ""; })() : "Nothing picked"}</span>
       <span class="sp"></span>
       <span class="mono muted">${doc ? doc.stage.width + " × " + doc.stage.height : ""}</span>
       <span class="vme-vsep"></span>

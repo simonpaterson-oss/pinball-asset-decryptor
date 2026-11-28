@@ -337,7 +337,8 @@ def test_200_frames_pack_in_seconds(tmp_path):
     took = time.perf_counter() - t0
     assert took < 5.0, took
     r = pk.report
-    assert r["ok"] and r["unique"] == 200 + len(pk.fonts["hud"]["glyphs"]) - 1      # every glyph but the space
+    # every glyph but the space, three ways (PAD-1666: its fill, its outline and its gradient ramp)
+    assert r["ok"] and r["unique"] == 200 + 3 * (len(pk.fonts["hud"]["glyphs"]) - 1)
     assert len(r["atlases"]) == 1 and r["atlases"][0]["used_pct"] > 45
 
 

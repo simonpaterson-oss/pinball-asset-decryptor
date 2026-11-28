@@ -58,7 +58,7 @@
 #define VM_MAX_SOUNDS     64
 #define VM_MAX_CLIPS      32
 #define VM_MAX_PARTICLES  512
-#define VM_MAX_EMITTERS   16    /* particle presets of the document (PAD-1666) */
+#define VM_MAX_EMITTERS   20    /* the document's particles (16) and the four presets (PAD-1666) */
 #define VM_MAX_POPUPS     24    /* pop-up words alive at once */
 #define VM_MAX_ZONES      4     /* a meter's danger zones */
 #define VM_MAX_ENTRIES    3072  /* quads + boxes in one draw list */
@@ -304,6 +304,8 @@ typedef struct vm_engine {
     int32_t hud_n[VM_MAX_HUD], hud_t[VM_MAX_HUD], hud_pop[VM_MAX_HUD];   /* the number each part shows (counting
                                      up to hud_t, its target) and the steps left of its pop */
     vm_popup pop[VM_MAX_POPUPS];
+    int32_t editing;                 /* vm_edit_still's: the HUD parts' boxes are worked out (never on a machine) */
+    int32_t hud_box[VM_MAX_HUD][5];  /* drawn, x0, y0, x1, y1 (stage px 16.16) of each part in the editor's still */
     int32_t callout, callout_t;      /* a string shown big, steps left */
     int32_t music, music_fade;       /* the music bed playing (-1 none) and the steps it fades out over */
     int32_t spawned[VM_MAX_SPAWNS];
@@ -338,9 +340,13 @@ int vm_check(const vm_engine *e);
 /* 1 when boss weak point i is open this step */
 int vm_weak_open(const vm_engine *e, int32_t i);
 /* the editor's still (PAD-1661): phase `phase` as its first step leaves it, past the opening transition, with
- * the title card when flags & 1. Builds the draw list and steps nothing; play state is the phase's start.
+ * the title card when flags & 1; flags & 2 (PAD-1666): every HUD part shown with sample numbers (a score, a combo
+ * and its multiplier, the prompts, each pop-up at its own place) and their boxes in e->hud_box. Builds the draw list and steps nothing; play state is the phase's start.
  * Never called on a machine. 0 when there is no such phase. */
 int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags);
+/* PAD-1666, the editor's particle preview: after vm_edit_still, emitter `em` bursts at (x, y) (stage px 16.16)
+ * and runs `steps` steps by the engine's own rules, drawn over the still. Never called on a machine. */
+int vm_edit_burst(vm_engine *e, int32_t em, int32_t x, int32_t y, int32_t steps, int32_t flags);
 
 /* fixed point helpers, shared with the bot and the harness */
 #define VM_FX(n) ((int32_t)((n) * 65536))

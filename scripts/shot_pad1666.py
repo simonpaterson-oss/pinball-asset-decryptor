@@ -17,6 +17,7 @@ Serves <repo> on a scratch project holding the plan's worked example, Night Harb
 list hash of a fixed play in the page (WebAssembly) and the frame times of 6 s of the particle-heavy play.
 Needs Playwright (the user site-packages one) and the installed Edge.
 """
+import base64
 import json
 import os
 import sys
@@ -122,18 +123,22 @@ def main():
             # ---- the player
             pg.keyboard.press("F5")
             pg.wait_for_function("window.__vmPlayer && window.__vmPlayer.ready", timeout=30000)
-            pg.evaluate("window.__vmPlayer.startAt('c_chase')")
-            time.sleep(1.8)          # past the title card
-            pg.keyboard.down("Space")
-            time.sleep(2.2)
-            pg.keyboard.down("ShiftLeft"); time.sleep(0.12); pg.keyboard.up("ShiftLeft")
-            time.sleep(1.4)
+            # the bot's recorded winning run (this tree's own golden), paused 14 steps after its second kill (the hit-stop's held frames, then the burst flying): the
+            # same buttons on both sides, so the pair shows the same moment of play
+            with open(os.path.join(repo, "tests", "data", "video_mode", "golden", "night_harbour_bot.inputs"), "rb") as f:
+                rec = {"seed": 1, "level": 0, "card": None, "data": base64.b64encode(f.read()).decode("ascii")}
+            pg.evaluate("rec => window.__vmPlayer.replay(rec)", rec)
+            pg.wait_for_function("window.__vmPlayer.run.kills >= 2", timeout=120000)
+            checks["paused_at_step"] = pg.evaluate("""n => new Promise((res) => { const r = window.__vmPlayer.run, s0 = r.e.stepNo();
+                const t = () => { if (r.e.stepNo() >= s0 + n) { r.setPaused(true); res(r.e.stepNo()); } else requestAnimationFrame(t); };
+                t(); })""", 14)
+            time.sleep(0.6)
             shot(pg, "vmodes_hud_play")
             if after:
+                pg.evaluate("window.__vmPlayer.run.setPaused(false)")
                 pg.evaluate("window.__vmPlayer.perfReset()")
                 time.sleep(6.0)
-                checks["chase_6s"] = pg.evaluate("window.__vmPlayer.perf()")
-            pg.keyboard.up("Space")
+                checks["bot_6s"] = pg.evaluate("window.__vmPlayer.perf()")
             if after:
                 with open(os.path.join(out, "after_hud_checks.json"), "w", encoding="utf-8") as f:
                     json.dump(checks, f, indent=2)

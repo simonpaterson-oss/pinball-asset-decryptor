@@ -81,4 +81,23 @@ export class VideoModeEngine {
     }
     return out;
   }
+  // PAD-1666: a HUD part's place and size rewritten in the loaded tables (stage px), and after editStill(phase, 2)
+  // each part's box as drawn: {drawn, x0, y0, x1, y1} (stage px)
+  hudSet(i, x, y, w, h) {
+    const f = (v) => Math.round(v * 65536) | 0;
+    return this.x.vmw_hud_set(i | 0, f(x), f(y), f(Math.max(0, w || 0)), f(Math.max(0, h || 0))) !== 0;
+  }
+  // PAD-1666: the particle preview: emitter em (the document's particles first, in order) bursting at (x, y),
+  // `steps` steps on, drawn over the still just taken
+  editBurst(em, x, y, steps) { return this.x.vmw_edit_burst(em | 0, Math.round(x * 65536) | 0, Math.round(y * 65536) | 0, steps | 0) !== 0; }
+  hudCount() { return this.x.vmw_hud_count(); }
+  hudBoxes() {
+    const n = this.x.vmw_hud_count(), v = new Int32Array(this.mem(), this.x.vmw_hud_boxes_buf(), n * 5), out = [];
+    for (let i = 0; i < n; i++) {
+      const o = i * 5;
+      out.push(v[o] ? { drawn: true, x0: v[o + 1] / 65536, y0: v[o + 2] / 65536, x1: v[o + 3] / 65536, y1: v[o + 4] / 65536 }
+        : { drawn: false });
+    }
+    return out;
+  }
 }

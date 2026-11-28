@@ -867,6 +867,34 @@ class VideoModesTab(TabService):
                 return ""
         return path
 
+    def _compile(self, doc):
+        """The document compiled with its fonts as baked (PAD-1666): the card's own face, or the file the font names,
+        with its outline and gradient glyphs, the same glyphs the machine's pack carries. The sheets are made once per
+        look of the fonts, in the tab's temp folder; ``comp.font_files`` says where each is."""
+        from ...core.video_mode import compiler as C
+        from ...core.video_mode import fonts as F
+        try:
+            files, metrics = F.sheets(self._mode_dir(), doc, os.path.join(self._tmpdir(), "fonts"))
+        except Exception:       # noqa: BLE001 - a face that will not bake: the compiler's stand-in grid draws instead
+            files, metrics = {}, {}
+        comp = C.compile_doc(doc, self._mode_dir(), fonts=metrics)
+        comp.font_files = files
+        return comp
+
+    def _page_fonts(self, comp, doc):
+        """Each font as the page loads it: its sheet (or the stand-in grid's size when there is none)."""
+        out = []
+        files = getattr(comp, "font_files", {}) or {}
+        ids = [f.get("id") for f in (doc.get("assets") or {}).get("fonts") or []]
+        for i, fm in enumerate(comp.names.get("fonts") or []):
+            ff = files.get(ids[i]) if i < len(ids) else None
+            row = {"atlas": fm["atlas"], "size": fm["size"], "cell_w": max(1, int(round(fm["size"] * 0.6)))}
+            if ff and os.path.isfile(ff["path"]):
+                row.update(path=ff["path"], v=os.path.basename(ff["path"])[-20:-4], source=ff["source"],
+                           stand_in=bool(ff["stand_in"]))
+            out.append(row)
+        return out
+
     @rpc
     def play_open(self):
         """Compile the mode for the player. Returns what it needs to play, or {"problems": [...]}: the pack (base64),
@@ -876,7 +904,7 @@ class VideoModesTab(TabService):
         _, B, _, P = _mods()
         if self._doc is None:
             return {"problems": ["Pick a video mode first."]}
-        comp = C.compile_doc(self._doc, self._mode_dir())
+        comp = self._compile(self._doc)
         if not comp.ok:
             return {"problems": comp.problems[:20]}
         doc, names, md = self._doc, comp.names, self._mode_dir()
@@ -917,8 +945,7 @@ class VideoModesTab(TabService):
         machine = self.get("machine") or B.DEFAULT
         m = B.MACHINES.get(machine) or B.MACHINES[B.DEFAULT]
         eng = os.path.join(os.path.dirname(C.__file__), "engine")
-        fonts = [{"atlas": f["atlas"], "size": f["size"], "cell_w": max(1, int(round(f["size"] * 0.6)))}
-                 for f in names.get("fonts") or []]
+        fonts = self._page_fonts(comp, doc)
         self._play_id += 1
         pid = self._play_id
         self.set(play_mem=None)
@@ -1022,16 +1049,17 @@ class VideoModesTab(TabService):
             "engine_js": os.path.join(eng, "vm_engine.js"), "engine_wasm": os.path.join(eng, "vm_engine.wasm"),
             "stage": [int(stage.get("width", 1360)), int(stage.get("height", 768))],
             "pictures": self._play_pictures(doc, names),
-            "fonts": [{"atlas": f["atlas"], "size": f["size"], "cell_w": max(1, int(round(f["size"] * 0.6)))}
-                      for f in names.get("fonts") or []],
+            "fonts": self._page_fonts(comp, doc),
             "place0": names.get("place0") or [], "phases": names.get("phases") or [],
         }
 
     def _edit_reply(self, doc, with_doc=False, assets_changed=False):
-        from ...core.video_mode import compiler as C
-        comp = C.compile_doc(doc, self._mode_dir())
+        from ...core.video_mode import feel as FEEL
+        _, B, _, _ = _mods()
+        comp = self._compile(doc)
         out = {"ok": True, "history": self._hist.state() if self._hist else None, "notes": comp.notes[:20],
-               "problems": comp.problems[:20]}
+               "problems": comp.problems[:20], "feel": FEEL.costs(doc, self.get("machine") or B.DEFAULT),
+               "emitters": comp.names.get("emitters") or []}
         if comp.ok:
             parts = self._stage_parts(comp, doc)
             if not assets_changed and not with_doc:
@@ -1050,10 +1078,30 @@ class VideoModesTab(TabService):
         if self._doc is None:
             return {"ok": False, "problems": ["Pick a video mode first."]}
         _, B, _, _ = _mods()
+        from ...core.video_mode import feel as FEEL
         out = self._edit_reply(self._doc, with_doc=True)
         out["slug"] = self._slug
         out["machine"] = self.get("machine") or B.DEFAULT
+        # PAD-1666: the look and feel panel's words: the presets, each switch, the particle presets
+        out["presets"] = [{"key": k, "label": v["label"], "about": v["about"]} for k, v in FEEL.STYLE_PRESETS.items()]
+        out["switches"] = [{"key": key, "label": FEEL.SWITCH_WORDS[key][0], "about": FEEL.SWITCH_WORDS[key][1], "on": on}
+                           for _bit, key, on in FEEL.SWITCHES]
+        out["particle_presets"] = FEEL.PARTICLE_PRESETS
         return out
+
+    @rpc
+    def edit_preset(self, name):
+        """PAD-1666: style preset ``name`` on the whole HUD and feel (core/video_mode/feel.py apply_preset), saved as
+        one undo step like any change. Returns the editor's reply with the document."""
+        from ...core.video_mode import feel as FEEL
+        if self._doc is None:
+            return {"ok": False, "problems": ["Pick a video mode first."]}
+        if name not in FEEL.STYLE_PRESETS:
+            return {"ok": False, "problems": ["There is no style preset called %s." % name]}
+        r = self.edit_commit(FEEL.apply_preset(self._doc, name), "Style: " + FEEL.STYLE_PRESETS[name]["label"])
+        if r.get("ok"):
+            r["doc"] = self._doc
+        return r
 
     @rpc
     def edit_commit(self, doc, label=""):
@@ -1070,7 +1118,7 @@ class VideoModesTab(TabService):
             return {"ok": False, "problems": list(getattr(e, "problems", None) or [str(e)])}
         probs = D.check(doc)
         if not probs:
-            comp = C.compile_doc(doc, self._mode_dir())
+            comp = self._compile(doc)
             probs = [] if comp.ok else comp.problems
         if probs:
             return {"ok": False, "problems": probs[:12], "doc": self._doc}

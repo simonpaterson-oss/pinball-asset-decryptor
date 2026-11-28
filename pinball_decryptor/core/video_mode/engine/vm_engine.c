@@ -925,6 +925,7 @@ static void spawns(vm_engine *e)
     }
 }
 
+static void particles_tick(vm_engine *e);
 static void move_things(vm_engine *e)
 {
     int32_t i, ws = world_speed(e), scroll = 0;
@@ -991,6 +992,11 @@ static void move_things(vm_engine *e)
             t->alive = 0;
         }
     }
+    particles_tick(e);
+}
+static void particles_tick(vm_engine *e)
+{
+    int32_t i;
     for (i = 0; i < VM_MAX_PARTICLES; i++) {
         vm_particle *q = &e->pt[i];
         if (!q->alive) continue;
@@ -1238,11 +1244,12 @@ static int32_t number(char *out, int32_t v, int commas)   /* no stdio: digits by
     return k;
 }
 /* a part's words: its text with {n} the number, or the default ({n} alone) */
-static int32_t words(const vm_engine *e, int32_t sid, const char *dflt, int32_t v, int commas, char *buf)
+/* (no strlen: a mode's object calls nothing the mode rules ban, so a default's length comes from its literal) */
+#define LIT(s) s, (int32_t)(sizeof(s) - 1)
+static int32_t words(const vm_engine *e, int32_t sid, const char *dflt, int32_t dlen, int32_t v, int commas, char *buf)
 {
     const char *s = dflt;
-    int32_t len = 0, j, k = 0;
-    while (dflt[len]) len++;
+    int32_t len = dlen, j, k = 0;
     if (IDX(sid, e->doc.nstr)) { s = e->doc.strbytes + e->doc.str[sid].off; len = e->doc.str[sid].len; }
     for (j = 0; j < len && k < 80; j++) {
         if (s[j] == '{' && j + 2 < len && s[j + 1] == 'n' && s[j + 2] == '}') { k += number(buf + k, v, commas); j += 2; }
@@ -1402,6 +1409,29 @@ static void hud_tick(vm_engine *e, int snap)
         if (++q->t >= (e->doc.hud[q->hud].life > 0 ? e->doc.hud[q->hud].life : 48)) q->alive = 0;
     }
 }
+/* the editor's boxes of a part: everything it drew from entry n0 on (quads unturned) */
+static void hud_bounds(vm_engine *e, int32_t part, uint32_t n0)
+{
+    uint32_t k;
+    int32_t *b;
+    if (!e->editing || !IDX(part, VM_MAX_HUD)) return;
+    b = e->hud_box[part];
+    for (k = n0; k < e->list.n; k++) {
+        const pm_vm_entry *x = &e->list.e[k];
+        int32_t x0, y0, x1, y1;
+        if (x->tag == PM_VM_BOX) { x0 = x->u.b.x; y0 = x->u.b.y; x1 = x0 + x->u.b.w; y1 = y0 + x->u.b.h; }
+        else {
+            const pm_vm_quad *q = &x->u.q;
+            int32_t w = q->sw * absi(q->scale_x), h = q->sh * absi(q->scale_y);
+            x0 = q->x - vm_fxmul(q->ax, w); y0 = q->y - vm_fxmul(q->ay, h); x1 = x0 + w; y1 = y0 + h;
+        }
+        if (!b[0]) { b[0] = 1; b[1] = x0; b[2] = y0; b[3] = x1; b[4] = y1; continue; }
+        if (x0 < b[1]) b[1] = x0;
+        if (y0 < b[2]) b[2] = y0;
+        if (x1 > b[3]) b[3] = x1;
+        if (y1 > b[4]) b[4] = y1;
+    }
+}
 static void draw_hud(vm_engine *e)
 {
     const vm_phase *p = &e->doc.phase[e->phase];
@@ -1412,6 +1442,7 @@ static void draw_hud(vm_engine *e)
         uint32_t col = h->colour ? (uint32_t)h->colour : 0xffffffffu;
         int32_t al = 255, frac;
         vm_tstyle st;
+        uint32_t n0 = e->list.n;
         if (h->phases && !(h->phases & (1 << (e->phase & 31)))) continue;
         switch (h->part) {
         case VM_HUD_HEALTH:
@@ -1424,7 +1455,7 @@ static void draw_hud(vm_engine *e)
             if (h->look == VM_LOOK_BAR) draw_bar(e, h, frac, col, al);
             else if (h->look == VM_LOOK_RING) draw_ring(e, h, frac, col, al);
             else if (h->look == VM_LOOK_NUMBER) {
-                n = words(e, h->text, "{n}", have, 0, buf); st = style_of(h, col);
+                n = words(e, h->text, LIT("{n}"), have, 0, buf); st = style_of(h, col);
                 text_fx(e, h->font, buf, n, h->x, h->y, align_of(e, h), &st, al, pop_scale(e, i));
             } else draw_pips(e, h, have, of, col, al);
             break;
@@ -1462,7 +1493,7 @@ static void draw_hud(vm_engine *e)
             frac = fxdiv(clampi(p->length - e->t, 0, p->length), p->length);
             if (h->danger && frac <= h->low) { col = (uint32_t)h->danger; al = pulse(e); }
             st = style_of(h, col);
-            n = words(e, h->text, "{n}", e->hud_n[i], 0, buf);
+            n = words(e, h->text, LIT("{n}"), e->hud_n[i], 0, buf);
             if (h->look == VM_LOOK_RING) {
                 vm_hud r = *h;
                 int32_t size = h->w > 0 ? h->w : DEG(64);
@@ -1473,17 +1504,17 @@ static void draw_hud(vm_engine *e)
             break;
         case VM_HUD_COMBO:
             if (e->combo < 2 || e->combo_t <= 0) break;
-            n = words(e, h->text, "x{n}", e->hud_n[i], 0, buf); st = style_of(h, col);
+            n = words(e, h->text, LIT("x{n}"), e->hud_n[i], 0, buf); st = style_of(h, col);
             text_fx(e, h->font, buf, n, h->x, h->y, align_of(e, h), &st, 255, pop_scale(e, i));
             break;
         case VM_HUD_MULTIPLIER:
             if (e->mult < 2) break;
-            n = words(e, h->text, "x{n}", e->hud_n[i], 0, buf); st = style_of(h, col);
+            n = words(e, h->text, LIT("x{n}"), e->hud_n[i], 0, buf); st = style_of(h, col);
             text_fx(e, h->font, buf, n, h->x, h->y, align_of(e, h), &st, 255, pop_scale(e, i));
             break;
         case VM_HUD_SCORE:
         case VM_HUD_COUNTER:
-            n = words(e, h->text, "{n}", e->hud_n[i], 1, buf); st = style_of(h, col);
+            n = words(e, h->text, LIT("{n}"), e->hud_n[i], 1, buf); st = style_of(h, col);
             text_fx(e, h->font, buf, n, h->x, h->y, align_of(e, h), &st, 255, pop_scale(e, i));
             break;
         case VM_HUD_TEXT:
@@ -1520,6 +1551,7 @@ static void draw_hud(vm_engine *e)
         }
         default: break;   /* the callout is drawn by draw_callout, pop-ups by draw_popups */
         }
+        hud_bounds(e, i, n0);
     }
 }
 static void draw_popups(vm_engine *e)
@@ -1539,15 +1571,20 @@ static void draw_popups(vm_engine *e)
         sc = q->t < 10 ? vm_ease(VM_EASE_BACK_OUT, (q->t * ONE) / 10) : ONE;
         if (sc < ONE / 8) sc = ONE / 8;
         a = u > (ONE * 3) / 5 ? (int32_t)(((int64_t)(ONE - u) * 255 * 5) / (2 * ONE)) : 255;
-        n = words(e, h->text, "+{n}", q->n, 1, buf);
+        n = words(e, h->text, LIT("+{n}"), q->n, 1, buf);
         st = style_of(h, h->colour ? (uint32_t)h->colour : 0xffffffffu);
-        text_fx(e, h->font, buf, n, q->x, y - font_line(e, h->font) / 2, 0, &st, a, sc);
+        {
+            uint32_t n0 = e->list.n;
+            text_fx(e, h->font, buf, n, q->x, y - font_line(e, h->font) / 2, 0, &st, a, sc);
+            hud_bounds(e, q->hud, n0);
+        }
     }
 }
 static void draw_callout(vm_engine *e)
 {
     const vm_hud *h = 0;
     int32_t i, x, y, a, sc, font;
+    uint32_t n0;
     vm_tstyle st;
     if (e->callout < 0 || e->callout_t <= 0) return;
     for (i = 0; i < e->doc.nhud; i++) if (e->doc.hud[i].part == VM_HUD_CALLOUT) { h = &e->doc.hud[i]; break; }
@@ -1566,6 +1603,8 @@ static void draw_callout(vm_engine *e)
         /* format 2 and before: the accent was a drop shadow */
         if (!st.shadow && !st.outline && h->accent) st.shadow = (uint32_t)h->accent;
     } else { st.fill = 0xffffffffu; st.outline = st.shadow = st.gradient = 0; }
+    if (h) i = (int32_t)(h - e->doc.hud);
+    n0 = e->list.n;
     if (IDX(e->callout, e->doc.nstr))
         text_fx(e, font, e->doc.strbytes + e->doc.str[e->callout].off, e->doc.str[e->callout].len, x, y, 0, &st, a, sc);
     if (e->state == VM_ST_TITLE) {
@@ -1575,6 +1614,7 @@ static void draw_callout(vm_engine *e)
             text_fx(e, e->doc.title_font, e->doc.strbytes + e->doc.str[e->doc.phase[e->phase].objective].off,
                     e->doc.str[e->doc.phase[e->phase].objective].len, x, y + font_line(e, font), 0, &sub, a, ONE);
     }
+    if (h) hud_bounds(e, i, n0);
 }
 static void sort_things(vm_engine *e)
 {
@@ -1607,7 +1647,8 @@ static void draw_particles(vm_engine *e)
         u = ONE - fxdiv(q->life, q->life0 > 0 ? q->life0 : 1);
         size = m->size0 + vm_fxmul(m->size1 - m->size0, u);
         c = lerp_col((uint32_t)m->col0, (uint32_t)m->col1, u);
-        a = (int32_t)(((int64_t)q->life * 255) / (q->life0 > 0 ? q->life0 : 1));
+        /* full strength for the first 60% of its life, then out (its colour's own alpha ramps as well) */
+        a = clampi((int32_t)(((int64_t)q->life * 255 * 5) / (2 * (int64_t)(q->life0 > 0 ? q->life0 : 1))), 0, 255);
         if (IDX(m->picture, d->npic)) {
             const vm_picture *p = &d->pic[m->picture];
             int32_t sc = fxdiv(size, p->w * p->texel > 0 ? p->w * p->texel : ONE);
@@ -1715,6 +1756,7 @@ static void build_list(vm_engine *e)
         }
     }
     draw_particles(e);
+    if (e->editing) for (i = 0; i < VM_MAX_HUD; i++) e->hud_box[i][0] = 0;
     draw_hud(e);
     draw_popups(e);
     draw_callout(e);
@@ -1758,9 +1800,33 @@ int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags)
                 q->alive = 1; q->hud = i; q->x = e->doc.hud[i].x; q->y = e->doc.hud[i].y; q->t = 10; q->n = 500;
             }
     }
+    if (flags & 2) {
+        e->state = flags & 1 ? e->state : VM_ST_PLAY;
+        e->score = 12345; e->combo = 12; e->combo_t = 1; e->mult = 3;
+    }
     hud_tick(e, 1);
+    e->editing = 1;
     build_list(e);
+    e->editing = 0;
     e->nevents = 0; e->ncues = 0;
+    return 1;
+}
+
+int vm_edit_burst(vm_engine *e, int32_t em, int32_t x, int32_t y, int32_t steps, int32_t flags)
+{
+    int32_t i, style;
+    if (!e->loaded || !IDX(em, e->doc.nemit)) return 0;
+    for (i = 0; i < VM_MAX_PARTICLES; i++) e->pt[i].alive = 0;
+    e->rng = 0x1666u;
+    style = e->doc.style;
+    e->doc.style |= VM_FX_PARTICLES;      /* the preview shows the particle even with the switch off */
+    particles(e, em, x, y, 0);
+    for (i = 0; i < steps && i < 1200; i++) particles_tick(e);
+    e->editing = 1;
+    build_list(e);
+    e->editing = 0;
+    e->doc.style = style;
+    (void)flags;
     return 1;
 }
 
