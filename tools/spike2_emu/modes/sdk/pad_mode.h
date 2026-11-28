@@ -1062,4 +1062,69 @@ int pm_online_add(const char *name, long long n);
 long long pm_online_count(const char *name);
 int pm_online(void);
 
+/* ---- PAD-1655: moving pictures on the glass (MODE_SDK.md "Moving pictures") --------------------------------------
+ * Your mode draws pictures of its own over the game's display, placed freely every frame: what a video mode is built
+ * from. Pictures come in a SET, one file the app packs (PNGs and the card's own fonts, `.padgfx`; gfx_set.py), beside
+ * mode.so on the card or in /dump in the emulator. They are drawn at the end of each of the game's frames, over all of
+ * it, at the game's own frame rate; nothing of the game's display is held back, and when your mode ends what it drew
+ * is gone at the next frame, its pictures freed, and the display is the game's exactly as it was.
+ *
+ * Coordinates are on a STAGE, 1360x768 unless pm_gfx_stage says otherwise, top left 0,0, y down; it is scaled to the
+ * machine's screen in proportion and centred. Build a LIST each tick between pm_gfx_begin and pm_gfx_end; the newest
+ * one finished is what every frame draws (draw nothing new and the last list stays; pm_gfx_clear takes it off).
+ * Quads are drawn by `depth`, lowest first, and in call order among equals. Only a running mode draws.
+ *
+ * pm_gfx_load: the set's handle (1..8), or 0 (not found, not a set, 8 held, or no drawing on this game: the log says
+ *   which). Its pictures go to the GPU over the next frames (a few MB a frame); pm_gfx_ready says when they are all
+ *   there - a quad of a picture not yet there is left out. The set is freed when your mode ends, or by pm_gfx_free.
+ * pm_gfx_picture: a picture of the set by its name (the PNG's, without .png), or 0. pm_gfx_picture_size its size.
+ * pm_gfx_font: a font of the set by name ("" or 0: its first), or 0.
+ * pm_gfx_quad: one picture (or, pic 0, a plain box sw x sh in tint's colour); sx, sy, sw, sh the part of the picture
+ *   (sw or sh 0: all of it); its ANCHOR ax, ay (0..1 inside that part: 0, 0 its top left, 0.5, 0.5 its centre) lands
+ *   at x, y, and it is scaled (scale_x / scale_y, 0 = 1, negative flips) and turned (degrees, clockwise) about it;
+ *   alpha 0..1 (0 draws nothing: set it); tint PM_RGB multiplied in (0 = none, the picture's own colours); blend
+ *   PM_GFX_NORMAL (over) or PM_GFX_ADD (light added: glows, sparks). Pictures are drawn premultiplied (a set's
+ *   picture may be stored either way; gfx_set.py says which). 1 added, 0 not (no list open, a bad picture,
+ *   PM_GFX_MAX_QUADS in the list already - said once in the log).
+ * pm_gfx_box: a plain box, top left x, y. pm_gfx_text: words in a font of a set, each line's top at y, x at its
+ *   left / centre / right edge (PM_ALIGN_*), `size` the line's pixel size (0: the size it was packed at); '
+' starts a
+ *   line; returns the widest line's width. pm_gfx_text_width measures without drawing.
+ * pm_gfx_cover: 1 covers the whole of the game's display with rgb under your quads, so its HUD and clips do not show
+ *   through (the game goes on drawing under it); 0 shows it again. It ends with your mode. */
+#define PM_GFX_MAX_QUADS 2048
+#define PM_GFX_NORMAL    0
+#define PM_GFX_ADD       1
+#define PM_ALIGN_LEFT    0
+#define PM_ALIGN_CENTER  1
+#define PM_ALIGN_RIGHT   2
+struct pm_quad {
+    int pic;                          /* pm_gfx_picture's; 0 = a plain box */
+    float sx, sy, sw, sh;             /* the part of the picture, in its pixels (sw, sh 0: the whole picture) */
+    float x, y;                       /* where its anchor lands on the stage */
+    float ax, ay;                     /* the anchor inside the part, 0..1 (0, 0: top left) */
+    float scale_x, scale_y;           /* 0 = 1 */
+    float turn;                       /* degrees, clockwise */
+    float alpha;                      /* 0..1 */
+    unsigned tint;                    /* PM_RGB; 0 = none */
+    float depth;                      /* lowest first */
+    unsigned blend;                   /* PM_GFX_NORMAL or PM_GFX_ADD */
+};
+int pm_gfx_load(const char *file);
+int pm_gfx_ready(int set);
+void pm_gfx_free(int set);
+int pm_gfx_picture(int set, const char *name);
+int pm_gfx_picture_size(int pic, unsigned *w, unsigned *h);
+int pm_gfx_font(int set, const char *name);
+void pm_gfx_stage(unsigned w, unsigned h);
+int pm_gfx_begin(void);
+int pm_gfx_quad(const struct pm_quad *q);
+int pm_gfx_box(float x, float y, float w, float h, unsigned rgb, float alpha, float depth);
+float pm_gfx_text(int font, const char *s, float x, float y, float size, int align, unsigned rgb, float alpha,
+                  float depth);
+float pm_gfx_text_width(int font, const char *s, float size);
+int pm_gfx_end(void);
+void pm_gfx_clear(void);
+void pm_gfx_cover(int on, unsigned rgb);
+
 #endif
