@@ -6,7 +6,7 @@
 // preview and the details are the card namespace.  The Python half is
 // webui/tabs/card.py.
 
-import { html, useEffect, useState, Button, Card, Chip, Icon, PageHead, Seg, call, cx, mediaUrl } from "../core/ui.js";
+import { html, useEffect, useState, Button, Card, Chip, Field, Icon, PageHead, Seg, Spinner, call, cx, mediaUrl, tip } from "../core/ui.js";
 import { useNs } from "../core/store.js";
 import { WHAT, needOf, tabLock } from "../core/locks.js";
 import { Booting } from "../core/booting.js";
@@ -76,6 +76,41 @@ function WhatCard({ shell, s }) {
         ${keyed.map((t) => html`<${TabRow} t=${t} lock=${tabLock(t, ps, shell.spike3_key)} />`)}
       </div>` : null}
   <//>`;
+}
+
+// ------------------------------------------------- the existing extraction
+// Simon (DragonRR), 2026-11-28: "Below the path for the selected card there should be
+// another path box ... Already have this card extracted? Select the folder and PAD will use
+// it if it is viable", and "Make it clear - if the user has a viable extraction that it is
+// viable after he is returned to the select card tab."  The card picker above and Go to
+// Extract stay as they were, for "people who just want to extract a card and nothing else".
+const EXISTING_TIP = { head: "Already have this card extracted?",
+  lines: ["Select the folder and PAD will use it if it is viable: an extraction of this card (or the project this card was built from).",
+    ["Viable", "the folder is opened as the project, and this box says what has changed in it since it was extracted"],
+    ["Not viable", "the open project stays as it is, and this box says why"]] };
+
+function ExistingBox({ s, ps }) {
+  const e = s.existing && s.existing.card === s.input ? s.existing : null;
+  const shown = e ? e.folder : "";
+  const check = (v) => { if (v && v.trim() && v.trim() !== shown) call("extract.check_existing", v.trim()); };
+  const state = e ? e.state : "";
+  return html`<div class="stack x-sec c-existing">
+    <label class="lbl" for="c-existing" ...${tip(EXISTING_TIP)}>Existing extraction <span class="dim">(optional)</span></label>
+    <div class="row x-pathrow" data-drop>
+      <${Field} id="c-existing" value=${shown} mono cls="grow" onChange=${() => {}} onCommit=${check}
+        placeholder="Already have this card extracted? Select the folder" title=${shown || EXISTING_TIP} />
+      <${Button} drop disabled=${state === "checking"} onClick=${() => call("extract.browse_existing")}
+        title=${EXISTING_TIP}>Browse…<//>
+    </div>
+    ${state === "checking" ? html`<div class="row small muted"><${Spinner} />${e.text}</div>`
+      : state === "bad" ? html`<div class="x-badge"><${Icon} name="warn" /><span>${e.text}</span></div>`
+      : state === "viable" ? html`<div class="c-viable" role="status">
+          <div class="c-viable-hd"><${Icon} name="check" /><span>Viable: PAD is using this extraction${ps ? html` (project <${Chip} kind="acc" title=${ps.folder}>${ps.name}<//>)` : ""}</span></div>
+          <div class="small">${e.text}</div>
+          ${e.changes ? html`<div class="small">${e.changes}</div>` : null}
+        </div>`
+      : null}
+  </div>`;
 }
 
 // ------------------------------------------------------------ the glass
@@ -161,6 +196,7 @@ export default function CardTab() {
                 onClick=${() => call("ui.select_tab", "extract")}>Go to Extract<//>
               <span class="dim small grow">Only the tabs that need an extract wait for this step.</span>`}>
           <${SourceBody} s=${s} hist=${hist} />
+          ${have && !s.ssd ? html`<${ExistingBox} s=${s} ps=${shell.project_state} />` : null}
           ${showGlass ? html`<${Glass} p=${p} />` : null}
           ${have && p && p.state === "none" && p.note ? html`<div class="small warn-ink">${p.note}</div>` : null}
         <//>
