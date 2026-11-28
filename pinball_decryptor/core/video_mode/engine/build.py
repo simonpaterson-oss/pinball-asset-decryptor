@@ -18,7 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENGINE = ["vm_engine.c"]
-SOURCES = ["vm_engine.h", "vm_engine.c", "vm_tables.h", "vm_bot.h", "vm_bot.c", "vm_wasm.c"]
+SOURCES = ["vm_engine.h", "vm_engine.c", "vm_kinds2.c", "vm_tables.h", "vm_bot.h", "vm_bot.c", "vm_wasm.c"]
 WASM = os.path.join(HERE, "vm_engine.wasm")
 CFLAGS = ["-std=gnu17", "-O2", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Werror=implicit-function-declaration"]
 # the libc a mode may not call (tools/spike2_emu/modes/sdk/build_mode.sh): the engine must call none

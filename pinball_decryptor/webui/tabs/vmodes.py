@@ -1009,7 +1009,7 @@ class VideoModesTab(TabService):
         while os.path.exists(os.path.join(d, name + ".inputs")):
             name = "%s-%d" % (base, n)
             n += 1
-        keep = {k: meta.get(k) for k in ("seed", "level", "card", "card_id", "steps", "hash", "outcome", "score")
+        keep = {k: meta.get(k) for k in ("seed", "level", "card", "card_id", "steps", "hash", "outcome", "score", "audio_offset")
                 if isinstance(meta, dict) and k in meta}
         keep["made"] = time.strftime("%Y-%m-%d %H:%M:%S")
         with open(os.path.join(d, name + ".inputs"), "wb") as f:

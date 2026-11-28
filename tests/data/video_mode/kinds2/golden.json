@@ -1,0 +1,131 @@
+{
+  "about": "PAD-1663 golden replays of the button kinds' starters: a win (the bot's buttons) and a loss (none). Regenerate: python tests/test_video_mode_kinds2.py --regenerate",
+  "runs": {
+    "mash_win": {
+      "kind": "mash",
+      "inputs": "mash_win.inputs",
+      "max": 20000,
+      "hash": "b512fc5e79f9420c",
+      "steps": 228,
+      "outcome": 1,
+      "score": 0
+    },
+    "mash_loss": {
+      "kind": "mash",
+      "inputs": "idle",
+      "max": 12000,
+      "hash": "94658b1e11756a2a",
+      "steps": 750,
+      "outcome": 0,
+      "score": 0
+    },
+    "alternate_win": {
+      "kind": "alternate",
+      "inputs": "alternate_win.inputs",
+      "max": 20000,
+      "hash": "e6acc21b2cb5b8c0",
+      "steps": 276,
+      "outcome": 1,
+      "score": 0
+    },
+    "alternate_loss": {
+      "kind": "alternate",
+      "inputs": "idle",
+      "max": 12000,
+      "hash": "3b9e650794b744f2",
+      "steps": 750,
+      "outcome": 0,
+      "score": 0
+    },
+    "tug_win": {
+      "kind": "tug",
+      "inputs": "tug_win.inputs",
+      "max": 20000,
+      "hash": "624bbd80d1918581",
+      "steps": 700,
+      "outcome": 1,
+      "score": 0
+    },
+    "tug_loss": {
+      "kind": "tug",
+      "inputs": "idle",
+      "max": 12000,
+      "hash": "c18242b7a4c5024f",
+      "steps": 488,
+      "outcome": 0,
+      "score": 0
+    },
+    "rhythm_win": {
+      "kind": "rhythm",
+      "inputs": "rhythm_win.inputs",
+      "max": 20000,
+      "hash": "8253d2ec193c7d52",
+      "steps": 3067,
+      "outcome": 1,
+      "score": 21400
+    },
+    "rhythm_loss": {
+      "kind": "rhythm",
+      "inputs": "idle",
+      "max": 12000,
+      "hash": "ff5c47351739d94b",
+      "steps": 1214,
+      "outcome": 0,
+      "score": 0
+    },
+    "sequence_win": {
+      "kind": "sequence",
+      "inputs": "sequence_win.inputs",
+      "max": 20000,
+      "hash": "d8dfd66738f14979",
+      "steps": 708,
+      "outcome": 1,
+      "score": 2250
+    },
+    "sequence_loss": {
+      "kind": "sequence",
+      "inputs": "idle",
+      "max": 12000,
+      "hash": "6eaf8cf5e9fd7074",
+      "steps": 852,
+      "outcome": 0,
+      "score": 0
+    },
+    "dodge_win": {
+      "kind": "dodge",
+      "inputs": "dodge_win.inputs",
+      "max": 20000,
+      "hash": "961c6ed956aa4416",
+      "steps": 978,
+      "outcome": 1,
+      "score": 1600
+    },
+    "dodge_loss": {
+      "kind": "dodge",
+      "inputs": "idle",
+      "max": 12000,
+      "hash": "133df376b97bc0ed",
+      "steps": 529,
+      "outcome": 0,
+      "score": 0
+    },
+    "shield_win": {
+      "kind": "shield",
+      "inputs": "shield_win.inputs",
+      "max": 20000,
+      "hash": "d1f74c18a5b842ef",
+      "steps": 1015,
+      "outcome": 1,
+      "score": 750
+    },
+    "shield_loss": {
+      "kind": "shield",
+      "inputs": "idle",
+      "max": 12000,
+      "hash": "8ba5787eee2c1be4",
+      "steps": 492,
+      "outcome": 0,
+      "score": 0
+    }
+  }
+}

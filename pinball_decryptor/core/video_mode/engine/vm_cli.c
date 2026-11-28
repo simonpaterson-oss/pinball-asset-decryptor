@@ -2,7 +2,7 @@
  * Not part of the engine: it has stdio, a clock and an allocator.
  *
  *   vmrun PACK [--inputs FILE | --bot] [--record FILE] [--seed N] [--level N] [--max N]
- *              [--dump N] [--quiet] [--clip N] [--card N] [--fuzz N] [--bench N]
+ *              [--dump N] [--quiet] [--clip N] [--card N] [--fuzz N] [--bench N] [--audio-offset MS]
  *   vmrun PACK --seek PHASE --at S1,S2,... [--endless]   (PAD-1664: the editor's scrub; "D step ..." per step)
  *
  * Prints one line per event ("E step type a b c") and sound cue ("C step sound op duck fade"),
@@ -42,7 +42,7 @@ int main(int argc, char **argv)
     const char *pack = 0, *inputs = 0, *record = 0;
     long plen = 0, ilen = 0, i;
     unsigned long seed = 1, max = 200000, dump = 0, fuzz = 0, bench = 0;
-    long level = 0, clip = 120, card = -1;
+    long level = 0, clip = 120, card = -1, audio_offset = 0;
     int bot = 0, quiet = 0, err, running = 1;
     unsigned long step = 0;
     FILE *rec = 0;
@@ -59,6 +59,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--fuzz") && i + 1 < argc) fuzz = strtoul(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--bench") && i + 1 < argc) bench = strtoul(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--card") && i + 1 < argc) card = strtol(argv[++i], 0, 0);
+        else if (!strcmp(argv[i], "--audio-offset") && i + 1 < argc) audio_offset = strtol(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
         else if (!strcmp(argv[i], "--seek") && i + 1 < argc) seek = strtol(argv[++i], 0, 0);
         else if (!strcmp(argv[i], "--at") && i + 1 < argc) at = argv[++i];
@@ -71,6 +72,7 @@ int main(int argc, char **argv)
     if (inputs) ib = slurp(inputs, &ilen);
     err = vm_load(&E, pb, (uint32_t)plen);
     if (err) { printf("LOADERR %d at=%d\n", err, E.err_at); return 3; }
+    vm_set_audio_offset(&E, (int32_t)audio_offset);
     if (seek >= 0) {   /* PAD-1664: the phase at each play step asked, played from its start with nothing pressed */
         unsigned long want, have = 0;
         const char *p = at ? at : "0";

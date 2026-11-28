@@ -108,6 +108,44 @@ static uint32_t boss(vm_bot *b, const vm_engine *e)
     return in;
 }
 
+/* the button kinds (PAD-1663): a good player, not a perfect one where the kind has no timing to it */
+static uint32_t bit(int32_t btn) { return btn == VM_BTN_LEFT ? VM_IN_LEFT : btn == VM_BTN_RIGHT ? VM_IN_RIGHT : VM_IN_ACTION; }
+static uint32_t tug(vm_bot *b, const vm_engine *e)
+{
+    if (e->bk_grab) return (b->tick % 8) == 0 ? VM_IN_LEFT : (b->tick % 8) == 4 ? VM_IN_RIGHT : 0;
+    return bit(e->bk_side) | ((b->tick % 8) == 0 ? tap(b, VM_IN_ACTION) : 0);   /* a person mashes about 7 a second */
+}
+static uint32_t rhythm(vm_bot *b, const vm_engine *e)
+{
+    const int32_t *s = e->doc.settings[e->doc.phase[e->phase].settings];
+    int32_t next = (int32_t)(((int64_t)(e->song_steps + 1) * 1000) / e->doc.sps) - e->audio_offset_ms, i;
+    uint32_t in = 0, want = 0;
+    for (i = e->note_next; i < s[2]; i++) {
+        const vm_note *n = &e->doc.note[s[1] + i];
+        int32_t st = e->note_st[s[1] + i];
+        if (n->at - next > 40) break;
+        if (st == VM_NOTE_HOLDING) in |= bit(n->button);
+        else if (st == VM_NOTE_WAIT && n->at - next <= 8 && n->at - next > -9) want |= bit(n->button);
+    }
+    /* a press is an edge: a button still held from the last note is let go a step first */
+    return in | (want & ~b->last);
+}
+static uint32_t sequence(vm_bot *b, const vm_engine *e)
+{
+    if (e->bk_state != VM_BK_ENTER || e->bk_i >= e->bk_len) return 0;
+    return (b->tick % 6) == 0 ? tap(b, bit(e->seq[e->bk_i])) : 0;
+}
+static uint32_t dodge(vm_bot *b, const vm_engine *e)
+{
+    const int32_t *s = e->doc.settings[e->doc.phase[e->phase].settings];
+    if (e->bk_state != VM_BK_WINDOW || s[2] - e->bk_t < 2) return 0;
+    return tap(b, bit(e->bk_btn));
+}
+static uint32_t shield(const vm_engine *e)
+{
+    const int32_t *s = e->doc.settings[e->doc.phase[e->phase].settings];
+    return e->bk_state == VM_BK_TELL || e->bk_state == VM_BK_WINDOW ? bit(s[0]) : 0;
+}
 uint32_t vm_bot_input(vm_bot *b, const vm_engine *e)
 {
     uint32_t in = 0;
@@ -127,6 +165,11 @@ uint32_t vm_bot_input(vm_bot *b, const vm_engine *e)
             if (e->player >= 0 && e->th[e->player].y > (e->doc.stage_h / 2) * ONE) in = VM_IN_ACTION;
             in |= (b->tick & 1) ? VM_IN_RIGHT : 0;
             break;
+        case VM_K_TUG: in = tug(b, e); break;
+        case VM_K_RHYTHM: in = rhythm(b, e); break;
+        case VM_K_SEQUENCE: in = sequence(b, e); break;
+        case VM_K_DODGE: in = dodge(b, e); break;
+        case VM_K_SHIELD: in = shield(e); break;
         default: in = (b->tick % 6) == 0 ? VM_IN_ACTION : 0; break;
         }
         break;

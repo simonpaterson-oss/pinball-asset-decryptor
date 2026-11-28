@@ -361,3 +361,34 @@ def test_the_editor_tab_gives_the_feel_and_applies_a_preset_as_one_step(tmp_path
         u = w.call("vmodes.edit_undo")
         assert u["ok"] and u["doc"]["style"]["preset"] == "comic"
         assert w.call("vmodes.edit_preset", "glitter")["ok"] is False
+
+
+# ---- the button kinds (PAD-1663) and pop-up words --------------------------------------------------------------
+def test_a_modes_own_pop_up_on_presses_takes_the_place_of_the_judge_word():
+    """PAD-1663's kinds say PERFECT / GOOD / MISS themselves; a mode that adds pop-up words on presses shows those
+    instead, rising from the player, never both (the rule agreed between the two tickets)."""
+    from pinball_decryptor.core.video_mode import kinds_buttons
+    from tests.test_video_mode_kinds2 import _press_at
+
+    def run_words(with_popup):
+        doc, _ = kinds_buttons.new_doc("rhythm")
+        doc["phases"][0]["settings"]["chart"] = [{"beat": 4 + 4 * i, "button": "action"} for i in range(3)]
+        if with_popup:
+            font = ((doc.get("assets") or {}).get("fonts") or [{}])[0].get("id")
+            part = {"id": "nice", "part": "popup", "x": 680, "y": 300, "text": "NICE", "on": ["prompt_perfect", "prompt_good"]}
+            if font:
+                part["font"] = font
+            doc.setdefault("hud", []).append(part)
+        assert D.check(doc) == []
+        c = compiled(doc)
+        ins = _press_at([2000 + 2000 * i for i in range(3)], [4] * 3, 900)
+        out = run(native(), c.pack, "--inputs", ins, "--max", 900, "--dump", 1, "--quiet").stdout
+        _, _, ds, _ = harness.parse(out)
+        seen = set()
+        for _s, w in ds:
+            for line in harness.picture(w, c.names, c.names["fonts"])[1]:
+                seen.update(line.split(" | "))
+        return seen
+    plain, own = run_words(False), run_words(True)
+    assert "PERFECT" in plain and "NICE" not in plain, sorted(plain)
+    assert "NICE" in own and "PERFECT" not in own, sorted(own)
