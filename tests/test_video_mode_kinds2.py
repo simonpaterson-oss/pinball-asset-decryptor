@@ -240,6 +240,15 @@ def test_rhythm_starts_its_music_from_the_top_even_when_it_was_playing():
     assert cues[k - 1][2] == 2 and cues[k - 1][0] == starts[1][0] and cues[k - 1][1] == starts[1][1], cues
 
 
+def test_the_machine_has_its_measured_sound_calibration():
+    """vm_sound.h starts a mode with the machine's sound offset: measured on the emulator at 14 ms (the bed's request
+    taken 13 ms after its cue, started at 14), under one step, overridable per build."""
+    h = open(os.path.join(te.ENGINE, "vm_sound.h"), encoding="utf-8").read()
+    m = re.search(r"#ifndef VM_SOUND_AUDIO_OFFSET_MS\s+#define VM_SOUND_AUDIO_OFFSET_MS (\d+)\s+#endif", h)
+    assert m and 0 < int(m.group(1)) < 17
+    assert "vm_set_audio_offset(e, VM_SOUND_AUDIO_OFFSET_MS)" in h
+
+
 def test_tug_needs_the_named_flipper_held():
     """Mashing Action alone pulls nothing; with the named flipper held it pulls."""
     def mutate(doc):

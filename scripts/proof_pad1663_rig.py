@@ -182,7 +182,7 @@ def check(log):
 def main():
     out_dir = os.path.abspath(sys.argv[1])
     slot = sys.argv[sys.argv.index("--slot") + 1] if "--slot" in sys.argv else ""
-    offset = int(sys.argv[sys.argv.index("--offset") + 1]) if "--offset" in sys.argv else 0
+    offset = int(sys.argv[sys.argv.index("--offset") + 1]) if "--offset" in sys.argv else 0   # 0: measure; the machine uses 14 (vm_sound.h)
     if slot not in ("1", "2", "3", "4", "5"):        # never the base rig (an empty or 0 slot is David's own)
         print("refused: --slot must be a rig slot of 1 to 5 taken for PAD-1663, not %r" % slot)
         return 2

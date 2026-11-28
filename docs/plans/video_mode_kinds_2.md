@@ -50,8 +50,12 @@ What can put a rhythm phase out of time is the host: its steps against the sound
   reported output latency plus the player's own: **Calibrate** (twelve clicks at 100 a minute; Space on the last
   eight, each timed against the click as heard by the audio clock's output timestamp; the middle difference),
   kept in the app's storage (`pad.vmode.audio_offset_ms`).
-- **The machine.** The mode runtime steps the engine once a tick, 60 a second, whatever the screen draws; see the
-  emulator proof below for its offset.
+- **The machine.** The mode runtime steps the engine once a tick, 60 a second, whatever the screen draws (a Spike 2
+  draws about 29 frames a second). Its offset is `VM_SOUND_AUDIO_OFFSET_MS` in `vm_sound.h`, 14 ms as measured on the
+  emulator, applied by `vm_sound_calibrate(&E)` before `vm_start` (PAD-1660's runtime glue calls it); a build that
+  measures its machine otherwise passes `-DVM_SOUND_AUDIO_OFFSET_MS=<ms>`. What the emulator cannot show is the
+  real machine's output buffer after the sound worker takes a request; the app's Calibrate covers a computer, and
+  the define a machine.
 
 ## The catalog
 
@@ -84,3 +88,8 @@ and a 24-bar chart that grows busier. `new_doc(kind)` is a one-phase mode of a k
 - The first three-minute run found two faults, both fixed: a tap that came and went within a frame that ran no step
   never reached the engine (the player now latches a press until a step has seen it; the page player missed runs of
   notes without it), and the music drift readout was taken before the frame's steps.
+- `scripts/proof_pad1663_rig.py --slot N` on James Bond LE 1.06 (hidden, muted): rhythm-3min as a C code mode, the
+  engine stepped once a tick on the bot's buttons for 10,982 steps (183 s) while the screen drew at its own rate:
+  every logged step within 6 ms of the machine's 60 a second clock, none off it; the music's request taken by the
+  game's sound worker 13 ms after its cue's step and its bed started at 14 ms; 384 of 384 notes perfect, outcome
+  won, the same hash as the native build. Hence the 14 ms machine calibration.
