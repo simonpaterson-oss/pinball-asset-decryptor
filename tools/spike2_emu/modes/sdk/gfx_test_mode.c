@@ -4,8 +4,9 @@
  * placeholder set: original shapes and a font of the card's), then runs a timeline:
  *
  *     0 .. BASE s           nothing drawn: the game's frame rate with the swap hook armed (the baseline)
- *     BASE .. BASE+OVER s   GFX_N quads moving over the game's display: Lissajous paths, alpha, turn, tint, depth,
- *                           a sprite sheet's frames, and words in the card's font
+ *     BASE .. BASE+OVER s   300 quads moving over the game's display: Lissajous paths, alpha, turn, tint, depth,
+ *                           a sprite sheet's frames, one in seven added light, and words in the card's font - all
+ *                           from one atlas ("shapes"), as the engine's packed art draws: a few draw calls a frame
  *     .. +COVER s           the same with the game's display covered (pm_gfx_cover) and a full-stage backdrop
  *     then                  pm_end: the pictures come off the glass, the display is the game's
  *
@@ -15,7 +16,13 @@
 
 #define GFX_MAX 2000
 
-static int set, pic_orb, pic_star, pic_ring, pic_ship, pic_sheet, pic_sky, font;
+static int set, pic_orb, pic_star, pic_ring, pic_ship, pic_sheet, pic_sky, pic_shapes, font;
+/* gfx_set.PLACEHOLDER_BOXES: where each shape sits in the "shapes" atlas (orb, star, ring, ship, then 8 frames) */
+static const float BOX[12][4] = {
+    { 2, 2, 64, 64 }, { 70, 2, 64, 64 }, { 138, 2, 96, 96 }, { 2, 70, 80, 48 },
+    { 2, 130, 60, 60 }, { 66, 130, 60, 60 }, { 130, 130, 60, 60 }, { 194, 130, 60, 60 },
+    { 2, 194, 60, 60 }, { 66, 194, 60, 60 }, { 130, 194, 60, 60 }, { 194, 194, 60, 60 },
+};
 static int on, phase;
 static unsigned long t0, last_check;
 static unsigned base_s = 60, over_s = 150, cover_s = 150, n_quads = 300, frames;
@@ -42,7 +49,6 @@ static void stop(const char *why)
 
 static void draw(float t, int cover)
 {
-    static const int *const pics[] = { &pic_orb, &pic_star, &pic_ring, &pic_ship };
     char words[96];
     int i;
     if (!pm_gfx_begin()) return;
@@ -54,11 +60,9 @@ static void draw(float t, int cover)
     for (i = 0; i < (int)n_quads; i++) {
         struct pm_quad q = { 0 };
         float fi = (float)i, sp = 0.03f + (float)(i % 17) * 0.004f;
-        if (i % 10 == 9) {                           /* a sprite sheet's frame: 8 frames 64x64 in a 256x128 sheet */
-            unsigned f = ((unsigned)(t * 12) + (unsigned)i) % 8;
-            q.pic = pic_sheet; q.sx = (float)(f % 4 * 64); q.sy = (float)(f / 4 * 64); q.sw = q.sh = 64;
-        } else
-            q.pic = *pics[i % 4];
+        const float *b = BOX[i % 10 == 9 ? 4 + ((unsigned)(t * 12) + (unsigned)i) % 8 : (unsigned)i % 4];
+        q.pic = pic_shapes;                          /* a shape, or one of the sheet's frames at 12 a second */
+        q.sx = b[0]; q.sy = b[1]; q.sw = b[2]; q.sh = b[3];
         q.ax = q.ay = 0.5f;                          /* turned and scaled about its centre */
         q.blend = i % 7 == 3 ? PM_GFX_ADD : PM_GFX_NORMAL;
         q.x = 680 + 620 * tri(t * sp + fi * 0.137f);
@@ -68,7 +72,7 @@ static void draw(float t, int cover)
         q.alpha = 0.35f + 0.32f * (tri(t * 0.25f + fi * 0.03f) + 1);
         q.tint = PM_RGB(128 + 127 * tri(t * 0.1f + fi * 0.01f), 128 + 127 * tri(t * 0.13f + fi * 0.02f + 0.3f),
                         128 + 127 * tri(t * 0.17f + fi * 0.015f + 0.6f));
-        q.depth = (float)(i % 5);
+        q.depth = q.blend == PM_GFX_ADD ? 5 : (float)(i % 5);   /* added light over the rest, in one run */
         pm_gfx_quad(&q);
     }
     pm_snprintf(words, sizeof words, "MOVING PICTURES  %u QUADS  %s", n_quads, cover ? "COVERED" : "OVER THE GAME");
@@ -106,6 +110,8 @@ static void on_tick(void)
             pic_orb = pm_gfx_picture(set, "orb"); pic_star = pm_gfx_picture(set, "star");
             pic_ring = pm_gfx_picture(set, "ring"); pic_ship = pm_gfx_picture(set, "ship");
             pic_sheet = pm_gfx_picture(set, "sheet"); pic_sky = pm_gfx_picture(set, "sky");
+            pic_shapes = pm_gfx_picture(set, "shapes");
+            if (!pic_shapes) { stop("the set has no \"shapes\" atlas (gfx_set.py --placeholder)"); return; }
             font = pm_gfx_font(set, "");
             pm_log("gfx_test: set %d - pictures %d %d %d %d %d %d, font %d; %u s, %u s, %u s; %u quads", set, pic_orb,
                    pic_star, pic_ring, pic_ship, pic_sheet, pic_sky, font, base_s, over_s, cover_s, n_quads);

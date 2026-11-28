@@ -77,6 +77,26 @@ def test_the_placeholder_art_is_original_and_tintable():
     assert (r, g, b, a) == (255, 255, 255, 255)
 
 
+def test_the_placeholder_atlas_holds_each_shape_where_the_proof_mode_reads_it():
+    """gfx_test_mode.c draws from the "shapes" atlas by fixed boxes: they are gfx_set.PLACEHOLDER_BOXES, in order,
+    and each box holds that shape's pixels."""
+    src = (SDK / "gfx_test_mode.c").read_text(encoding="utf-8")
+    body = src[src.index("static const float BOX[12][4] = {"):]
+    body = body[:body.index("};")]
+    boxes = [tuple(int(v) for v in m.split(",")) for m in re.findall(r"\{\s*([\d,\s]+?)\s*\}", body)]
+    names = ["orb", "star", "ring", "ship"] + ["frame%d" % f for f in range(8)]
+    assert boxes == [G.PLACEHOLDER_BOXES[n] for n in names]
+    name, atlas = G.placeholder_atlas()
+    pics = dict(G.placeholder_pictures())
+    assert name == "shapes" and atlas.size == (256, 256)
+    x, y, w, h = G.PLACEHOLDER_BOXES["star"]
+    assert atlas.crop((x, y, x + w, y + h)).tobytes() == pics["star"].convert("RGBA").tobytes()
+    for a, b in ((n, m) for n in names for m in names if n < m):         # nothing overlaps
+        ax, ay, aw, ah = G.PLACEHOLDER_BOXES[a]
+        bx, by, bw, bh = G.PLACEHOLDER_BOXES[b]
+        assert ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay, (a, b)
+
+
 def test_a_card_font_is_baked_by_the_scenes_rule(tmp_path, monkeypatch):
     """card_font places each glyph where fontrender.render_text draws it (bearing x, baseline - bearing y) and keeps
     the advance, so a mode's words are the game's letters, spaced as the game spaces them."""

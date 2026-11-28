@@ -302,18 +302,44 @@ def placeholder_pictures():
     return [("orb", orb), ("star", star), ("ring", ring), ("ship", ship), ("sheet", sheet), ("sky", sky)]
 
 
+#: Where each shape sits in :func:`placeholder_atlas`'s "shapes" picture: (x, y, w, h). gfx_test_mode.c draws from
+#: these boxes (tests/test_pad1655_gfx.py keeps the two in step); frame0..frame7 are the sprite sheet's frames.
+PLACEHOLDER_BOXES = {
+    "orb": (2, 2, 64, 64), "star": (70, 2, 64, 64), "ring": (138, 2, 96, 96), "ship": (2, 70, 80, 48),
+    **{"frame%d" % f: (2 + f % 4 * 64, 130 + f // 4 * 64, 60, 60) for f in range(8)},
+}
+
+
+def placeholder_atlas():
+    """``("shapes", image)``: the placeholder shapes and the sheet's eight frames packed in one 256x256 picture
+    (2 px apart, so bilinear sampling never bleeds), as an engine's packed art is: one texture, so a list of many
+    of them is a few draw calls, not one a quad."""
+    Image = _pil()
+    pics = dict(placeholder_pictures())
+    atlas = Image.new("RGBA", (256, 256), (255, 255, 255, 0))
+    for name in ("orb", "star", "ring", "ship"):
+        x, y, _w, _h = PLACEHOLDER_BOXES[name]
+        atlas.paste(pics[name], (x, y))
+    for f in range(8):
+        x, y, w, h = PLACEHOLDER_BOXES["frame%d" % f]
+        cell = pics["sheet"].crop((f % 4 * 64 + 2, f // 4 * 64 + 2, f % 4 * 64 + 2 + w, f // 4 * 64 + 2 + h))
+        atlas.paste(cell, (x, y))
+    return "shapes", atlas
+
+
 def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Write a mode's picture set (.padgfx)")
     ap.add_argument("out")
     ap.add_argument("--png", nargs="*", default=[], help="PNG files; each picture is named after its file")
-    ap.add_argument("--placeholder", action="store_true", help="PAD's own placeholder shapes")
+    ap.add_argument("--placeholder", action="store_true",
+                    help="PAD's own placeholder shapes (each alone, and packed in the 'shapes' atlas)")
     ap.add_argument("--card-font", metavar="EXTRACT", help="an extract folder: the card's own font")
     ap.add_argument("--font-name", help="which of the extract's fonts (its name or table key)")
     ap.add_argument("--ttf", nargs=2, metavar=("FILE", "PX"), help="a desktop font instead")
     a = ap.parse_args(argv)
     Image = _pil()
-    pics = placeholder_pictures() if a.placeholder else []
+    pics = placeholder_pictures() + [placeholder_atlas()] if a.placeholder else []
     pics += [(os.path.splitext(os.path.basename(p))[0], Image.open(p)) for p in a.png]
     fonts = []
     if a.card_font:

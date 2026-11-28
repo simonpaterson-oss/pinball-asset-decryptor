@@ -35199,7 +35199,7 @@ extern unsigned long getauxval(unsigned long);
 #define GFX_GLYPHS       8192
 #define GFX_QUADS        PM_GFX_MAX_QUADS
 #define GFX_VERTS        (6 + GFX_QUADS * 6)     /* the first six: the cover */
-#define GFX_BATCHES      512
+#define GFX_BATCHES      GFX_QUADS               /* a draw call per quad at worst: a list is never cut short by it */
 #define GFX_FILE_MAX     (96ul << 20)
 #define GFX_UPLOAD_FRAME (6ul << 20)             /* bytes of pictures sent to GL in one frame */
 #define GFX_SIDE_MAX     4096
