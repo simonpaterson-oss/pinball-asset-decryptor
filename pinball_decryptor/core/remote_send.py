@@ -2892,7 +2892,7 @@ def _has_boot_menu(target):
     return bool(ent) and ent[0] == "file" and not is_test_card(target)
 
 
-def check_layout(target, machine_layout):
+def check_layout(target, machine_layout, replace_ok=False):
     """Refuse an image the machine's card can't take file by file: those need the card written.
 
     PAD-1432: on a Spike 2 card only what the Send needs is checked, not where each partition sits: a machine whose
@@ -2927,6 +2927,10 @@ def check_layout(target, machine_layout):
                        "on the machine, smaller than the %.0f MB this image needs"
                        % (num, have[1] * 512 / 1e6, sectors * 512 / 1e6))
     extra = sorted(set(machine_layout) - set(target.layout))
+    if spike2 and replace_ok and not _has_boot_menu(target):
+        # Simon (2026-11-27): a multi-boot card replaced by one game or a test card (the user was asked) - "leave
+        # partition 7 unused": the Send never touches a partition the image hasn't
+        extra = [n for n in extra if n < 7]
     if extra:
         bad.append("the machine has partition%s %s that the image doesn't"
                    % ("s" if len(extra) > 1 else "", ", ".join(map(str, extra))))
@@ -2940,13 +2944,16 @@ def check_layout(target, machine_layout):
             sizes = " (its game partition is %s; this image's is %s)" % (_gb(machine_layout[3][1]),
                                                                         _gb(target.layout[3][1]))
         raise SendError("This is a multi-boot image, and the card in the machine isn't laid out for one: partition "
-                        "%s is missing%s. A Send changes files, never a card's partitions, so write this image to "
-                        "the SD card once; after that, new builds of it can be sent to the machine."
+                        "%s is missing%s. Send it from the Network tab (Send an image to the machine...): it asks, then "
+                        "lays the machine's card out for it before it sends. Or write this image to the SD card "
+                        "once; after that, new builds of it can be sent to the machine."
                         % (", ".join(map(str, missing)), sizes))
-    if spike2 and not menu and extra and not missing and max(extra) >= 7:
+    if spike2 and not menu and extra and not missing and max(extra) >= 7 and not replace_ok:
         raise SendError("The image's partitions don't match the machine's card (%s). If the machine runs a "
                         "multi-boot card, this one-game image can't replace one of its games: build the multi-boot "
-                        "image again with this version in it and send that." % "; ".join(bad))
+                        "image again with this version in it and send that, or send this image from the Network tab "
+                        "(Send an image to the machine...) to replace the multi-boot card with this one game."
+                        % "; ".join(bad))
     if bad:
         raise SendError("The image's partitions don't match the machine's card (%s), so it can't be sent file by "
                         "file: write the card instead." % "; ".join(bad))
@@ -3384,9 +3391,50 @@ def check_test_card_target(target, machine, replace_menu_card=False):
     if not is_test_card(target):
         return
     kind = machine_card_kind(machine)
-    if kind == "testcard" or (kind == "menu" and replace_menu_card):
+    # Simon (2026-11-27): "whatever they write it must be possible to change it to anything else" - a one-game card
+    # too, once the user was asked (replace_question)
+    if kind == "testcard" or replace_menu_card:
         return
     raise SendError(TESTCARD_OVER_MENU if kind == "menu" else TESTCARD_ONLY)
+
+
+def _image_kind(target):
+    """"testcard", "menu" (a PAD multi-boot image) or "game"."""
+    return "testcard" if is_test_card(target) else "menu" if _has_boot_menu(target) else "game"
+
+
+_KIND_WORDS = {"testcard": "a PAD test card", "menu": "a PAD multi-boot card", "game": "a one-game card"}
+
+
+def replace_question(image, machine, log=None):
+    """Simon (2026-11-27): "whatever they write it must be possible to change it to anything else".  The question
+    to ask before sending *image* to *machine* when the Send changes what kind of card the machine runs and that
+    deletes something or changes its partitions - None when it needs no more than the usual "Send?".  Send it with
+    ``replace_menu_card=True`` once the user said yes.  Raises :class:`SendError` when it can't be done at all
+    (a multi-boot image that doesn't fit the machine's SD card)."""
+    from . import card_relayout
+    with open_target(image, log) as target:
+        if getattr(target, "platform", "") != "stern-spike2":
+            return None
+        new = _image_kind(target)
+    now = machine_card_kind(machine)
+    name = os.path.basename(image)
+    keep = ("Its remote access and settings are kept. Only the files that differ are copied; leave the machine "
+            "switched on until it is done.")
+    if new == "menu" and card_relayout.needs(image, machine.layout()):
+        p, _need, _free = card_relayout.survey(machine, image)
+        return ("Lay out the machine's card for this multi-boot image (%s)?\n\nThe machine runs %s, which has no "
+                "partition 7 for the multi-boot card's other games. The machine restarts twice while its card is "
+                "laid out again: %s. What is on the machine now is replaced by the multi-boot card.\n\n%s"
+                % (name, _KIND_WORDS[now], p.words(), keep))
+    if new == "testcard" and now != "testcard":
+        return ("Replace %s on the machine with this test card (%s)?\n\nWhat it runs now is deleted: afterwards the "
+                "machine has only the test card.\n\n%s" % (_KIND_WORDS[now], name, keep))
+    if new == "game" and now == "menu":
+        return ("Replace the multi-boot card on the machine with this one game (%s)?\n\nIts menu and its other "
+                "games are deleted. Partition 7, which held them, stays on the card unused, so a multi-boot card "
+                "can be sent again later without laying the card out again.\n\n%s" % (name, keep))
+    return None
 
 
 def _is_iso(path):
@@ -3404,7 +3452,7 @@ def send_image(image, machine, log=None, progress=None, cancel=None, replace_men
         # PAD-1587: a JJP install ISO: its Send record says what it changed, file by file
         return remote_send_jjp.send_build(image, machine, log, progress, cancel)
     with open_target(image, log) as target:
-        check_layout(target, machine.layout())
+        check_layout(target, machine.layout(), replace_menu_card)
         check_test_card_target(target, machine, replace_menu_card)
         # PAD-1427 (David: "I'm concerned about letting the game run while we are doing updates and I want to make
         # sure we have a clean isolated update path"): the game is held, the machine's screen saying PAD is updating
@@ -3458,6 +3506,11 @@ class SendPipeline(BasePipeline):
         self._phase_now = -1
         self._rate = []
 
+    def _connect_logged(self):
+        machine = self._connect(self.address)
+        machine.log, machine.cancel = self._log, (lambda: self._cancelled)
+        return machine
+
     def _to_phase(self, index):
         if index != self._phase_now:
             self._phase_now = index
@@ -3488,6 +3541,15 @@ class SendPipeline(BasePipeline):
             if self.backup_keep:
                 from . import machine_backups
                 machine_backups.before_send(machine, self.backup_keep, self._log)
+            from . import remote_send_jjp
+            if self.replace_menu_card and not (remote_send_jjp.is_build(self.image) or _is_iso(self.image)):
+                # Simon (2026-11-27): a multi-boot image to a card with no partition 7 (the user was asked): the
+                # card is laid out for it first, over the network, then sent as any multi-boot card
+                from . import card_relayout
+                if card_relayout.has_p7(self.image) and 7 not in machine.layout():
+                    machine.close()
+                    machine = card_relayout.run(self._connect_logged, self.image, self._log, self._send_progress,
+                                                lambda: self._cancelled)
             if hasattr(machine, "widen"):
                 machine.widen(self._log)
             # only when set: a test card replacing a PAD multi-boot card (the Test card tab asked)

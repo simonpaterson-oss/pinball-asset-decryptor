@@ -140,7 +140,7 @@ function Build({ s }) {
         ? html`<${Button} kind="danger" onClick=${() => call("testcard.cancel")}>Cancel<//>`
         : html`<${Button} kind="primary" disabled=${!s.source_ok} onClick=${() => call("testcard.build")}>Build test card…<//>
           <${Button} disabled=${!!sendWhy(s)} onClick=${() => call("testcard.send")}
-            title=${sendWhy(s) || ("Build the test card and send it to the machine at " + s.address + ": only the files that differ go, then it restarts into the test card menu. The machine must be running a PAD test card already.")}>Send to machine…<//>
+            title=${sendWhy(s) || ("Build the test card and send it to the machine at " + s.address + ": only the files that differ go, then it restarts into the test card menu. A machine running a one-game or multi-boot card is asked about first: its games are deleted.")}>Send to machine…<//>
           <${Button} disabled=${!!growWhy(s)} onClick=${() => call("testcard.grow")}
             title=${growWhy(s) || GROW_TIP}>Grow on the machine…<//>`}
       <span class="small muted">${s.s3 ? "The size of the card it is made from (64 GB): the copy takes a while. Write it to an SD card like any card image." : s.room_mib ? "Your videos plus " + (s.network.room_gb) + " GB of room, built in seconds. Write it to an SD card like any card image." : "Under 1 GB plus your videos, built in seconds. Write it to an SD card like any card image."}</span>
