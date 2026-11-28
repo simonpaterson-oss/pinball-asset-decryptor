@@ -29,7 +29,7 @@ const T = {
   write: "Pack and write the atlases the machine loads into the mode's build folder. Refused, naming the sprites "
     + "to shrink, when the mode is over a budget.",
   memory: "Every packed atlas as the machine holds it in memory: 4 bytes a texel (RGBA, premultiplied).",
-  card: "The packed atlases as written to the card (compressed), plus the mode's sounds and clips as they are.",
+  card: "The packed atlases as the machine's card holds them (on Spike 2 as they sit in memory, since its runtime maps them straight in; compressed elsewhere), plus the mode's sounds and clips as they are.",
   kind: {
     picture: "One picture: one frame.",
     numbered: "Every file of the run this one belongs to (boom_0001.png, boom_0002.png …), in number order.",
@@ -496,7 +496,7 @@ function Pack({ s }) {
         ${(r.atlases || []).map((a, i) => html`<${Chip} sm title=${`Atlas ${i + 1}: ${fmtBytes(a.memory)} in memory, ${fmtBytes(a.card)} on the card`}>
           ${a.w} × ${a.h} · ${a.used_pct}% used<//>`)}
         <span class="muted">${r.frames} frames and glyphs, ${r.unique} kept after folding the same ones · packed in ${r.seconds} s
-          · largest atlas ${r.budget.atlas} × ${r.budget.atlas}</span>
+          · largest atlas ${r.budget.atlas} × ${r.budget.atlas} · ${r.budget.measured ? "budgets measured in the emulator" : "budgets are estimates until this machine is measured"}</span>
       </div>` : null}
       ${(r.problems || []).length ? html`<${Note} kind="err"><div class="stack" style="gap:4px">${r.problems.map((p) => html`<div>${p}</div>`)}</div><//>`
         : html`<${Note} kind="ok">Fits on ${r.label}.<//>`}

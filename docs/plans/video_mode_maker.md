@@ -628,17 +628,28 @@ can keep the action inside it.
 
 ## 5 Budgets per machine
 
-**All numbers are placeholders** until PAD-1655 measures Spike 2 and each platform ticket
-measures its own; those tickets replace this table with what they find, and PAD-1658's
-cost report and PAD-1669's budget meter read it from here.
+**Spike 2 is measured** (PAD-1655 in the emulator, `video_mode_spike2_drawing.md`; checked
+against the cost report by PAD-1679): its runtime sends every picture to GL as RGBA8, and its
+"KB of pictures on GL" line read 12,039 KB for a set whose atlases are exactly that at 4 bytes a
+texel; its set file (`.padgfx`) holds the texels raw, so a Spike 2 atlas costs the card what it
+costs memory. It kept 48 MB and 2048 x 2048. PAD-1679 packed the worked example (Night
+Harbour) in the Video modes tab, wrote its atlas as a `.padgfx` with PAD-1655's writer and loaded
+it on Godzilla Premium 1.16 in the emulator: the report said 8,388,608 bytes of memory and the
+runtime "8192 KB of pictures on GL" (0% apart); the report's card bytes were the file's 8,388,672
+plus the font tables the file will carry (0.04%). **The other columns are placeholders** until each
+platform ticket measures its own and replaces its column; PAD-1658's cost report and PAD-1669's
+budget meter read this table through `budgets.py`, and `tests/test_video_mode_pack.py` keeps the
+two in step (memory, largest atlas, card space, texel format, how the card holds an atlas).
 
 | Budget | Spike 2 | Spike 3 | JJP | Spooky | Dots (CGC, Spike 1) | Placeholder until |
 |---|---|---|---|---|---|---|
-| Pictures in memory (packed atlases, after premultiply) | 48 MB | 128 MB | 96 MB | 96 MB | 4 MB | PAD-1655 / 1673 / 1674 / 1675 / 1676 |
-| Largest atlas | 2048 x 2048 | 4096 x 4096 | 4096 x 4096 | 4096 x 4096 | 512 x 512 | same |
+| Pictures in memory (packed atlases, after premultiply) | 48 MB | 128 MB | 96 MB | 96 MB | 4 MB | Spike 2 measured (12 MB run, 48 MB kept); PAD-1673 / 1674 / 1675 / 1676 |
+| Texel format in memory | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | Spike 2 measured; same |
+| Atlases on the card | raw (`.padgfx`, mapped in) | compressed | compressed | compressed | compressed | Spike 2 measured; same |
+| Largest atlas | 2048 x 2048 | 4096 x 4096 | 4096 x 4096 | 4096 x 4096 | 512 x 512 | Spike 2 measured (the emulator's GL takes 4096); same |
 | Things alive at once | 300 | 500 | 400 | 400 | 100 | PAD-1657 (desk) then each platform |
-| Quads drawn a frame (things + glyphs + particles) | 1500 | 3000 | 2000 | 2000 | 400 | same |
-| Draw calls a frame (one per atlas and blend run) | 16 | 32 | 24 | 24 | n/a | same |
+| Quads drawn a frame (things + glyphs + particles) | 1500 | 3000 | 2000 | 2000 | 400 | Spike 2 measured (1500 at 30 a second); same |
+| Draw calls a frame (one per atlas and blend run) | 16 | 32 | 24 | 24 | n/a | Spike 2 measured (4 to 6 for packed art, 512 still held); same |
 | Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | same |
 | Card space for one video mode (pictures, sounds, clips) | 128 MB | 256 MB | 256 MB | 256 MB | 16 MB | PAD-1658 / each platform |
 | Sounds | 16 sounds, 6 music beds (today's mode cap) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
