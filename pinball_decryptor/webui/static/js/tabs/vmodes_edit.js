@@ -36,7 +36,7 @@ const T = {
   saved: "Every change is saved as you make it, and every change is a step you can undo, even after a reload",
   grid: "Show the grid; things snap to it while Snap is on",
   snap: "Snap to the grid, the guides, the stage, the safe area and to other things, with the distance shown. Hold Ctrl while dragging to place freely",
-  hits: "Show the hit boxes, in the team's colour (H)",
+  hits: "Show the hit boxes, in the team's color (H)",
   safe: "Show the safe area: inside every machine's visible glass",
   bezel: "Show the machine's glass around the stage: the dot-matrix band, or the frame of a screen",
   title: "Show the phase's title card on the stage, as the game opens the phase",
@@ -983,7 +983,7 @@ class Ed {
         default: return [0, all.b - b.b];
       }
     };
-    const names = { left: "Align left", centre: "Align centres", right: "Align right", top: "Align tops", middle: "Align middles", bottom: "Align bottoms" };
+    const names = { left: "Align left", centre: "Align centers", right: "Align right", top: "Align tops", middle: "Align middles", bottom: "Align bottoms" };
     this.setPlaces(names[how] || "Align", (p, i) => { const [dx, dy] = d(i); return { x: p.x + dx, y: p.y + dy }; }, sel);
   }
   // the layers' order, front first: one change. The things that moved take a depth between their new neighbours'
@@ -1111,7 +1111,7 @@ function Inspector({ ed, pics }) {
       <${Group} label="Stage">
         <div class="vme-row"><span class="vme-k">Background</span>
           <input type="color" class="vme-colour" value=${(st.background || "#000000").slice(0, 7)}
-            onChange=${(e) => ed.edit("Change the background colour", (d) => { d.stage.background = e.target.value; })} /></div>
+            onChange=${(e) => ed.edit("Change the background color", (d) => { d.stage.background = e.target.value; })} /></div>
         ${st.safe ? html`<div class="vme-two">
           <${Scrub} label="Safe X" value=${st.safe.x} min=${0} max=${1360} onCommit=${(v) => ed.edit("Change the safe area", (d) => { d.stage.safe.x = v; })} />
           <${Scrub} label="Y" value=${st.safe.y} min=${0} max=${768} onCommit=${(v) => ed.edit("Change the safe area", (d) => { d.stage.safe.y = v; })} />
@@ -1268,7 +1268,7 @@ function AlignBar({ ed }) {
     onClick=${() => ed.align(act)} ...${tip(label + (n === 1 ? " (to the stage)" : ""))}>
     <svg class="vme-al" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d=${ALIGN_SVG[act]} /></svg></button>`;
   return html`<div class="vme-align">
-    ${b("left", "", "Align left edges")}${b("centre", "", "Align centres across")}${b("right", "", "Align right edges")}
+    ${b("left", "", "Align left edges")}${b("centre", "", "Align centers across")}${b("right", "", "Align right edges")}
     <span class="vme-vsep"></span>
     ${b("top", "", "Align top edges")}${b("middle", "", "Align middles")}${b("bottom", "", "Align bottom edges")}
     <span class="vme-vsep"></span>
@@ -1436,7 +1436,7 @@ function commands(ed, ctx) {
   add("Select everything", () => ed.setSel(ed.places().map((_, i) => i)), "Ctrl A");
   add("Undo" + (ed.hist.undo_label ? ": " + ed.hist.undo_label : ""), () => ed.undoRedo("undo"), "Ctrl Z", ed.hist.can_undo);
   add("Redo" + (ed.hist.redo_label ? ": " + ed.hist.redo_label : ""), () => ed.undoRedo("redo"), "Ctrl Shift Z", ed.hist.can_redo);
-  for (const [k, l] of [["left", "Align left"], ["centre", "Align centres"], ["right", "Align right"], ["top", "Align top"], ["middle", "Align middles"], ["bottom", "Align bottom"]])
+  for (const [k, l] of [["left", "Align left"], ["centre", "Align centers"], ["right", "Align right"], ["top", "Align top"], ["middle", "Align middles"], ["bottom", "Align bottom"]])
     add(l, () => ed.align(k), "", has);
   add("Distribute across", () => ed.align("dist_x"), "", ed.sel.length > 2);
   add("Distribute down", () => ed.align("dist_y"), "", ed.sel.length > 2);
