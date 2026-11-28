@@ -24,7 +24,7 @@ def table(name, values, per_line=8):
     return "\n".join(out)
 
 
-def main():
+def main(path=None):
     parts = [
         "/* vm_tables.h - made by gen_tables.py; do not edit by hand (PAD-1657). */",
         "#ifndef VM_TABLES_H",
@@ -44,7 +44,7 @@ def main():
         "#endif",
         "",
     ]
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vm_tables.h")
+    path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), "vm_tables.h")
     with open(path, "w", newline="\n") as f:
         f.write("\n".join(parts))
 

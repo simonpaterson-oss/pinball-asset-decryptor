@@ -391,11 +391,9 @@ def test_engine_object_keeps_the_mode_rules():
 
 
 # ---- the integer tables are what the generator makes --------------------------------
-def test_tables_are_what_gen_tables_writes(tmp_path, monkeypatch):
+def test_tables_are_what_gen_tables_writes(tmp_path):
     out = tmp_path / "vm_tables.h"
-    real_join = os.path.join
-    monkeypatch.setattr(gen_tables.os.path, "join", lambda *a: str(out) if a[-1] == "vm_tables.h" else real_join(*a))
-    gen_tables.main()
+    gen_tables.main(str(out))
     with open(os.path.join(ENGINE, "vm_tables.h"), encoding="utf-8") as f:
         assert out.read_text(encoding="utf-8") == f.read()   # text mode: CRLF checkouts read the same
 
