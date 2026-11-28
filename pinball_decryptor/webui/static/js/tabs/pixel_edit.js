@@ -42,6 +42,15 @@ const hex = (c) => "#" + c.slice(0, 3).map((v) => v.toString(16).padStart(2, "0"
 const rgba = (c) => `rgba(${c[0]},${c[1]},${c[2]},${(c[3] / 255).toFixed(3)})`;
 const num = (n) => (n == null ? "…" : n.toLocaleString("en-US"));
 
+// PAD-1658: a frame that is not an LED picture (a video mode's sprite) previews as itself, at most 196 px a side
+function drawPlain(cv, w, h, px) {
+  if (!cv || !px) return;
+  cv.width = w; cv.height = h;
+  const k = Math.min(1, 196 / Math.max(w, h));
+  cv.style.width = Math.round(w * k) + "px"; cv.style.height = Math.round(h * k) + "px";
+  cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(px), w, h), 0, 0);
+}
+
 function drawLeds(cv, w, h, px) {
   if (!cv || !px) return;
   const pitch = Math.max(3, Math.floor(196 / Math.max(w, h)));
@@ -56,7 +65,12 @@ function drawLeds(cv, w, h, px) {
   }
 }
 
-export function PixelEditor({ rel, onClose }) {
+// PAD-1658: `api` points the editor at another tab's calls (a video mode's frames): { open, save, bytes (null: no
+// byte budget), label (the small preview's heading), leds (false: the preview is the picture itself, not lit LEDs) };
+// the default is the Images tab's.
+const IMAGES_API = { open: "images.pixel_open", save: "images.pixel_save", bytes: "images.pixel_bytes", label: null, leds: true };
+
+export function PixelEditor({ rel, onClose, api = IMAGES_API }) {
   const [spec, setSpec] = useState(null);
   const [ver, setVer] = useState(0);
   const [tool, setTool] = useState("Pencil");
@@ -73,11 +87,12 @@ export function PixelEditor({ rel, onClose }) {
   const hist = useRef({ undo: [], redo: [] });
   const cvRef = useRef(null);
   const ledRef = useRef(null);
+  const paint = api.leds === false ? drawPlain : drawLeds;
   const stroke = useRef(null);
   const frameImgs = useRef([]);
 
   const load = async (r) => {
-    const sp = await call("images.pixel_open", r);
+    const sp = await call(api.open, r);
     if (!sp) { onClose(); return; }
     px.current = fromB64(sp.data);
     hist.current = { undo: [], redo: [] };
@@ -114,14 +129,14 @@ export function PixelEditor({ rel, onClose }) {
       for (let x = spec.cell[0]; x < w; x += spec.cell[0]) line(x * scale + 0.5, 0, x * scale + 0.5, h * scale);
       for (let y = spec.cell[1]; y < h; y += spec.cell[1]) line(0, y * scale + 0.5, w * scale, y * scale + 0.5);
     }
-    if (!playing) drawLeds(ledRef.current, w, h, p);
+    if (!playing) paint(ledRef.current, w, h, p);
   }, [ver, spec, grid, scale, playing]);
 
   // the size it saves at, a moment after the last change
   useEffect(() => {
-    if (!spec || !px.current) return undefined;
+    if (!spec || !px.current || !api.bytes) return undefined;
     const t = setTimeout(() => {
-      call("images.pixel_bytes", w, h, toB64(px.current), spec.budget).then(setBytes);
+      call(api.bytes, w, h, toB64(px.current), spec.budget).then(setBytes);
     }, 350);
     return () => clearTimeout(t);
   }, [ver, spec]);
@@ -140,10 +155,10 @@ export function PixelEditor({ rel, onClose }) {
     const tick = () => {
       i = (i + 1) % Math.max(1, frames.length);
       const im = frameImgs.current[i];
-      if (!im) { drawLeds(ledRef.current, w, h, px.current); return; }
+      if (!im) { paint(ledRef.current, w, h, px.current); return; }
       if (!im.complete || !im.naturalWidth) return;
       og.clearRect(0, 0, w, h); og.drawImage(im, 0, 0);
-      drawLeds(ledRef.current, w, h, og.getImageData(0, 0, w, h).data);
+      paint(ledRef.current, w, h, og.getImageData(0, 0, w, h).data);
     };
     const t = setInterval(tick, 1000 / PLAY_FPS);
     return () => clearInterval(t);
@@ -218,12 +233,12 @@ export function PixelEditor({ rel, onClose }) {
   const save = async () => {
     setBusy(true);
     try {
-      const r = await call("images.pixel_save", spec.rel, w, h, toB64(px.current));
+      const r = await call(api.save, spec.rel, w, h, toB64(px.current));
       if (!r || !r.ok) { setMsg({ kind: "err", text: (r && r.msg) || "Not saved." }); return false; }
       setDirty(false);
       setSpec((s) => ({ ...s, edited: !r.same,
         frames: (s.frames || []).map((f, i) => (i === s.index ? { ...f, path: r.same ? f.path : r.path } : f)) }));
-      setMsg({ kind: "ok", text: r.same ? r.msg : "Saved as this picture's replacement. Build it on the Write tab." });
+      setMsg({ kind: "ok", text: r.same || api !== IMAGES_API ? r.msg : "Saved as this picture's replacement. Build it on the Write tab." });
       return true;
     } finally { setBusy(false); }
   };
@@ -253,7 +268,7 @@ export function PixelEditor({ rel, onClose }) {
   if (!spec) return null;
   const frames = spec.frames || [];
   const over = spec.budget != null && bytes != null && bytes > spec.budget;
-  const sizeText = spec.budget != null
+  const sizeText = !api.bytes ? "" : spec.budget != null
     ? `Saves at ${num(bytes)} bytes · this game holds the file at ${num(spec.budget)}`
     : `Saves at ${num(bytes)} bytes`;
   const footer = html`
@@ -284,7 +299,8 @@ export function PixelEditor({ rel, onClose }) {
         <${Button} size="sm" kind=${grid ? "" : "ghost"} onClick=${() => setGrid(!grid)} title="Show the line between pixels (G)">Grid<//>
         ${spec.ringmap ? html`<${Button} size="sm" kind=${showMap ? "" : "ghost"} icon="map" onClick=${() => setShowMap(!showMap)}
           title="Show or hide where Sonic's ring displays sit on the playfield">Ring map<//>` : null}
-        <${Button} size="sm" kind="ghost" onClick=${toOriginal} title="Put the game's own picture back in the editor (Undo takes it back). Saving it drops this slot's replacement.">Game's own<//>
+        <${Button} size="sm" kind="ghost" onClick=${toOriginal} title=${api.leds === false ? "Put the frame back as it was when it opened (Undo takes it back)."
+          : "Put the game's own picture back in the editor (Undo takes it back). Saving it drops this slot's replacement."}>${api.leds === false ? "As opened" : "Game's own"}<//>
       </div>
       <div class="pxe-body">
         <div class="pxe-stage">
@@ -293,8 +309,8 @@ export function PixelEditor({ rel, onClose }) {
             onContextMenu=${(e) => e.preventDefault()} />
         </div>
         <div class="pxe-side">
-          <div class="eyebrow">${spec.ring ? "On the ring" : "As LEDs"}</div>
-          <canvas ref=${ledRef} class="pxe-led" ...${tip(LED_TIP)} />
+          <div class="eyebrow">${spec.ring ? "On the ring" : api.label || "As LEDs"}</div>
+          <canvas ref=${ledRef} class=${cx("pxe-led", api.leds === false && "pxe-plain")} ...${tip(api.leds === false ? null : LED_TIP)} />
           <div class="small muted">${w} × ${h} pixels${spec.cell ? ` · frames of ${spec.cell[0]} × ${spec.cell[1]}` : ""}${spec.edited ? " · has a replacement" : ""}</div>
           ${frames.length > 1 ? html`<div class="pxe-frames">
             <div class="row">
@@ -302,7 +318,8 @@ export function PixelEditor({ rel, onClose }) {
               <span class="small mono pxe-fno">Frame ${spec.index + 1} of ${frames.length}</span>
               <${Button} size="sm" kind="ghost" icon="next" onClick=${() => go(1)} disabled=${spec.index >= frames.length - 1 || busy} title="The next frame (→). Saves this one first." />
               <${Button} size="sm" kind="ghost" icon=${playing ? "stop" : "play"} onClick=${() => setPlaying(!playing)}
-                title=${`Play the ${frames.length} pictures of this folder in turn on the LEDs, at ${PLAY_FPS} a second (the game sets its own speed).`}>${playing ? "Stop" : "Play"}<//>
+                title=${api.leds === false ? `Play the ${frames.length} frames in turn, at ${PLAY_FPS} a second (the sprite's own rate is set on its page).`
+                  : `Play the ${frames.length} pictures of this folder in turn on the LEDs, at ${PLAY_FPS} a second (the game sets its own speed).`}>${playing ? "Stop" : "Play"}<//>
             </div>
             <div class="small muted ellip" title=${frames.map((f) => f.name).join("\n")}>${frames[0].name} … ${frames[frames.length - 1].name}</div>
           </div>` : null}
