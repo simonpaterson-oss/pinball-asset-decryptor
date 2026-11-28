@@ -4474,6 +4474,7 @@ static unsigned long frame_minute;
 static void clip_frames_said(void);
 
 static void gw_tick(void);
+static void gfx_tick(void);                  /* PAD-1655 */
 static void ait_tick(void);                   /* PAD-782 */
 static void clip_tick(void)
 {
@@ -12519,6 +12520,7 @@ static void on_tick(pm_reg *r)
     saved_tick();                             /* PAD-1402: SAVED PROGRESS cleared, the file written */
     EACH_MODE(m) if (m->tick) { current = m; m->tick(); }
     current = 0;
+    gfx_tick();                               /* PAD-1655: a drawing mode's end takes its pictures off the glass */
     magnet_tick();                            /* PAD-381: after the modes, so a grab's deadline is checked the tick it passes */
     scoop_tick();                             /* PAD-381: the scoop's wrap goes in on the first tick */
     building_tick();                          /* PAD-393: a put-back owed */
@@ -35145,4 +35147,1107 @@ static void pad_mode_start(void)
         can & PM_CAN_GAME_DONE ? " modes-completed" : "");
     /* The modes' init waits for the first tick (on_tick): nothing of the game may be
      * called from here, before its main() has run. */
+}
+
+/* ---- moving pictures on the glass (PAD-1655) ------------------------------------------------------------------------
+ * A mode draws pictures of its own over the game's display, placed freely every frame: position, scale, turn, alpha,
+ * tint and depth per quad, words in a font the picture set carries, and a switch that covers the game's display so its
+ * HUD and clips do not show through. It is what a video mode needs (the video mode maker, PAD-1654).
+ *
+ * THE ROUTE: AT THE GAME'S OWN eglSwapBuffers. Every frame the game builds ends with eglSwapBuffers on the thread
+ * that owns its GL context, called through the game program's own import slot (the picture settings and image sets
+ * re-point the same slot, PAD-537/PAD-1390; padmenu.so is the game's eglSwapBuffers itself and draws its hold ring
+ * there). The runtime re-points the slot the first time a mode loads a picture set. In the wrapper, just before the
+ * frame goes out: the pictures still waiting are sent to GL (a few MB a frame at most, so a big set never stalls one
+ * frame), the newest draw list is drawn with a program of our own, in a vertex array object of our own, and every
+ * piece of GL state touched is saved first and put back after; then the real eglSwapBuffers. Nothing of the game's
+ * display is held back or changed: its frame is built exactly as before and our quads go on top of it (PAD-301: a
+ * picture handed to the game's renderer from the tick kept the game from building frames; here the game's renderer is
+ * never asked for anything). The magnet lesson holds by construction: no game process waits on us, ever.
+ *
+ * The route is GENERIC: it needs no site in a port. The slot is found at run time from the game program's own
+ * relocations (its PT_DYNAMIC: the R_ARM_JUMP_SLOT for eglSwapBuffers), so every Spike 2 build that calls
+ * eglSwapBuffers through its PLT has it. What IS per title is only where a video mode's ball waits and which buttons
+ * it reads (the rollout tickets of the epic).
+ *
+ * Why not the others (docs/plans/video_mode_maker.md has the measurements):
+ *   - Radium node transforms on a pool of baked Sprite nodes: only pictures already baked into the card's hud scene
+ *     can move, the pool is per scene and per title (a site and a scene grammar per port), and every move goes
+ *     through the game's scene update on its own CPU budget.
+ *   - Drawing at the game's frame hand-over (frame_end/frame_kick, PAD-301): a site pair per port, and a draw there
+ *     lands in the game's own render list, so a slow renderer refuses it the way it refused the tick's.
+ *
+ * THREADS. The mode builds a list on the tick (pm_gfx_begin, pm_gfx_quad / pm_gfx_box / pm_gfx_text, pm_gfx_end);
+ * the renderer draws the newest complete one at every frame. Three lists, handed over by one atomic exchange each way:
+ * the tick never waits for the renderer and the renderer never waits for the tick. A frame with no new list draws the
+ * last one again. Only the renderer thread ever calls GL.
+ *
+ * LIFETIME. A set belongs to the mode that loaded it. When that mode stops running (pm_end, its ball, the game's end),
+ * what it drew comes off the glass at the next frame and its pictures are deleted from GL and from memory; pm_gfx_free
+ * does it sooner. The display is then the game's, exactly as it was.
+ *
+ * THE BUDGET is logged once a minute while a mode draws (gfx: ...): frames that went to the glass, how many carried
+ * our list, quads in a frame, our part of a frame in microseconds, pictures held and the process's memory. */
+extern void *mmap(void *, __SIZE_TYPE__, int, int, int, long);
+extern int   munmap(void *, __SIZE_TYPE__);
+extern long  lseek(int, long, int);
+extern unsigned long getauxval(unsigned long);
+
+#define GFX_SETS         8
+#define GFX_PICS         256
+#define GFX_FONTS        32
+#define GFX_GLYPHS       8192
+#define GFX_QUADS        PM_GFX_MAX_QUADS
+#define GFX_VERTS        (6 + GFX_QUADS * 6)     /* the first six: the cover */
+#define GFX_BATCHES      512
+#define GFX_FILE_MAX     (96ul << 20)
+#define GFX_UPLOAD_FRAME (6ul << 20)             /* bytes of pictures sent to GL in one frame */
+#define GFX_SIDE_MAX     4096
+#define GFX_FRESH        4u
+
+/* GL and EGL numbers used here */
+#define GX_BLEND 0x0BE2
+#define GX_CULL_FACE 0x0B44
+#define GX_DEPTH_TEST 0x0B71
+#define GX_SCISSOR_TEST 0x0C11
+#define GX_STENCIL_TEST 0x0B90
+#define GX_ALPHA_TO_COVERAGE 0x809E
+#define GX_SAMPLE_COVERAGE 0x80A0
+#define GX_VIEWPORT 0x0BA2
+#define GX_COLOR_WRITEMASK 0x0C23
+#define GX_BLEND_SRC_RGB 0x80C9
+#define GX_BLEND_DST_RGB 0x80C8
+#define GX_BLEND_SRC_ALPHA 0x80CB
+#define GX_BLEND_DST_ALPHA 0x80CA
+#define GX_BLEND_EQUATION_RGB 0x8009
+#define GX_BLEND_EQUATION_ALPHA 0x883D
+#define GX_FUNC_ADD 0x8006
+#define GX_CURRENT_PROGRAM 0x8B8D
+#define GX_ARRAY_BUFFER 0x8892
+#define GX_ARRAY_BUFFER_BINDING 0x8894
+#define GX_FRAMEBUFFER 0x8D40
+#define GX_FRAMEBUFFER_BINDING 0x8CA6
+#define GX_VERTEX_ARRAY_BINDING 0x85B5
+#define GX_ACTIVE_TEXTURE 0x84E0
+#define GX_TEXTURE0 0x84C0
+#define GX_TEXTURE_2D 0x0DE1
+#define GX_TEXTURE_BINDING_2D 0x8069
+#define GX_TEXTURE_MIN_FILTER 0x2801
+#define GX_TEXTURE_MAG_FILTER 0x2800
+#define GX_TEXTURE_WRAP_S 0x2802
+#define GX_TEXTURE_WRAP_T 0x2803
+#define GX_LINEAR 0x2601
+#define GX_CLAMP_TO_EDGE 0x812F
+#define GX_RGBA 0x1908
+#define GX_UNSIGNED_BYTE 0x1401
+#define GX_FLOAT 0x1406
+#define GX_STREAM_DRAW 0x88E0
+#define GX_TRIANGLES 0x0004
+#define GX_SRC_ALPHA 0x0302
+#define GX_ONE_MINUS_SRC_ALPHA 0x0303
+#define GX_ZERO 0
+#define GX_ONE 1
+#define GX_VERTEX_SHADER 0x8B31
+#define GX_FRAGMENT_SHADER 0x8B30
+#define GX_COMPILE_STATUS 0x8B81
+#define GX_LINK_STATUS 0x8B82
+#define GX_EGL_WIDTH 0x3057
+#define GX_EGL_HEIGHT 0x3056
+
+struct gfx_vert { float x, y, u, v; unsigned char c[4]; };          /* 20 bytes: stage px, picture uv, colour
+                                                                       * premultiplied (tint x alpha, alpha) */
+struct gfx_list {
+    unsigned n_v, n_b, quads, cover, cover_rgb;
+    float stage_w, stage_h;
+    unsigned short b_pic[GFX_BATCHES];
+    unsigned char b_add[GFX_BATCHES];                /* PM_GFX_ADD: one, one */
+    unsigned b_first[GFX_BATCHES], b_n[GFX_BATCHES];
+    struct gfx_vert v[GFX_VERTS];
+};
+static struct gfx_list gfx_list[3];
+static volatile unsigned gfx_ready = 1;          /* the list handed over last (| GFX_FRESH: not taken yet) */
+static unsigned gfx_back, gfx_front = 2;         /* the tick's (being written); the renderer's (being drawn) */
+
+/* the list being built: quads in call order, sorted by depth at pm_gfx_end */
+struct gfx_q { float depth; unsigned short seq, pic; unsigned char add; };
+static struct gfx_q gfx_q[GFX_QUADS], gfx_qt[GFX_QUADS];
+static struct gfx_vert gfx_qv[GFX_QUADS][6];
+static unsigned gfx_nq, gfx_over;
+static int gfx_open;
+static const struct pm_mode *gfx_drawer;         /* whose list is on the glass */
+static unsigned gfx_cover_on, gfx_cover_rgb;
+static float gfx_stage_w = 1360, gfx_stage_h = 768;
+
+/* pictures and fonts. [0] of the pictures is the plain colour: one white texel. Entries of a set are the main
+ * thread's until the set is LOADED, then the renderer writes `tex`; the renderer clears them when it frees the set. */
+struct gfx_pic { unsigned short w, h; unsigned char set, pm; unsigned tex; const unsigned char *px; char name[24]; };
+struct gfx_font { unsigned short pic, size, line_h; short ascent; unsigned first, n; unsigned char set; char name[24]; };
+struct gfx_glyph { unsigned short cp, x, y, w, h; short ox, oy, adv; };   /* ox, oy, adv in 1/8 px of the baked size */
+static struct gfx_pic gfx_pic[GFX_PICS + 1];
+static struct gfx_font gfx_font[GFX_FONTS];
+static struct gfx_glyph gfx_glyph[GFX_GLYPHS];
+static unsigned char gfx_glyph_set[GFX_GLYPHS];  /* which set holds each glyph entry (0: free) */
+enum { GFX_FREE, GFX_LOADED, GFX_READY, GFX_DROP };
+static struct {
+    volatile int state;
+    const struct pm_mode *owner;
+    int ran;                                     /* its mode has run since the load */
+    unsigned char *map;
+    unsigned long len;
+    unsigned pic0, pics, up_next;
+    char file[48];
+} gfx_set[GFX_SETS];
+
+static int gfx_armed;                            /* 1 armed; -1 refused for good */
+static int gfx_gl_ok;                            /* renderer: 0 not built, 1 ready, -1 off for good */
+static unsigned (*gfx_next)(void *, void *);
+static pm_addr gfx_slot;
+
+/* the budget: the renderer's counts, read and cleared once a minute by the tick (a torn read costs one frame's count) */
+static volatile unsigned gfx_swaps, gfx_drawn, gfx_quads_sum, gfx_quads_max, gfx_lists_taken, gfx_calls_sum,
+    gfx_calls_max;
+static volatile unsigned long long gfx_us_sum, gfx_us_max;
+static volatile unsigned long gfx_up_bytes;
+static unsigned long gfx_minute, gfx_end_us_sum, gfx_end_us_max, gfx_ends;
+static unsigned gfx_said_draw, gfx_said_over;
+
+static unsigned long long gfx_now_us(void)
+{
+    struct { long s, ns; } t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (unsigned long long)t.s * 1000000ull + (unsigned long long)(t.ns / 1000);
+}
+
+/* ---- the slot: eglSwapBuffers' import slot in the game program, from its own relocations -------------------------- */
+static int gfx_streq(const char *a, const char *b)
+{
+    while (*a && *a == *b) a++, b++;
+    return *a == *b;
+}
+
+static pm_addr gfx_import_slot(const char *want)
+{
+#if PM_A64
+    enum { PH = 56, DYN = 16, REL = 24, SYM = 24, JUMP = 1026 };
+#else
+    enum { PH = 32, DYN = 8, REL = 8, SYM = 16, JUMP = 22 };
+#endif
+    const unsigned char *ph = (const unsigned char *)getauxval(3);          /* AT_PHDR */
+    unsigned long n = getauxval(5), i, bias = 0, dyn = 0;                     /* AT_PHNUM */
+    unsigned long strtab = 0, symtab = 0, jmprel = 0, relsz = 0;
+    if (!ph || getauxval(4) != PH) return 0;                                  /* AT_PHENT */
+    for (i = 0; i < n; i++) {
+        const unsigned char *p = ph + i * PH;
+        unsigned type = *(const unsigned *)p;
+#if PM_A64
+        unsigned long vaddr = *(const unsigned long *)(p + 16);
+#else
+        unsigned long vaddr = *(const unsigned *)(p + 8);
+#endif
+        if (type == 6) bias = (unsigned long)ph - vaddr;                      /* PT_PHDR */
+        if (type == 2) dyn = vaddr;                                           /* PT_DYNAMIC */
+    }
+    if (!dyn) return 0;
+    for (i = 0;; i++) {
+        const unsigned char *d = (const unsigned char *)(bias + dyn + i * DYN);
+#if PM_A64
+        long tag = *(const long *)d;
+        unsigned long val = *(const unsigned long *)(d + 8);
+#else
+        long tag = *(const int *)d;
+        unsigned long val = *(const unsigned *)(d + 4);
+#endif
+        if (!tag) break;
+        if (i > 512) return 0;
+        /* a PIE's loader may have moved these already (glibc does, where .dynamic is writable) */
+        if ((tag == 5 || tag == 6 || tag == 23) && bias && val < bias) val += bias;
+        if (tag == 5) strtab = val;
+        else if (tag == 6) symtab = val;
+        else if (tag == 23) jmprel = val;
+        else if (tag == 2) relsz = val;
+    }
+    if (!strtab || !symtab || !jmprel || !relsz) return 0;
+    for (i = 0; i + REL <= relsz; i += REL) {
+        const unsigned char *r = (const unsigned char *)(jmprel + i);
+#if PM_A64
+        unsigned long off = *(const unsigned long *)r, info = *(const unsigned long *)(r + 8);
+        unsigned type = (unsigned)(info & 0xffffffffu), sym = (unsigned)(info >> 32);
+        unsigned name = *(const unsigned *)(symtab + (unsigned long)sym * SYM);
+#else
+        unsigned long off = *(const unsigned *)r, info = *(const unsigned *)(r + 4);
+        unsigned type = (unsigned)(info & 0xffu), sym = (unsigned)(info >> 8);
+        unsigned name = *(const unsigned *)(symtab + (unsigned long)sym * SYM);
+#endif
+        if (type == JUMP && gfx_streq((const char *)(strtab + name), want)) return (pm_addr)(bias + off);
+    }
+    return 0;
+}
+
+/* ---- GL, looked up once from the libraries the game already has loaded ------------------------------------------ */
+static struct {
+    void (*GetIntegerv)(unsigned, int *);
+    unsigned char (*IsEnabled)(unsigned);
+    void (*Enable)(unsigned), (*Disable)(unsigned);
+    void (*BlendFuncSeparate)(unsigned, unsigned, unsigned, unsigned);
+    void (*BlendEquationSeparate)(unsigned, unsigned);
+    void (*Viewport)(int, int, int, int);
+    void (*UseProgram)(unsigned);
+    void (*BindBuffer)(unsigned, unsigned);
+    void (*GenBuffers)(int, unsigned *);
+    void (*BufferData)(unsigned, long, const void *, unsigned);
+    void (*BindFramebuffer)(unsigned, unsigned);
+    void (*VertexAttribPointer)(unsigned, int, unsigned, unsigned char, int, const void *);
+    void (*EnableVertexAttribArray)(unsigned);
+    void (*DrawArrays)(unsigned, int, int);
+    unsigned (*CreateShader)(unsigned);
+    void (*ShaderSource)(unsigned, int, const char *const *, const int *);
+    void (*CompileShader)(unsigned);
+    void (*GetShaderiv)(unsigned, unsigned, int *);
+    unsigned (*CreateProgram)(void);
+    void (*AttachShader)(unsigned, unsigned);
+    void (*BindAttribLocation)(unsigned, unsigned, const char *);
+    void (*LinkProgram)(unsigned);
+    void (*GetProgramiv)(unsigned, unsigned, int *);
+    int (*GetUniformLocation)(unsigned, const char *);
+    void (*Uniform4f)(int, float, float, float, float);
+    void (*Uniform1i)(int, int);
+    void (*Uniform1f)(int, float);
+    void (*GenTextures)(int, unsigned *);
+    void (*DeleteTextures)(int, const unsigned *);
+    void (*BindTexture)(unsigned, unsigned);
+    void (*ActiveTexture)(unsigned);
+    void (*TexImage2D)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+    void (*TexParameteri)(unsigned, unsigned, int);
+    void (*GenVertexArrays)(int, unsigned *);
+    void (*BindVertexArray)(unsigned);
+    /* not every GL has these; what the game cannot call it never set */
+    void (*GetBooleanv)(unsigned, unsigned char *);
+    void (*ColorMask)(unsigned char, unsigned char, unsigned char, unsigned char);
+    unsigned (*QuerySurface)(void *, void *, int, int *);
+} gx;
+static unsigned gx_prog, gx_buf, gx_vao, gx_white;
+static int gx_u_xf, gx_u_tex, gx_u_pm, gx_max_side = 2048;
+
+static int gfx_gl_load(void)
+{
+    void *gles = dlopen("libGLESv2.so.2", PIC_RTLD_NOW | PIC_RTLD_NOLOAD);
+    void *egl = dlopen("libEGL.so.1", PIC_RTLD_NOW | PIC_RTLD_NOLOAD);
+    if (!gles) { say("gfx: off - libGLESv2.so.2 is not loaded in the game"); return 0; }
+#define GL1(f, n) if (!(*(void **)&gx.f = dlsym(gles, n))) { say("gfx: off - no %s", n); return 0; }
+    GL1(GetIntegerv, "glGetIntegerv") GL1(IsEnabled, "glIsEnabled") GL1(Enable, "glEnable") GL1(Disable, "glDisable")
+    GL1(BlendFuncSeparate, "glBlendFuncSeparate") GL1(Viewport, "glViewport") GL1(UseProgram, "glUseProgram")
+    GL1(BindBuffer, "glBindBuffer") GL1(GenBuffers, "glGenBuffers") GL1(BufferData, "glBufferData")
+    GL1(BindFramebuffer, "glBindFramebuffer") GL1(VertexAttribPointer, "glVertexAttribPointer")
+    GL1(EnableVertexAttribArray, "glEnableVertexAttribArray") GL1(DrawArrays, "glDrawArrays")
+    GL1(CreateShader, "glCreateShader") GL1(ShaderSource, "glShaderSource") GL1(CompileShader, "glCompileShader")
+    GL1(GetShaderiv, "glGetShaderiv") GL1(CreateProgram, "glCreateProgram") GL1(AttachShader, "glAttachShader")
+    GL1(BindAttribLocation, "glBindAttribLocation") GL1(LinkProgram, "glLinkProgram")
+    GL1(GetProgramiv, "glGetProgramiv") GL1(GetUniformLocation, "glGetUniformLocation")
+    GL1(Uniform4f, "glUniform4f") GL1(Uniform1i, "glUniform1i") GL1(Uniform1f, "glUniform1f") GL1(GenTextures, "glGenTextures")
+    GL1(DeleteTextures, "glDeleteTextures") GL1(BindTexture, "glBindTexture") GL1(ActiveTexture, "glActiveTexture")
+    GL1(TexImage2D, "glTexImage2D") GL1(TexParameteri, "glTexParameteri")
+#undef GL1
+    /* our own vertex array object, so the game's attribute state is never touched: GLES 3, or the OES extension */
+    *(void **)&gx.GenVertexArrays = dlsym(gles, "glGenVertexArrays");
+    *(void **)&gx.BindVertexArray = dlsym(gles, "glBindVertexArray");
+    if (!gx.GenVertexArrays || !gx.BindVertexArray) {
+        *(void **)&gx.GenVertexArrays = dlsym(gles, "glGenVertexArraysOES");
+        *(void **)&gx.BindVertexArray = dlsym(gles, "glBindVertexArrayOES");
+    }
+    if (!gx.GenVertexArrays || !gx.BindVertexArray) {
+        say("gfx: off - this GL has no vertex array objects, and without one the game's attribute state would change");
+        return 0;
+    }
+    *(void **)&gx.BlendEquationSeparate = dlsym(gles, "glBlendEquationSeparate");
+    *(void **)&gx.GetBooleanv = dlsym(gles, "glGetBooleanv");
+    *(void **)&gx.ColorMask = dlsym(gles, "glColorMask");
+    if (!gx.GetBooleanv) gx.ColorMask = 0;
+    *(void **)&gx.QuerySurface = egl ? dlsym(egl, "eglQuerySurface") : 0;
+    return 1;
+}
+
+/* ---- arming: the slot re-pointed, the first time a mode loads a set -------------------------------------------- */
+static unsigned gfx_swap(void *dpy, void *surf);
+static int gfx_arm(void)
+{
+    unsigned long v;
+    if (gfx_armed) return gfx_armed > 0;
+    gfx_armed = -1;
+    gfx_slot = gfx_import_slot("eglSwapBuffers");
+    if (!gfx_slot || !maps_has(gfx_slot, sizeof(pm_addr), MAP_R | MAP_GAME)) {
+        say("gfx: off - the game program has no import slot for eglSwapBuffers (its relocations name none)");
+        return 0;
+    }
+    if (!gfx_gl_load()) return 0;
+    v = (unsigned long)*(volatile const pm_addr *)(unsigned long)gfx_slot;
+    if (!v) { say("gfx: off - eglSwapBuffers' slot 0x%08" PMA " is empty", gfx_slot); return 0; }
+    if (maps_has(v & ~1ul, 4, MAP_R | MAP_X | MAP_GAME)) {
+        /* still the program's lazy-binding stub, which cannot be called from C: the library's own */
+        void *egl = dlopen("libEGL.so.1", PIC_RTLD_NOW | PIC_RTLD_NOLOAD);
+        gfx_next = egl ? (unsigned (*)(void *, void *))dlsym(egl, "eglSwapBuffers") : 0;
+    } else
+        gfx_next = (unsigned (*)(void *, void *))v;           /* libEGL's, or the picture settings' / image sets' hook */
+    if (!gfx_next) { say("gfx: off - no eglSwapBuffers to call on"); return 0; }
+    mprotect((void *)(unsigned long)(gfx_slot & ~(pm_addr)4095), 4096, 3);   /* PROT_READ | PROT_WRITE */
+    __sync_synchronize();
+    *(volatile pm_addr *)(unsigned long)gfx_slot = (pm_addr)(unsigned long)gfx_swap;
+    gfx_armed = 1;
+    gfx_minute = pm_ms();
+    say("gfx: armed - eglSwapBuffers' slot 0x%08" PMA " now draws our pictures over each frame (it calls on to 0x%08lx)",
+        gfx_slot, (unsigned long)gfx_next);
+    return 1;
+}
+
+/* ---- the renderer's part: at every frame -------------------------------------------------------------------------- */
+static const char GFX_VS[] =
+    "attribute vec2 a_pos; attribute vec2 a_uv; attribute vec4 a_col;\n"
+    "uniform vec4 u_xf; varying vec2 v_uv; varying vec4 v_col;\n"
+    "void main() { v_uv = a_uv; v_col = a_col; gl_Position = vec4(a_pos * u_xf.xy + u_xf.zw, 0.0, 1.0); }\n";
+static const char GFX_FS[] =
+    "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n"
+    "uniform sampler2D u_tex; uniform float u_pm; varying vec2 v_uv; varying vec4 v_col;\n"
+    "void main() { vec4 t = texture2D(u_tex, v_uv); t.rgb *= mix(t.a, 1.0, u_pm); gl_FragColor = t * v_col; }\n";
+
+static unsigned gfx_shader(unsigned kind, const char *src)
+{
+    int ok = 0;
+    unsigned s = gx.CreateShader(kind);
+    gx.ShaderSource(s, 1, &src, 0);
+    gx.CompileShader(s);
+    gx.GetShaderiv(s, GX_COMPILE_STATUS, &ok);
+    return ok ? s : 0;
+}
+
+static void gfx_tex_params(void)
+{
+    gx.TexParameteri(GX_TEXTURE_2D, GX_TEXTURE_MIN_FILTER, GX_LINEAR);
+    gx.TexParameteri(GX_TEXTURE_2D, GX_TEXTURE_MAG_FILTER, GX_LINEAR);
+    gx.TexParameteri(GX_TEXTURE_2D, GX_TEXTURE_WRAP_S, GX_CLAMP_TO_EDGE);
+    gx.TexParameteri(GX_TEXTURE_2D, GX_TEXTURE_WRAP_T, GX_CLAMP_TO_EDGE);
+}
+
+/* inside the saved state: the program, the buffer, the vertex array, the white texel */
+static int gfx_build(void)
+{
+    static const unsigned char white[4] = { 255, 255, 255, 255 };
+    int ok = 0, side = 0;
+    unsigned vs = gfx_shader(GX_VERTEX_SHADER, GFX_VS), fs = gfx_shader(GX_FRAGMENT_SHADER, GFX_FS);
+    if (!vs || !fs) { say("gfx: off - a shader of ours did not compile"); return 0; }
+    gx_prog = gx.CreateProgram();
+    gx.AttachShader(gx_prog, vs);
+    gx.AttachShader(gx_prog, fs);
+    gx.BindAttribLocation(gx_prog, 0, "a_pos");
+    gx.BindAttribLocation(gx_prog, 1, "a_uv");
+    gx.BindAttribLocation(gx_prog, 2, "a_col");
+    gx.LinkProgram(gx_prog);
+    gx.GetProgramiv(gx_prog, GX_LINK_STATUS, &ok);
+    if (!ok) { say("gfx: off - our program did not link"); return 0; }
+    gx_u_xf = gx.GetUniformLocation(gx_prog, "u_xf");
+    gx_u_tex = gx.GetUniformLocation(gx_prog, "u_tex");
+    gx_u_pm = gx.GetUniformLocation(gx_prog, "u_pm");
+    gx.UseProgram(gx_prog);
+    gx.Uniform1i(gx_u_tex, 0);
+    gx.GenBuffers(1, &gx_buf);
+    gx.GenVertexArrays(1, &gx_vao);
+    gx.BindVertexArray(gx_vao);
+    gx.BindBuffer(GX_ARRAY_BUFFER, gx_buf);
+    gx.EnableVertexAttribArray(0);
+    gx.EnableVertexAttribArray(1);
+    gx.EnableVertexAttribArray(2);
+    gx.GenTextures(1, &gx_white);
+    gx.BindTexture(GX_TEXTURE_2D, gx_white);
+    gfx_tex_params();
+    gx.TexImage2D(GX_TEXTURE_2D, 0, GX_RGBA, 1, 1, 0, GX_RGBA, GX_UNSIGNED_BYTE, white);
+    gx.GetIntegerv(0x0D33, &side);                                       /* GL_MAX_TEXTURE_SIZE */
+    if (side >= 64) gx_max_side = side;
+    say("gfx: ready on the game's GL (program %u, largest picture side %d)", gx_prog, gx_max_side);
+    return 1;
+}
+
+/* sets waiting: their pictures to GL, a budget a frame; sets let go: deleted. Returns the bytes sent. */
+static unsigned long gfx_sets_work(void)
+{
+    unsigned long sent = 0;
+    int s;
+    unsigned k;
+    for (s = 0; s < GFX_SETS; s++) {
+        int st = gfx_set[s].state;
+        if (st == GFX_LOADED) {
+            while (gfx_set[s].up_next < gfx_set[s].pics && sent < GFX_UPLOAD_FRAME) {
+                struct gfx_pic *p = &gfx_pic[gfx_set[s].pic0 + gfx_set[s].up_next++];
+                if (p->w > gx_max_side || p->h > gx_max_side) {
+                    say("gfx: picture %s is %ux%u - larger than this GL takes (%d a side); it is not drawn", p->name,
+                        p->w, p->h, gx_max_side);
+                    continue;
+                }
+                gx.GenTextures(1, &p->tex);
+                gx.BindTexture(GX_TEXTURE_2D, p->tex);
+                gfx_tex_params();
+                gx.TexImage2D(GX_TEXTURE_2D, 0, GX_RGBA, p->w, p->h, 0, GX_RGBA, GX_UNSIGNED_BYTE, p->px);
+                sent += (unsigned long)p->w * p->h * 4;
+            }
+            if (gfx_set[s].up_next >= gfx_set[s].pics) {
+                unsigned char *m = gfx_set[s].map;
+                gfx_set[s].map = 0;                       /* GL holds its own copy now */
+                for (k = 0; k < gfx_set[s].pics; k++) gfx_pic[gfx_set[s].pic0 + k].px = 0;
+                if (m) munmap(m, gfx_set[s].len);
+                __sync_bool_compare_and_swap(&gfx_set[s].state, GFX_LOADED, GFX_READY);
+            }
+        } else if (st == GFX_DROP) {
+            for (k = 0; k < gfx_set[s].pics; k++) {
+                struct gfx_pic *p = &gfx_pic[gfx_set[s].pic0 + k];
+                if (p->tex) gx.DeleteTextures(1, &p->tex);
+                p->tex = 0;
+                p->px = 0;
+                p->set = 0;
+            }
+            for (k = 0; k < GFX_FONTS; k++) if (gfx_font[k].set == s + 1) gfx_font[k].set = 0;
+            for (k = 0; k < GFX_GLYPHS; k++) if (gfx_glyph_set[k] == s + 1) gfx_glyph_set[k] = 0;
+            if (gfx_set[s].map) munmap(gfx_set[s].map, gfx_set[s].len);
+            gfx_set[s].map = 0;
+            __sync_synchronize();
+            gfx_set[s].state = GFX_FREE;
+        }
+    }
+    return sent;
+}
+
+static unsigned gfx_pic_tex(unsigned pic)
+{
+    const struct gfx_pic *p;
+    int st;
+    if (!pic) return gx_white;
+    if (pic > GFX_PICS) return 0;
+    p = &gfx_pic[pic];
+    if (!p->set || !p->tex) return 0;
+    st = gfx_set[p->set - 1].state;
+    return st == GFX_LOADED || st == GFX_READY ? p->tex : 0;
+}
+
+static unsigned gfx_cur_pm, gfx_cur_add;               /* renderer: what the program and blend are set to now */
+static void gfx_draw(struct gfx_list *L, int sw, int sh)
+{
+    float k = (float)sw / L->stage_w, ox, oy;
+    unsigned b, calls = L->cover != 0;
+    if ((float)sh / L->stage_h < k) k = (float)sh / L->stage_h;
+    ox = ((float)sw - L->stage_w * k) / 2;                   /* the stage centred on the surface, kept in proportion */
+    oy = ((float)sh - L->stage_h * k) / 2;
+    if (L->cover) {                                          /* the whole surface, under every quad */
+        float x0 = -ox / k, y0 = -oy / k, x1 = ((float)sw - ox) / k, y1 = ((float)sh - oy) / k;
+        const float xs[6] = { x0, x1, x0, x1, x1, x0 }, ys[6] = { y0, y0, y1, y0, y1, y1 };
+        int i;
+        for (i = 0; i < 6; i++) {
+            struct gfx_vert *v = &L->v[i];
+            v->x = xs[i]; v->y = ys[i]; v->u = v->v = 0.5f;
+            v->c[0] = (unsigned char)(L->cover_rgb >> 16); v->c[1] = (unsigned char)(L->cover_rgb >> 8);
+            v->c[2] = (unsigned char)L->cover_rgb; v->c[3] = 255;
+        }
+    }
+    gx.BufferData(GX_ARRAY_BUFFER, (long)L->n_v * (long)sizeof(struct gfx_vert), L->v, GX_STREAM_DRAW);
+    gx.VertexAttribPointer(0, 2, GX_FLOAT, 0, sizeof(struct gfx_vert), (const void *)0);
+    gx.VertexAttribPointer(1, 2, GX_FLOAT, 0, sizeof(struct gfx_vert), (const void *)8);
+    gx.VertexAttribPointer(2, 4, GX_UNSIGNED_BYTE, 1, sizeof(struct gfx_vert), (const void *)16);
+    gx.Uniform4f(gx_u_xf, 2 * k / (float)sw, -2 * k / (float)sh, 2 * ox / (float)sw - 1, 1 - 2 * oy / (float)sh);
+    gx.Uniform1f(gx_u_pm, 1);
+    gfx_cur_pm = 1;
+    gfx_cur_add = 0;
+    if (L->cover) {
+        gx.BindTexture(GX_TEXTURE_2D, gx_white);
+        gx.DrawArrays(GX_TRIANGLES, 0, 6);
+    }
+    for (b = 0; b < L->n_b; b++) {
+        unsigned t = gfx_pic_tex(L->b_pic[b]), pm = L->b_pic[b] ? gfx_pic[L->b_pic[b]].pm : 1;
+        if (!t) continue;                                    /* its picture is not on GL (yet, or any more) */
+        if (pm != gfx_cur_pm) gx.Uniform1f(gx_u_pm, (float)(gfx_cur_pm = pm));
+        if (L->b_add[b] != gfx_cur_add) {
+            gfx_cur_add = L->b_add[b];
+            gx.BlendFuncSeparate(GX_ONE, gfx_cur_add ? GX_ONE : GX_ONE_MINUS_SRC_ALPHA, GX_ZERO, GX_ONE);
+        }
+        gx.BindTexture(GX_TEXTURE_2D, t);
+        gx.DrawArrays(GX_TRIANGLES, (int)L->b_first[b], (int)L->b_n[b]);
+        calls++;
+    }
+    gfx_calls_sum += calls;
+    if (calls > gfx_calls_max) gfx_calls_max = calls;
+}
+
+static void gfx_frame(void *dpy, void *surf, struct gfx_list *L, int draw)
+{
+    int prog, abuf, fb, vp[4], vao, unit, tex0, w = 0, h = 0;
+    int bsr, bdr, bsa, bda, ber = GX_FUNC_ADD, bea = GX_FUNC_ADD;
+    unsigned char cm[4] = { 1, 1, 1, 1 }, blend, cull, depth, sc, st, a2c, scov;
+    unsigned long sent;
+    gx.GetIntegerv(GX_CURRENT_PROGRAM, &prog);
+    gx.GetIntegerv(GX_ARRAY_BUFFER_BINDING, &abuf);
+    gx.GetIntegerv(GX_FRAMEBUFFER_BINDING, &fb);
+    gx.GetIntegerv(GX_VIEWPORT, vp);
+    gx.GetIntegerv(GX_VERTEX_ARRAY_BINDING, &vao);
+    gx.GetIntegerv(GX_ACTIVE_TEXTURE, &unit);
+    if (gx.ColorMask) gx.GetBooleanv(GX_COLOR_WRITEMASK, cm);
+    gx.GetIntegerv(GX_BLEND_SRC_RGB, &bsr); gx.GetIntegerv(GX_BLEND_DST_RGB, &bdr);
+    gx.GetIntegerv(GX_BLEND_SRC_ALPHA, &bsa); gx.GetIntegerv(GX_BLEND_DST_ALPHA, &bda);
+    gx.GetIntegerv(GX_BLEND_EQUATION_RGB, &ber); gx.GetIntegerv(GX_BLEND_EQUATION_ALPHA, &bea);
+    blend = gx.IsEnabled(GX_BLEND); cull = gx.IsEnabled(GX_CULL_FACE); depth = gx.IsEnabled(GX_DEPTH_TEST);
+    sc = gx.IsEnabled(GX_SCISSOR_TEST); st = gx.IsEnabled(GX_STENCIL_TEST);
+    a2c = gx.IsEnabled(GX_ALPHA_TO_COVERAGE); scov = gx.IsEnabled(GX_SAMPLE_COVERAGE);
+    gx.ActiveTexture(GX_TEXTURE0);
+    gx.GetIntegerv(GX_TEXTURE_BINDING_2D, &tex0);
+
+    if (!gfx_gl_ok) {
+        gfx_gl_ok = gfx_build() ? 1 : -1;
+        if (gfx_gl_ok < 0) draw = 0;
+    }
+    if (gfx_gl_ok > 0) {
+        gx.BindVertexArray(gx_vao);
+        gx.BindBuffer(GX_ARRAY_BUFFER, gx_buf);
+        sent = gfx_sets_work();
+        gfx_up_bytes += sent;
+        if (draw) {
+            gx.BindFramebuffer(GX_FRAMEBUFFER, 0);
+            if (!gx.QuerySurface || !gx.QuerySurface(dpy, surf, GX_EGL_WIDTH, &w) ||
+                !gx.QuerySurface(dpy, surf, GX_EGL_HEIGHT, &h) || w <= 0 || h <= 0)
+                w = vp[2], h = vp[3];
+            if (w > 0 && h > 0) {
+                gx.Viewport(0, 0, w, h);
+                if (gx.ColorMask) gx.ColorMask(1, 1, 1, 1);
+                gx.Disable(GX_CULL_FACE); gx.Disable(GX_DEPTH_TEST); gx.Disable(GX_SCISSOR_TEST);
+                gx.Disable(GX_STENCIL_TEST); gx.Disable(GX_ALPHA_TO_COVERAGE); gx.Disable(GX_SAMPLE_COVERAGE);
+                gx.Enable(GX_BLEND);
+                /* premultiplied over the game's frame (the backend contract, video_mode_maker.md section 4); its alpha
+                 * (what the display composites by, if anything) is left as it was */
+                gx.BlendFuncSeparate(GX_ONE, GX_ONE_MINUS_SRC_ALPHA, GX_ZERO, GX_ONE);
+                if (gx.BlendEquationSeparate) gx.BlendEquationSeparate(GX_FUNC_ADD, GX_FUNC_ADD);
+                gx.UseProgram(gx_prog);
+                gfx_draw(L, w, h);
+            }
+        }
+    }
+
+    /* everything put back as the game had it */
+    gx.BindTexture(GX_TEXTURE_2D, (unsigned)tex0);
+    gx.ActiveTexture((unsigned)unit);
+    gx.BindVertexArray((unsigned)vao);
+    gx.BindBuffer(GX_ARRAY_BUFFER, (unsigned)abuf);
+    gx.UseProgram((unsigned)prog);
+    gx.BlendFuncSeparate((unsigned)bsr, (unsigned)bdr, (unsigned)bsa, (unsigned)bda);
+    if (gx.BlendEquationSeparate) gx.BlendEquationSeparate((unsigned)ber, (unsigned)bea);
+    (blend ? gx.Enable : gx.Disable)(GX_BLEND);
+    (cull ? gx.Enable : gx.Disable)(GX_CULL_FACE);
+    (depth ? gx.Enable : gx.Disable)(GX_DEPTH_TEST);
+    (sc ? gx.Enable : gx.Disable)(GX_SCISSOR_TEST);
+    (st ? gx.Enable : gx.Disable)(GX_STENCIL_TEST);
+    (a2c ? gx.Enable : gx.Disable)(GX_ALPHA_TO_COVERAGE);
+    (scov ? gx.Enable : gx.Disable)(GX_SAMPLE_COVERAGE);
+    if (gx.ColorMask) gx.ColorMask(cm[0], cm[1], cm[2], cm[3]);
+    gx.Viewport(vp[0], vp[1], vp[2], vp[3]);
+    gx.BindFramebuffer(GX_FRAMEBUFFER, (unsigned)fb);
+}
+
+static unsigned gfx_swap(void *dpy, void *surf)
+{
+    struct gfx_list *L;
+    int s, work = 0;
+    gfx_swaps++;
+    if (gfx_ready & GFX_FRESH) {                              /* the tick handed over a newer list: take it */
+        gfx_front = __sync_lock_test_and_set(&gfx_ready, gfx_front) & 3u;
+        gfx_lists_taken++;
+    }
+    L = &gfx_list[gfx_front];
+    for (s = 0; s < GFX_SETS; s++) work |= gfx_set[s].state == GFX_LOADED || gfx_set[s].state == GFX_DROP;
+    if (gfx_gl_ok >= 0 && (work || L->n_v > 6 || L->cover)) {
+        unsigned long long t = gfx_now_us(), dt;
+        int draw = L->n_v > 6 || L->cover;
+        gfx_frame(dpy, surf, L, draw);
+        if (draw) {
+            gfx_drawn++;
+            gfx_quads_sum += L->quads;
+            if (L->quads > gfx_quads_max) gfx_quads_max = L->quads;
+        }
+        dt = gfx_now_us() - t;
+        gfx_us_sum += dt;
+        if (dt > gfx_us_max) gfx_us_max = dt;
+    }
+    return gfx_next(dpy, surf);
+}
+
+/* ---- the tick's part ------------------------------------------------------------------------------------------- */
+static void gfx_publish(unsigned n_v, unsigned n_b, unsigned quads)
+{
+    struct gfx_list *L = &gfx_list[gfx_back];
+    L->n_v = n_v;
+    L->n_b = n_b;
+    L->quads = quads;
+    L->cover = gfx_cover_on;
+    L->cover_rgb = gfx_cover_rgb;
+    L->stage_w = gfx_stage_w;
+    L->stage_h = gfx_stage_h;
+    __sync_synchronize();
+    gfx_back = __sync_lock_test_and_set(&gfx_ready, gfx_back | GFX_FRESH) & 3u;
+}
+
+static int gfx_owns(int set)
+{
+    return set >= 1 && set <= GFX_SETS && gfx_set[set - 1].owner == current &&
+           (gfx_set[set - 1].state == GFX_LOADED || gfx_set[set - 1].state == GFX_READY);
+}
+
+static void gfx_drop(int s, const char *why)
+{
+    if (__sync_bool_compare_and_swap(&gfx_set[s].state, GFX_LOADED, GFX_DROP) ||
+        __sync_bool_compare_and_swap(&gfx_set[s].state, GFX_READY, GFX_DROP))
+        say("gfx: %s's pictures (%s) let go - %s", mode_name(gfx_set[s].owner, "a mode"), gfx_set[s].file, why);
+}
+
+static void gfx_tick(void)
+{
+    unsigned long now;
+    int s;
+    if (gfx_armed <= 0) return;
+    for (s = 0; s < GFX_SETS; s++) {
+        int st = gfx_set[s].state;
+        if (st != GFX_LOADED && st != GFX_READY) continue;
+        if (runs_now(gfx_set[s].owner)) gfx_set[s].ran = 1;
+        else if (gfx_set[s].ran) gfx_drop(s, "its mode ended");
+    }
+    if (gfx_drawer && !runs_now(gfx_drawer)) {               /* its list off the glass, and the cover with it */
+        say("gfx: %s ended - its pictures are off the glass; the display is the game's", mode_name(gfx_drawer, "a mode"));
+        gfx_drawer = 0;
+        gfx_cover_on = 0;
+        gfx_open = 0;
+        gfx_publish(6, 0, 0);
+    }
+    now = pm_ms();
+    if (now - gfx_minute >= 60000) {
+        unsigned long secs = (now - gfx_minute) / 1000, kb = 0, rss = 0;
+        unsigned sw = gfx_swaps, dr = gfx_drawn, qs = gfx_quads_sum, qm = gfx_quads_max, n_sets = 0;
+        unsigned cs = gfx_calls_sum, cm = gfx_calls_max;
+        unsigned long long us = gfx_us_sum, um = gfx_us_max;
+        char st[1024];
+        long n = pm_read_file("/proc/self/status", st, sizeof st - 1);
+        gfx_swaps = gfx_drawn = gfx_quads_sum = gfx_quads_max = gfx_calls_sum = gfx_calls_max = 0;
+        gfx_us_sum = gfx_us_max = 0;
+        if (n > 0) {
+            char *p;
+            st[n] = 0;
+            for (p = st; *p; p++)
+                if (p[0] == 'V' && p[1] == 'm' && p[2] == 'R' && p[3] == 'S' && p[4] == 'S' && p[5] == ':') {
+                    for (p += 6; *p == ' ' || *p == '\t'; p++) ;
+                    while (*p >= '0' && *p <= '9') rss = rss * 10 + (unsigned long)(*p++ - '0');
+                    break;
+                }
+        }
+        for (s = 0; s < GFX_SETS; s++)
+            if (gfx_set[s].state == GFX_LOADED || gfx_set[s].state == GFX_READY) {
+                unsigned k;
+                n_sets++;
+                for (k = 0; k < gfx_set[s].pics; k++)
+                    kb += (unsigned long)gfx_pic[gfx_set[s].pic0 + k].w * gfx_pic[gfx_set[s].pic0 + k].h * 4 / 1024;
+            }
+        if (secs && (sw || dr))
+            say("gfx: in the last %lu s %u frame(s) went to the glass (%u.%u a second), %u with our pictures (%u quads a "
+                "frame on average, %u at most; %u draw calls on average, %u at most); our part of a frame %llu us on "
+                "average, %llu at most; building a list "
+                "%lu us on average, %lu at most (%lu lists); %u set(s) held, %lu KB of pictures on GL; the process %lu KB",
+                secs, sw, (unsigned)(sw / secs), (unsigned)(sw * 10 / secs % 10), dr, dr ? qs / dr : 0, qm,
+                dr ? cs / dr : 0, cm,
+                sw ? us / sw : 0, um, gfx_ends ? gfx_end_us_sum / gfx_ends : 0, gfx_end_us_max, gfx_ends, n_sets, kb, rss);
+        gfx_end_us_sum = gfx_end_us_max = gfx_ends = 0;
+        gfx_minute = now;
+    }
+}
+
+/* ---- the mode's calls ---------------------------------------------------------------------------------------- */
+static unsigned gfx_u16(const unsigned char *p) { return (unsigned)p[0] | (unsigned)p[1] << 8; }
+static unsigned gfx_u32(const unsigned char *p) { return gfx_u16(p) | gfx_u16(p + 2) << 16; }
+
+int pm_gfx_load(const char *file)
+{
+    static const char *const dirs[] = { "/usr/local/padmode/", "/dump/" };
+    char path[160];
+    unsigned char *m = (unsigned char *)-1;
+    long len = -1, got = 0, r;
+    unsigned n_pics, n_fonts, n_glyphs, i, k, run, pic0 = 0, first = 0;
+    int fd = -1, s, d;
+    if (!current || !file || !*file) return 0;
+    if (!gfx_arm()) { pm_log("pictures: not loaded - the drawing is off on this game (the log says why)"); return 0; }
+    for (s = 0; s < GFX_SETS && gfx_set[s].state != GFX_FREE; s++) ;
+    if (s == GFX_SETS) { pm_log("pictures: %s not loaded - %d sets are held already", file, GFX_SETS); return 0; }
+    for (d = 0; d < 2 && fd < 0; d++) {
+        if (file[0] == '/') { pm_snprintf(path, sizeof path, "%s", file); d = 2; }
+        else pm_snprintf(path, sizeof path, "%s%s", dirs[d], file);
+        fd = open(path, O_RDONLY);
+    }
+    if (fd < 0) { pm_log("pictures: %s not found (beside mode.so, or in /dump)", file); return 0; }
+    len = lseek(fd, 0, 2);
+    if (len >= 24 && (unsigned long)len <= GFX_FILE_MAX && lseek(fd, 0, 0) == 0)
+        m = (unsigned char *)mmap(0, (unsigned long)len, 3, 0x22, -1, 0);   /* PROT_READ|WRITE, MAP_PRIVATE|ANONYMOUS */
+    if (m == (unsigned char *)-1) {
+        close(fd);
+        pm_log("pictures: %s not loaded - %ld bytes (24 to %lu MB)", path, len, GFX_FILE_MAX >> 20);
+        return 0;
+    }
+    while (got < len && (r = read(fd, m + got, (unsigned long)(len - got))) > 0) got += r;
+    close(fd);
+#define GFX_BAD(why) do { pm_log("pictures: %s not loaded - %s", path, why); munmap(m, (unsigned long)len); return 0; } while (0)
+    if (got != len) GFX_BAD("it did not read whole");
+    if (m[0] != 'P' || m[1] != 'A' || m[2] != 'D' || m[3] != 'G' || m[4] != 'F' || m[5] != 'X' || m[6] != '1')
+        GFX_BAD("not a picture set (PADGFX1)");
+    n_pics = gfx_u32(m + 8), n_fonts = gfx_u32(m + 12), n_glyphs = gfx_u32(m + 16);
+    if (n_pics > GFX_PICS || n_fonts > GFX_FONTS || n_glyphs > GFX_GLYPHS ||
+        24ul + 40ul * (n_pics + n_fonts) + 16ul * n_glyphs > (unsigned long)len)
+        GFX_BAD("its tables are too big for it");
+    for (i = 0, run = 0; n_pics && i < GFX_PICS && run < n_pics; i++) {   /* a run of free picture entries */
+        if (gfx_pic[i + 1].set) run = 0;
+        else if (++run == n_pics) pic0 = i + 2 - n_pics;
+    }
+    if (n_pics && run < n_pics) GFX_BAD("the pictures of the sets held fill the table");
+    for (i = 0, run = 0; n_glyphs && i < GFX_GLYPHS && run < n_glyphs; i++) {
+        if (gfx_glyph_set[i]) run = 0;
+        else if (++run == n_glyphs) first = i + 1 - n_glyphs;
+    }
+    if (n_glyphs && run < n_glyphs) GFX_BAD("the fonts of the sets held fill the glyph table");
+    for (i = 0, k = 0; i < GFX_FONTS && k < n_fonts; i++) k += !gfx_font[i].set;
+    if (k < n_fonts) GFX_BAD("the fonts of the sets held fill the font table");
+    for (i = 0; i < n_pics; i++) {
+        const unsigned char *e = m + 24 + 40 * i;
+        unsigned w = gfx_u16(e + 24), h = gfx_u16(e + 26), off = gfx_u32(e + 28);
+        if (!w || !h || w > GFX_SIDE_MAX || h > GFX_SIDE_MAX || (off & 3) ||
+            (unsigned long)off + (unsigned long)w * h * 4 > (unsigned long)len)
+            GFX_BAD("a picture's size or place is wrong");
+    }
+    for (i = 0; i < n_fonts; i++) {
+        const unsigned char *e = m + 24 + 40 * (n_pics + i);
+        if (gfx_u16(e + 24) >= n_pics || gfx_u32(e + 32) + gfx_u32(e + 36) > n_glyphs) GFX_BAD("a font's table is wrong");
+    }
+#undef GFX_BAD
+    for (i = 0; i < n_pics; i++) {
+        const unsigned char *e = m + 24 + 40 * i;
+        struct gfx_pic *p = &gfx_pic[pic0 + i];
+        for (k = 0; k < 23 && e[k]; k++) p->name[k] = (char)e[k];
+        p->name[k] = 0;
+        p->w = (unsigned short)gfx_u16(e + 24);
+        p->h = (unsigned short)gfx_u16(e + 26);
+        p->px = m + gfx_u32(e + 28);
+        p->pm = (unsigned char)(gfx_u32(e + 32) & 1u);       /* flags bit 0: its colours are premultiplied */
+        p->tex = 0;
+        p->set = (unsigned char)(s + 1);
+    }
+    for (i = 0; i < n_glyphs; i++) {
+        const unsigned char *e = m + 24 + 40 * (n_pics + n_fonts) + 16 * i;
+        struct gfx_glyph *g = &gfx_glyph[first + i];
+        g->cp = (unsigned short)gfx_u16(e); g->x = (unsigned short)gfx_u16(e + 2); g->y = (unsigned short)gfx_u16(e + 4);
+        g->w = (unsigned short)gfx_u16(e + 6); g->h = (unsigned short)gfx_u16(e + 8);
+        g->ox = (short)gfx_u16(e + 10); g->oy = (short)gfx_u16(e + 12); g->adv = (short)gfx_u16(e + 14);
+        gfx_glyph_set[first + i] = (unsigned char)(s + 1);
+    }
+    for (i = 0, k = 0; i < n_fonts; i++) {
+        const unsigned char *e = m + 24 + 40 * (n_pics + i);
+        struct gfx_font *f;
+        unsigned c;
+        while (gfx_font[k].set) k++;
+        f = &gfx_font[k];
+        for (c = 0; c < 23 && e[c]; c++) f->name[c] = (char)e[c];
+        f->name[c] = 0;
+        f->pic = (unsigned short)(pic0 + gfx_u16(e + 24));
+        f->size = (unsigned short)gfx_u16(e + 26);
+        f->line_h = (unsigned short)gfx_u16(e + 28);
+        f->ascent = (short)gfx_u16(e + 30);
+        f->first = first + gfx_u32(e + 32);
+        f->n = gfx_u32(e + 36);
+        f->set = (unsigned char)(s + 1);
+    }
+    gfx_set[s].owner = current;
+    gfx_set[s].ran = runs_now(current);
+    gfx_set[s].map = m;
+    gfx_set[s].len = (unsigned long)len;
+    gfx_set[s].pic0 = pic0;
+    gfx_set[s].pics = n_pics;
+    gfx_set[s].up_next = 0;
+    for (k = 0; k + 1 < sizeof gfx_set[s].file && file[k]; k++) gfx_set[s].file[k] = file[k];
+    gfx_set[s].file[k] = 0;
+    __sync_synchronize();
+    gfx_set[s].state = GFX_LOADED;
+    pm_log("pictures: %s loaded - %u picture(s), %u font(s), %ld KB; they go to GL over the next frames", path, n_pics,
+           n_fonts, len / 1024);
+    return s + 1;
+}
+
+int pm_gfx_ready(int set) { return set >= 1 && set <= GFX_SETS && gfx_set[set - 1].state == GFX_READY; }
+
+void pm_gfx_free(int set)
+{
+    if (gfx_owns(set)) gfx_drop(set - 1, "pm_gfx_free");
+}
+
+int pm_gfx_picture(int set, const char *name)
+{
+    unsigned i;
+    if (!gfx_owns(set) || !name) return 0;
+    for (i = 0; i < gfx_set[set - 1].pics; i++)
+        if (gfx_streq(gfx_pic[gfx_set[set - 1].pic0 + i].name, name)) return (int)(gfx_set[set - 1].pic0 + i);
+    return 0;
+}
+
+int pm_gfx_picture_size(int pic, unsigned *w, unsigned *h)
+{
+    if (pic < 1 || pic > GFX_PICS || !gfx_pic[pic].set) return 0;
+    if (w) *w = gfx_pic[pic].w;
+    if (h) *h = gfx_pic[pic].h;
+    return 1;
+}
+
+int pm_gfx_font(int set, const char *name)
+{
+    int i;
+    if (!gfx_owns(set)) return 0;
+    for (i = 0; i < GFX_FONTS; i++)
+        if (gfx_font[i].set == set && (!name || !*name || gfx_streq(gfx_font[i].name, name))) return i + 1;
+    return 0;
+}
+
+void pm_gfx_stage(unsigned w, unsigned h)
+{
+    if (w >= 16 && h >= 16 && w <= 8192 && h <= 8192) gfx_stage_w = (float)w, gfx_stage_h = (float)h;
+}
+
+void pm_gfx_cover(int on, unsigned rgb)
+{
+    if (!runs_now(current)) return;
+    gfx_cover_on = on != 0;
+    gfx_cover_rgb = rgb & 0xffffffu;
+}
+
+int pm_gfx_begin(void)
+{
+    if (!current || !runs_now(current) || gfx_armed <= 0) return 0;
+    gfx_open = 1;
+    gfx_nq = gfx_over = 0;
+    return 1;
+}
+
+/* sin and cos of a turn in degrees: the quarter turn it is nearest, then a short series on what is left (|x| <= pi/4) */
+static void gfx_sincos(float deg, float *s, float *c)
+{
+    float r = deg / 90.0f, x, x2, sn, cs;
+    long q = (long)(r < 0 ? r - 0.5f : r + 0.5f);
+    x = (r - (float)q) * 1.5707963268f;
+    x2 = x * x;
+    sn = x * (1 - x2 / 6 * (1 - x2 / 20 * (1 - x2 / 42 * (1 - x2 / 72))));
+    cs = 1 - x2 / 2 * (1 - x2 / 12 * (1 - x2 / 30 * (1 - x2 / 56)));
+    switch ((unsigned long)q & 3u) {
+    case 0: *s = sn; *c = cs; break;
+    case 1: *s = cs; *c = -sn; break;
+    case 2: *s = -sn; *c = -cs; break;
+    default: *s = -cs; *c = sn; break;
+    }
+}
+
+static unsigned char gfx_byte(float f)
+{
+    return f <= 0 ? 0 : f >= 1 ? 255 : (unsigned char)(f * 255.0f + 0.5f);
+}
+
+int pm_gfx_quad(const struct pm_quad *q)
+{
+    float sw, sh, w, h, sn = 0, cs = 1, u0 = 0.5f, v0 = 0.5f, u1 = 0.5f, v1 = 0.5f, a;
+    unsigned tint, i;
+    unsigned char c[4];
+    struct gfx_vert *v;
+    static const unsigned char cx[6] = { 0, 1, 0, 1, 1, 0 }, cy[6] = { 0, 0, 1, 0, 1, 1 };
+    if (!gfx_open || !q || q->alpha <= 0) return gfx_open && q;
+    if (gfx_nq >= GFX_QUADS) { gfx_over++; return 0; }
+    if (q->pic) {
+        const struct gfx_pic *p;
+        if (q->pic < 1 || q->pic > GFX_PICS || !gfx_pic[q->pic].set) return 0;
+        p = &gfx_pic[q->pic];
+        sw = q->sw > 0 ? q->sw : p->w;
+        sh = q->sh > 0 ? q->sh : p->h;
+        u0 = (q->sw > 0 ? q->sx : 0) / p->w; u1 = u0 + sw / p->w;
+        v0 = (q->sh > 0 ? q->sy : 0) / p->h; v1 = v0 + sh / p->h;
+    } else {
+        sw = q->sw;
+        sh = q->sh;
+    }
+    w = sw * (q->scale_x != 0 ? q->scale_x : 1);
+    h = sh * (q->scale_y != 0 ? q->scale_y : 1);
+    if (q->turn != 0) gfx_sincos(q->turn, &sn, &cs);
+    tint = q->tint ? q->tint : 0xffffffu;
+    a = q->alpha > 1 ? 1 : q->alpha;
+    c[0] = gfx_byte((float)(tint >> 16 & 255u) / 255 * a);      /* premultiplied: (tint x alpha, alpha) */
+    c[1] = gfx_byte((float)(tint >> 8 & 255u) / 255 * a);
+    c[2] = gfx_byte((float)(tint & 255u) / 255 * a);
+    c[3] = gfx_byte(a);
+    v = gfx_qv[gfx_nq];
+    for (i = 0; i < 6; i++) {                                    /* turned and scaled about the anchor */
+        float dx = ((float)cx[i] - q->ax) * w, dy = ((float)cy[i] - q->ay) * h;
+        v[i].x = q->x + dx * cs - dy * sn;
+        v[i].y = q->y + dx * sn + dy * cs;
+        v[i].u = cx[i] ? u1 : u0;
+        v[i].v = cy[i] ? v1 : v0;
+        v[i].c[0] = c[0]; v[i].c[1] = c[1]; v[i].c[2] = c[2]; v[i].c[3] = c[3];
+    }
+    gfx_q[gfx_nq].depth = q->depth;
+    gfx_q[gfx_nq].seq = (unsigned short)gfx_nq;
+    gfx_q[gfx_nq].pic = (unsigned short)q->pic;
+    gfx_q[gfx_nq].add = q->blend == PM_GFX_ADD;
+    gfx_nq++;
+    return 1;
+}
+
+int pm_gfx_box(float x, float y, float w, float h, unsigned rgb, float alpha, float depth)
+{
+    struct pm_quad q = { 0 };
+    q.sw = w; q.sh = h; q.x = x; q.y = y; q.alpha = alpha; q.depth = depth;
+    q.tint = rgb ? rgb : 0x000001u;                          /* a box's 0 is black, not "the picture's own colours" */
+    return pm_gfx_quad(&q);
+}
+
+static const struct gfx_glyph *gfx_glyph_of(const struct gfx_font *f, unsigned cp)
+{
+    unsigned lo = 0, hi = f->n;
+    while (lo < hi) {
+        unsigned mid = (lo + hi) / 2;
+        unsigned c = gfx_glyph[f->first + mid].cp;
+        if (c == cp) return &gfx_glyph[f->first + mid];
+        if (c < cp) lo = mid + 1; else hi = mid;
+    }
+    return 0;
+}
+
+/* the next character of UTF-8 text (a byte that is not UTF-8 is taken as Latin-1) */
+static unsigned gfx_utf8(const char **sp)
+{
+    const unsigned char *s = (const unsigned char *)*sp;
+    unsigned c = *s++;
+    if (c >= 0xc0 && c < 0xe0 && (s[0] & 0xc0) == 0x80) c = (c & 0x1f) << 6 | (s[0] & 0x3f), s++;
+    else if (c >= 0xe0 && c < 0xf0 && (s[0] & 0xc0) == 0x80 && (s[1] & 0xc0) == 0x80)
+        c = (c & 0x0f) << 12 | (unsigned)(s[0] & 0x3f) << 6 | (s[1] & 0x3f), s += 2;
+    *sp = (const char *)s;
+    return c;
+}
+
+static float gfx_line_width(const struct gfx_font *f, const char *s, float k)
+{
+    float w = 0;
+    while (*s && *s != '\n') {
+        const struct gfx_glyph *g = gfx_glyph_of(f, gfx_utf8(&s));
+        if (!g) g = gfx_glyph_of(f, ' ');
+        if (g) w += g->adv * k / 8;
+    }
+    return w;
+}
+
+float pm_gfx_text_width(int font, const char *s, float size)
+{
+    const struct gfx_font *f;
+    float k, w = 0;
+    if (font < 1 || font > GFX_FONTS || !s || !gfx_font[font - 1].set) return 0;
+    f = &gfx_font[font - 1];
+    k = size > 0 ? size / f->size : 1;
+    for (;;) {
+        float lw = gfx_line_width(f, s, k);
+        if (lw > w) w = lw;
+        while (*s && *s != '\n') s++;
+        if (!*s++) break;
+    }
+    return w;
+}
+
+float pm_gfx_text(int font, const char *s, float x, float y, float size, int align, unsigned rgb, float alpha,
+                  float depth)
+{
+    const struct gfx_font *f;
+    float k, top = y, widest = 0;
+    if (!gfx_open || font < 1 || font > GFX_FONTS || !s || !gfx_font[font - 1].set) return 0;
+    f = &gfx_font[font - 1];
+    k = size > 0 ? size / f->size : 1;
+    for (;;) {
+        float lw = gfx_line_width(f, s, k), pen = x;
+        if (lw > widest) widest = lw;
+        if (align == PM_ALIGN_CENTER) pen = x - lw / 2;
+        else if (align == PM_ALIGN_RIGHT) pen = x - lw;
+        while (*s && *s != '\n') {
+            unsigned cp = gfx_utf8(&s);
+            const struct gfx_glyph *g = gfx_glyph_of(f, cp);
+            if (!g) g = gfx_glyph_of(f, '?');
+            if (!g) continue;
+            if (g->w && g->h) {
+                struct pm_quad q = { 0 };
+                q.pic = f->pic;
+                q.sx = g->x; q.sy = g->y; q.sw = g->w; q.sh = g->h;
+                q.scale_x = q.scale_y = k;
+                q.x = pen + (g->ox / 8.0f) * k;
+                q.y = top + (f->ascent + g->oy / 8.0f) * k;
+                q.alpha = alpha; q.tint = rgb; q.depth = depth;
+                pm_gfx_quad(&q);
+            }
+            pen += g->adv * k / 8;
+        }
+        if (!*s++) break;
+        top += f->line_h * k;
+    }
+    return widest;
+}
+
+int pm_gfx_end(void)
+{
+    struct gfx_list *L;
+    unsigned long long t0;
+    unsigned i, n_v = 6, n_b = 0, w;
+    if (!gfx_open) return 0;
+    gfx_open = 0;
+    t0 = gfx_now_us();
+    /* by depth, the call order kept among equals: a bottom-up merge sort */
+    for (w = 1; w < gfx_nq; w *= 2) {
+        unsigned lo;
+        for (lo = 0; lo < gfx_nq; lo += 2 * w) {
+            unsigned mid = lo + w < gfx_nq ? lo + w : gfx_nq, hi = lo + 2 * w < gfx_nq ? lo + 2 * w : gfx_nq;
+            unsigned a = lo, b = mid, o = lo;
+            while (a < mid && b < hi) gfx_qt[o++] = gfx_q[b].depth < gfx_q[a].depth ? gfx_q[b++] : gfx_q[a++];
+            while (a < mid) gfx_qt[o++] = gfx_q[a++];
+            while (b < hi) gfx_qt[o++] = gfx_q[b++];
+        }
+        for (lo = 0; lo < gfx_nq; lo++) gfx_q[lo] = gfx_qt[lo];
+    }
+    L = &gfx_list[gfx_back];
+    for (i = 0; i < gfx_nq; i++) {
+        unsigned k;
+        if (!n_b || L->b_pic[n_b - 1] != gfx_q[i].pic || L->b_add[n_b - 1] != gfx_q[i].add) {
+            if (n_b == GFX_BATCHES) { gfx_over += gfx_nq - i; break; }
+            L->b_pic[n_b] = gfx_q[i].pic;
+            L->b_add[n_b] = gfx_q[i].add;
+            L->b_first[n_b] = n_v;
+            L->b_n[n_b] = 0;
+            n_b++;
+        }
+        for (k = 0; k < 6; k++) L->v[n_v + k] = gfx_qv[gfx_q[i].seq][k];
+        n_v += 6;
+        L->b_n[n_b - 1] += 6;
+    }
+    gfx_publish(n_v, n_b, (n_v - 6) / 6);
+    gfx_drawer = current;
+    {
+        unsigned long dt = (unsigned long)(gfx_now_us() - t0);
+        gfx_end_us_sum += dt;
+        if (dt > gfx_end_us_max) gfx_end_us_max = dt;
+        gfx_ends++;
+    }
+    if (!gfx_said_draw) {
+        gfx_said_draw = 1;
+        say("gfx: %s draws its first list - %u quad(s)%s", mode_name(current, "a mode"), (n_v - 6) / 6,
+            gfx_cover_on ? ", the game's display covered" : "");
+    }
+    if (gfx_over && !gfx_said_over)
+        pm_log("pictures: %u quad(s) over the %u a list takes were left out (said once)", gfx_over, GFX_QUADS);
+    gfx_said_over |= gfx_over != 0;
+    return 1;
+}
+
+void pm_gfx_clear(void)
+{
+    if (!current || !runs_now(current) || gfx_armed <= 0) return;
+    gfx_cover_on = 0;
+    gfx_open = 0;
+    gfx_publish(6, 0, 0);
+    gfx_drawer = current;
 }
