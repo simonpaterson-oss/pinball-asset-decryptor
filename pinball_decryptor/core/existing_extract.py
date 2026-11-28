@@ -146,5 +146,9 @@ def changes_line(rows):
     """``"0 changes since it was extracted"`` or ``"Changed since it was extracted: ..."``."""
     if not rows:
         return "0 changes since it was extracted."
-    return "Changed since it was extracted: " + ", ".join(
-        "%d %s" % (n, label[:1].lower() + label[1:]) for label, n in rows) + "."
+    def _one(label, n):
+        label = label[:1].lower() + label[1:]
+        if n == 1 and label.endswith("s"):          # "1 modes" (Simon's screenshot)
+            label = label[:-1]
+        return "%d %s" % (n, label)
+    return "Changed since it was extracted: " + ", ".join(_one(l, n) for l, n in rows) + "."
