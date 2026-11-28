@@ -221,6 +221,25 @@ def test_rhythm_three_minutes_stays_on_the_beat():
     assert te.lines(te.run(te.wasm(), p, "--bot", "--max", 13000).stdout) == te.lines(out)
 
 
+def test_rhythm_starts_its_music_from_the_top_even_when_it_was_playing():
+    """Music plays on across phases (PAD-1667), but a rhythm phase's chart is timed from its music's start: a
+    phase before it on the same bed is stopped and the bed started again, on the rhythm phase's first step."""
+    def mutate(doc):
+        doc["values"] = [{"id": "power", "type": "meter", "start": 0, "min": 0, "max": 100}]
+        mash = {"id": "warm", "kind": "mash", "music": "beat", "length_s": 2, "settings": {"meter": "power"},
+                "win": [{"when": "time_up"}], "lose": [{"when": "health_gone"}]}
+        doc["phases"].insert(0, mash)
+        cards = doc["flow"]["cards"]
+        cards.insert(0, {"id": "c_warm", "card": "phase", "phase": "warm", "won": cards[0]["id"], "lost": cards[0]["id"]})
+        doc["flow"]["start"] = "c_warm"
+    out = te.run(te.native(), pack("rhythm", mutate), "--inputs", bytes(800), "--max", 800).stdout
+    cues = [tuple(int(v) for v in x.split()[1:5]) for x in out.splitlines() if x.startswith("C ")]
+    starts = [c for c in cues if c[2] == 1]
+    assert len(starts) == 2 and starts[0][0] == 0, cues          # the warm-up's bed, then the rhythm's again
+    k = cues.index(starts[1])
+    assert cues[k - 1][2] == 2 and cues[k - 1][0] == starts[1][0] and cues[k - 1][1] == starts[1][1], cues
+
+
 def test_tug_needs_the_named_flipper_held():
     """Mashing Action alone pulls nothing; with the named flipper held it pulls."""
     def mutate(doc):

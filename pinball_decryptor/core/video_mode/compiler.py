@@ -19,12 +19,13 @@ import os
 import struct
 
 from . import document
+from . import sound as SND
 
 ONE = 65536
 SPS = 60
 NONE = -0x80000000
 PACK_MAGIC = 0x31504D56
-PACK_VERSION = 3   # 3: the notes table (PAD-1663)
+PACK_VERSION = 3   # 2 (PAD-1667): a phase's music fade, a cue's fade; 3 (PAD-1663): the notes table
 END_MAGIC = 0x21444E45
 FONT_ATLAS_BASE = 1000      # placeholder glyph atlases sit after the pictures' (PAD-1658 packs both)
 GLYPHS = 95
@@ -223,6 +224,7 @@ class _Compiler:
         self.pics = a.get("pictures", [])
         self.pic_ix = {p["id"]: i for i, p in enumerate(self.pics)}
         self.sound_ix = {s["id"]: i for i, s in enumerate(a.get("sounds", []))}
+        self.sound_by_id = {s["id"]: s for s in a.get("sounds", [])}
         self.clip_ix = {c["id"]: i for i, c in enumerate(a.get("clips", []))}
         self.font_list = a.get("fonts", [])
         self.font_ix = {f["id"]: i for i, f in enumerate(self.font_list)}
@@ -512,7 +514,7 @@ class _Compiler:
                     rec[3] = ["left", "right", "either"].index(s.get("start_side", "either"))
                     rec[4] = goal
             if kind in BUTTON_KINDS:
-                self.button_kind(kind, s, rec, where)
+                self.button_kind(kind, ph, s, rec, where)
             settings.append(rec)
             bg0 = len(layers)
             for l in ph.get("background", []):
@@ -538,15 +540,15 @@ class _Compiler:
                 conds.append(self.cond(c))
             ramp = ph.get("ramp", {})
             phases.append([KINDS.index(kind), self.string(ph.get("title", ph["id"])), self.string(ph.get("objective", "")),
-                           steps(ph.get("length_s", 0)),
-                           self.sound_ix.get(ph.get("music", s.get("music") if kind == "rhythm" else None), -1),
+                           steps(ph.get("length_s", 0)), self.sound_ix.get(SND.phase_music(ph), -1),
                            bg0, len(layers) - bg0, pl0, len(places) - pl0, sp0, len(spawns) - sp0,
                            w0, l0 - w0, l0, len(conds) - l0, 1 if ph.get("layout") == "fixed" else 0,
-                           fx(ramp.get("speed_from", 1)), fx(ramp.get("speed_to", ramp.get("speed_from", 1))), i])
+                           fx(ramp.get("speed_from", 1)), fx(ramp.get("speed_to", ramp.get("speed_from", 1))), i,
+                           steps(SND.fade_s(self.sound_by_id.get(SND.phase_music(ph))))])
         return phases, layers, places, spawns, conds, settings, weak, atk
 
     # ---- the button kinds (PAD-1663): their settings words are vm_kinds2.c's ----
-    def button_kind(self, kind, s, rec, where):
+    def button_kind(self, kind, ph, s, rec, where):
         if kind == "tug":
             m = self.value_ix.get(s.get("meter"), -1)
             if m < 0:
@@ -565,13 +567,13 @@ class _Compiler:
                 self.problem(where + ["settings", "meter"], "the meter starts empty, so the tug of war would be lost at once: "
                                                             "start it part way up (its start above its min)")
         elif kind == "rhythm":
-            snd = next((x for x in self.doc.get("assets", {}).get("sounds", []) if x.get("id") == s.get("music")), {})
-            tempo = s.get("tempo_bpm", snd.get("tempo_bpm"))
-            if not tempo:
+            # the beat grid: the phase's own tempo_bpm / offset_ms where it sets them, else its music's (PAD-1667)
+            g = SND.beat_grid(self.doc, ph)
+            if not g:
                 self.problem(where + ["settings", "tempo_bpm"], "a rhythm phase needs a tempo: set one, or tap it in on its music")
-                tempo = 120
-            tempo = float(tempo)
-            offset = float(s["offset_ms"]) if "offset_ms" in s else 1000.0 * float(snd.get("beat_offset_s", 0))
+                g = {"bpm": 120.0, "offset_s": 0.0, "per_bar": 4}
+            tempo = g["bpm"]
+            offset = 1000.0 * g["offset_s"]
             beat_ms = 60000.0 / tempo
             good = float(s.get("good_ms", 100))
             chart = sorted(s.get("chart", []), key=lambda n: float(n.get("beat", 0)))
@@ -589,7 +591,7 @@ class _Compiler:
             rec[7] = int(round(offset))
             last = max((c[0] + c[2] for c in self.chart[rec[1]:]), default=0)
             rec[8] = last + int(2 * good) + 400
-            rec[9] = max(1, int(snd.get("beats_per_bar", 4)))
+            rec[9] = max(1, int(g["per_bar"]))
             if rec[3] > rec[4]:
                 self.problem(where + ["settings", "perfect_ms"], "the perfect window is wider than the good one")
             early = [c for c in self.chart[rec[1]:] if c[0] < TITLE_MS + good]
@@ -661,7 +663,10 @@ class _Compiler:
         return out, callout_font, title_font
 
     def build_cues(self):
-        return [[CUE_ON.index(c["on"]), self.sound_ix[c["sound"]], 1 if c.get("duck_music") else 0]
+        # PAD-1667: a sound ducks the music wherever it plays when it is a callout or any cue of it says duck_music
+        # (the machine ducks per call, not per event), so every cue of it carries the same flag
+        duck = SND.ducks(self.doc)
+        return [[CUE_ON.index(c["on"]), self.sound_ix[c["sound"]], 1 if duck.get(c["sound"]) else 0]
                 for c in self.doc.get("cues", [])]
 
     def check_limits(self, fonts, pics, anims, frames, values, kinds, phases, layers, places, spawns,

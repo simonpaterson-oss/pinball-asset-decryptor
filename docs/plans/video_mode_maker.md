@@ -227,7 +227,11 @@ machines (section 1b).
 A single press after a charge ("UNLEASH", "THROW IT") is a `timing` phase with a wide
 window; title cards are part of every phase (its `title` and `objective`).
 
-## 3 The document: video_mode.json, format 1
+## 3 The document: video_mode.json, format 2
+
+Format 2 (PAD-1667) added the music's `fade_s` and beat grid (`tempo_bpm`, `beat_offset_s`,
+`beats_per_bar`) to `sounds` and let a `rhythm` phase take its tempo from its music; a format 1
+file migrates unchanged but for its number.
 
 One file per video mode: `<project>/modes/<slug>/video_mode.json`, beside the mode's art,
 sound and clip files. The schema is
@@ -307,7 +311,10 @@ A `hitbox` has a `shape` (`box` with `x`, `y`, `w`, `h`, or `circle` with `x`, `
 relative to the anchor.
 
 `sounds`: `id`, `file`, `role` (`music`, `effect` or `callout`), `volume` (0..1), `loop`,
-`loop_start_s` (where a looping music bed loops back to).
+`loop_start_s` (where a looping music bed loops back to). Music only (format 2): `fade_s`
+(how long the bed fades in when it takes over, and out when it stops; absent 1 s), and its
+beat grid: `tempo_bpm`, `beat_offset_s` (where the first beat falls in the file) and
+`beats_per_bar` (absent 4), which a `rhythm` phase on that music and the timeline read.
 
 `fonts`: `id`, `face` (the card's own font, written `card:<name>`, or a font file in the
 mode folder named in `file`), `size` in stage pixels. The app draws the same face.
@@ -383,8 +390,9 @@ Buttons are `left`, `right` and `action` everywhere.
 - `tug`: `meter`, `hold` (`left`, `right`, or `shown`: the screen names it and it
   changes every `switch_every_s`), `per_press`, `pull_back_per_s`, and the second threat
   `shake_every_s` / `shake_pairs` (alternations to shake it off), `goal`.
-- `rhythm`: `music`, `tempo_bpm`, `offset_ms`, `travel_beats` (how early a prompt
-  appears), `chart` (`beat`, `button`, `hold_beats`), `perfect_ms`, `good_ms`.
+- `rhythm`: `music`, `tempo_bpm`, `offset_ms` (both absent: the music's own beat grid,
+  format 2), `travel_beats` (how early a prompt appears), `chart` (`beat`, `button`,
+  `hold_beats`), `perfect_ms`, `good_ms`.
 - `sequence`: `buttons` (a fixed run) or `length` (random from the seed), `shown`,
   `flash_s` (shown this long, then hidden: enter it from memory), `per_press_s`,
   `rounds`.
@@ -459,7 +467,8 @@ the end: `time_left_s`, `health_left`, `ammo_left`, or a value's id).
 
 `pinball_decryptor/core/video_mode/examples/night_harbour.json`, an original boat chase
 shaped like the reference's first mode, with placeholder art paths (PAD-1670 makes the
-art). It checks clean and is the frozen format 1 fixture. In short:
+art). It checks clean, in format 2 (`tests/data/video_mode/format_1.json` and `format_2.json`
+are the frozen fixtures). In short:
 
 ```
 flow:   c_intro (clip "intro")
@@ -488,7 +497,7 @@ flow:   c_intro (clip "intro")
 
 ```json
 {
-  "format": 1, "kind": "pad-video-mode", "id": "night-harbour", "title": "Night Harbour",
+  "format": 2, "kind": "pad-video-mode", "id": "night-harbour", "title": "Night Harbour",
   "stage": {"width": 1360, "height": 768, "steps_per_second": 60, "background": "#05080f"},
   "phases": [{
     "id": "boss", "kind": "boss", "title": "Warship", "objective": "Hit the weak spots",
@@ -661,7 +670,11 @@ skipped), `PHASE_START` (phase, try), `PHASE_WON` (phase, steps left, health),
 `PHASE_LOST` (phase, tries left), `SCORE` (added, total), `KILL` (thing, points),
 `PICKUP` (thing, so far), `HURT` (health left), `FIRE`, `HIT` (weak point, hits left),
 `FINISHED` (won, score, no hit taken). What `pays` makes of them is PAD-1668's. **Sound
-cues**: play a sound (from `cues`), start a phase's music, stop it.
+cues** (`sound`, `op`, `duck`, `fade`): play a sound (from `cues`); the music is this bed from
+now, fading in over `fade` steps as the one before fades out; the music stops, fading out
+(PAD-1667: only a change is cued, so the music plays on through a result card, a phase tried
+again and a next phase with the same bed; a cutscene, a phase without music and the end stop
+it).
 
 **A step**: the input's edges; the kind's own play; spawns; movers; collisions by team;
 meters draining; the win conditions, then the lose ones (so a boss downed on the step the
@@ -712,7 +725,7 @@ by the page. The cadence is rule 8: steps as wall time passes, at most 4 a frame
 Buttons: Left Shift / Right Shift / Space / Enter, a gamepad's LB / RB / A / Start (triggers too), and on-screen
 buttons. Start begins again when the play is over, or ends a clip (the host's `VM_IN_CLIP_DONE`); a clip with a
 file plays as video over the stage, one without stands 2 s as a card. Sounds go through Web Audio, off until turned
-on: `music` cues loop (from `loop_start_s`), effects play once and `duck_music` dips the music under them.
+on, by the machine's rules (section "Sound" below).
 
 Every play keeps its input word a step. **Replay** plays them again from the same card and seed and must end on the
 same draw list hash; **Save** keeps them as `<mode>/replays/<time>.inputs` with a `.json` (seed, card, steps, hash).
@@ -782,6 +795,56 @@ at about 0.5 ms of work a frame; a phase laid out from nothing with the mouse on
 aligned and distributed) and with the keyboard only (the palette, Tab, arrows, Ctrl D, align), and the keyboard one
 undone, after a reload of the page, back to an empty stage.
 
+### Sound (PAD-1667)
+
+**One set of rules, written once** in `core/video_mode/sound.py` and followed by the player (Web Audio) and the
+machine (`pad_mode_assets.h`), so what the editor plays is what the machine plays:
+
+- **One music voice.** The machine's music is one carrier playing one bed at a time, so a music change is the
+  bed playing fading out over the new bed's `fade_s`, then the new one fading in over the same; a stop fades
+  the playing bed out over its own; from quiet a bed fades in. The engine cues only a change (music plays on
+  through result cards, retries and a next phase on the same bed); a cutscene, a phase without music and the
+  end stop it. A looping bed goes back to `loop_start_s`.
+- **Ducking.** A sound ducks the music wherever it plays when it is a `callout` or any cue of it says
+  `duck_music` (the machine ducks per call, not per event): 28 volume steps of 1/3 dB (about 9.3 dB), down over
+  150 ms, back over 400 ms, the machine's own dip.
+- **One voice for effects and callouts**, as a mode's calls share the voice bus: a new one fades the one still
+  sounding (30 ms) and starts once it is gone (167 ms, the emulator's median); an effect (a priority 3 call) whose previous play still sounds is
+  skipped; a callout (priority 4) played again starts over. `sound.cue_log` is this rule in step time, and
+  the player's log and the rig's are held to it.
+- **Volumes** are each sound's `volume`; on the machine it is baked into the sound's file.
+
+**The Sound card** on the Video modes tab: each sound with its waveform (`sound.peaks`, made off the page's thread;
+the timeline's sound track is the same `<Wave>`), its loop point dragged on it, a music bed's fade shaded and its
+beat grid drawn (bars strong); its role, volume, loop, fade, tempo, first beat and beats a bar; **Find the beat**
+(`sound.find_beat`: onsets matched against themselves a beat later, 60 to 200 a minute, then the first beat's
+phase; within 0.25 a minute and 12 ms on the test beds); music per phase; sounds on events; and the count against
+the machine picked (`sound.machine_plan`), with what is left. A sound with no file yet plays a placeholder the app
+makes (`sound.placeholder_wav`: a blip, a two-note chime, or bars of bass and click on the bed's own grid), as a
+picture without one is a placeholder. Each sound change is one named step in the editor's undo history
+(PAD-1661), undone from the tab's head or the editor alike (Ctrl+Z, Ctrl+Y).
+
+**On the machine** (Spike 2; Spike 3 has the same mode runtime): `sound.machine_plan` puts the first music a phase
+plays on the mode's own music, every other bed on a further bed by name (`pa_music_bed`'s), and each effect and
+callout a cue plays on a call of the mode's own; a sound nothing plays is left off. The route carries **16 calls and
+the mode's own music plus 6 more beds**; Night Harbour uses 5 and 2. No cap was raised: a mode that needs more is
+told so (cue fewer sounds, let phases share music) - one sound can serve several events. `sound.machine_files`
+writes the machine's 48 kHz WAVs and the code mode's `assets.json` sound fields; because the machine loops a record
+from its start, each bed is baked: the whole file once, then its loop body again and again until it outlasts every
+phase that plays it, each try with its cards (`sound.bed_seconds`, 150 s at most, the build's own cap on a bed). `engine/vm_sound.h` plays each
+step's cues: `pa_call` for a sound, `pa_music_change` for the music. `pad_mode_assets.h` gained `pa_music_change`
+(fade out, then the new bed in; or quiet without giving the game's music back, which `pa_end` does) and a call line's
+`noduck` (the build writes it for a sound that does not duck; every other call ducks the music, as before).
+Jersey Jack, Spooky and the dot-matrix machines count the sounds with no cap until their tickets set one.
+
+**Proved by** `tests/test_video_mode_sound.py` (format 2 and its checks; the engine's music cues by phase, retries
+and cutscenes; ducking per sound; the plan, its names and its over-the-cap words; baked beds; the machine's files;
+`noduck` in the .assets file; `pa_music_change` and `noduck` on the desk against stand-ins of the runtime; the
+placeholder and the beat finder; the player's Sounds class against `cue_log`; the tab's edits, undo and redo),
+`scripts/shot_pad1667.py` (the shots, and the bot's winning run replayed in the app's player with sound on in Edge,
+muted at the process: its 55 cues the native build's, step for step, 52 sounds and 2 beds played through Web Audio)
+and `scripts/proof_pad1667_rig.py` (the same run on James Bond LE 1.06 in the emulator, muted: see the ticket).
+
 ## 5 Budgets per machine
 
 **Spike 2 is measured** (PAD-1655 in the emulator, `video_mode_spike2_drawing.md`; checked
@@ -817,7 +880,7 @@ two in step (memory, largest atlas, card space, texel format, how the card holds
 | Picture sets loaded at once | 8, up to 96 MB a set | to measure | to measure | to measure | to measure | Spike 2: the runtime's own limits (PAD-1655); same |
 | Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | PAD-1660 on Spike 2 (desk: ~300 us on emulated ARM); then each platform |
 | Card space for one video mode (pictures, sounds, clips) | 128 MB | 256 MB | 256 MB | 256 MB | 16 MB | PAD-1658 / each platform |
-| Sounds | 16 sounds, 6 music beds (today's mode cap) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
+| Sounds | 16 calls, its own music and 6 more beds (the mode sound route; not raised) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
 
 The engine itself is fixed-size (no malloc): its tables are sized from the largest
 column above at compile time (`VM_MAX_*` in `vm_engine.h`: 512 things alive, 1024 placed things, 3072 draw
@@ -964,10 +1027,10 @@ Status is kept current here as tickets land.
 | 1 | PAD-1656 | Mode SDK: held buttons, mash and alternate rates; screen-game state | - | queued |
 | 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | released (v1.646.0) |
 | 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | released (v1.643.0; Spike 2 card cost checked by PAD-1679, v1.644.0) |
-| 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | on its branch |
+| 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | released (v1.647.0) |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
-| 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | done, waiting to ship |
-| 3 | PAD-1667 | Sound: music per phase, effects on events | PAD-1659 | queued |
+| 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | released (v1.648.0) |
+| 3 | PAD-1667 | Sound: music per phase, effects on events | PAD-1659 | on its branch |
 | 3 | PAD-1668 | In the pinball game: how it starts, what it pays | PAD-1660 | queued |
 | 3 | PAD-1669 | Try it on the emulator; the app-machine match check | PAD-1659, 1660 | queued |
 | 3 | PAD-1672 | Every Spike 2 title | PAD-1660 | queued |

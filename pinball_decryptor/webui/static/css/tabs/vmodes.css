@@ -89,6 +89,26 @@
   .vm-mode, .vm-sprite, .vm-bar > span { transition: none; }
 }
 
+/* ---- sound (PAD-1667, js/tabs/vmodes_sound.js) ------------------------------------------------------------------ */
+.vm-sound .vm-meters { margin-bottom: 6px; }
+.vm-snds { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.vm-snd { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 6px; }
+.vm-snd.music { border-left: 3px solid var(--accent); }
+.vm-snd-head { gap: 8px; align-items: center; min-width: 0; }
+.vm-snd-head .ellip { max-width: 220px; }
+.vm-snd-ico { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; background: var(--panel-3);
+  color: var(--ink-2); flex: 0 0 auto; }
+.vm-snd-opts { gap: 6px; align-items: center; flex-wrap: wrap; }
+.vm-snd-gap { width: 10px; }
+.vm-snd-foot { gap: 6px; align-items: center; min-height: 22px; }
+.vm-wave { display: block; width: 100%; border-radius: 6px; background: var(--bg-2); }
+.vm-wave.drag { cursor: ew-resize; }
+.vm-snd-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; margin-top: 12px; }
+.vm-cues { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vm-cue-t td { height: 34px; }
+@media (max-width: 1100px) { .vm-snd-cols { grid-template-columns: minmax(0, 1fr); } }
+
 /* ---- the player (PAD-1659, js/tabs/vmodes_play.js): plan section 6, and play.html's mock-up ---------------------- */
 .vm-page.vm-playing { padding: 0; overflow: hidden; gap: 0; }
 .vmp { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: 44px minmax(0, 1fr) 36px; background: var(--bg); }

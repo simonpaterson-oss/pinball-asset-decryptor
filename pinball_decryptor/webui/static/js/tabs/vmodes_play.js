@@ -252,8 +252,21 @@ export function glyphSheet(f) {
 }
 
 // ---- sound: Web Audio, muted until turned on ----------------------------------------------------------------------
+// PAD-1667: played by the machine's own rules (core/video_mode/sound.py), so what plays here is what the machine plays:
+// ONE music voice - a change fades the bed playing out over the new one's fade, then the new one in over the same; a
+// stop fades it out; from quiet a bed fades in; a looping bed goes back to its loop point. A ducking sound (a callout,
+// or one a cue says duck_music for) takes the music 28 steps of 1/3 dB down (150 ms) while it plays, back over 400 ms.
+// Effects and callouts share ONE voice, as a mode's calls share the voice bus: a new one fades the one still sounding
+// (30 ms) and starts once it is gone (167 ms, as measured in the emulator); an effect whose previous play still
+// sounds is skipped; a callout starts over.
+const SND = { DUCK: Math.pow(10, -28 / 3 / 20), DUCK_DOWN: 0.15, DUCK_UP: 0.4, VOICE_FADE: 0.03, VOICE_WAIT: 0.167,
+  QUIET: 0.0316, START_GAP: 0.06 };
 class Sounds {
-  constructor(list) { this.list = list || []; this.on = false; this.ctx = null; this.bufs = new Map(); this.music = -1; this.src = null; this.played = 0; this.musicPlayed = 0; }
+  constructor(list) {
+    this.list = list || []; this.on = false; this.ctx = null; this.bufs = new Map();
+    this.music = -1; this.cur = null; this.voice = null; this.until = new Map(); this.ducking = 0;
+    this.played = 0; this.musicPlayed = 0; this.skipped = 0; this.log = [];
+  }
   buffer(i) {
     const s = this.list[i];
     if (!s || !s.path || !this.ctx) return Promise.resolve(null);
@@ -263,6 +276,7 @@ class Sounds {
     }
     return this.bufs.get(i);
   }
+  vol(i) { const s = this.list[i] || {}; return s.volume == null ? 1 : s.volume; }
   setOn(on) {
     this.on = on;
     if (on && !this.ctx) {
@@ -271,45 +285,88 @@ class Sounds {
       this.ctx = new AC();
       this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination);
       this.musicGain = this.ctx.createGain(); this.musicGain.connect(this.master);
+      this.list.forEach((s, i) => this.buffer(i));          // decoded ahead, so a cue plays on its step
     }
     if (!this.ctx) return;
-    if (on) { this.ctx.resume(); if (this.music >= 0 && !this.src) this.startMusic(this.music); }
-    else { this.stopMusicSource(); this.ctx.suspend(); }
+    if (on) { this.ctx.resume(); if (this.music >= 0 && !this.cur) this.startBed(this.music, 0, 0); }
+    else { this.dropBed(); this.ctx.suspend(); }
   }
-  stopMusicSource() { if (this.src) { try { this.src.stop(); } catch (e) { /* already stopped */ } this.src = null; } this.startedAt = null; }
-  // seconds of the cued music played so far by the audio clock; null while none plays
-  musicPos() { return this.src && this.startedAt != null && this.ctx ? this.ctx.currentTime - this.startedAt : null; }
-  loading() { return this.on && this.music >= 0 && !this.src; }   // cued, still being fetched and decoded
+  dropBed() { if (this.cur) { try { this.cur.src.stop(); } catch (e) { /* already stopped */ } this.cur = null; } }
+  fadeBed(sec) {                                       // the bed playing fades out over sec, then stops
+    const c = this.cur; this.cur = null;
+    if (!c || !this.ctx) return;
+    const t = this.ctx.currentTime, g = c.gain.gain, end = t + Math.max(0.005, sec);
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, end);
+    try { c.src.stop(end + 0.02); } catch (e) { /* already stopped */ }
+  }
+  // seconds of the bed now playing, by the audio clock, from where it starts (negative: it starts that much later);
+  // null while none plays. A rhythm phase steps by it (PAD-1663).
+  musicPos() { return this.cur && this.ctx && this.cur.i === this.music ? this.ctx.currentTime - this.cur.t0 : null; }
+  loading() { return this.on && this.music >= 0 && !(this.cur && this.cur.i === this.music); }   // cued, not yet started
   latencyMs() { return this.ctx ? Math.round(((this.ctx.outputLatency || 0) + (this.ctx.baseLatency || 0)) * 1000) : 0; }
-  async startMusic(i) {
-    this.stopMusicSource();
-    const s = this.list[i], b = await this.buffer(i);
-    if (!b || !this.on || this.music !== i) return;
-    const src = this.ctx.createBufferSource();
+  async startBed(i, at, fadeIn) {                      // bed i starts `at` s from now, fading in over fadeIn s
+    const s = this.list[i] || {}, b = await this.buffer(i);
+    if (!b || !this.on || this.music !== i || (this.cur && this.cur.i === i)) return;
+    const src = this.ctx.createBufferSource(), g = this.ctx.createGain(), t = this.ctx.currentTime + at;
     src.buffer = b; src.loop = s.loop !== false;
-    if (s.loop_start_s) { src.loopStart = s.loop_start_s; src.loopEnd = b.duration; }
-    const g = this.ctx.createGain(); g.gain.value = s.volume == null ? 1 : s.volume;
+    if (s.loop_start_s && s.loop_start_s < b.duration) { src.loopStart = s.loop_start_s; src.loopEnd = b.duration; }
+    const v = this.vol(i);
+    if (fadeIn > 0) { g.gain.setValueAtTime(v * SND.QUIET, t); g.gain.exponentialRampToValueAtTime(Math.max(1e-4, v), t + fadeIn); }
+    else g.gain.setValueAtTime(v, t);
     src.connect(g); g.connect(this.musicGain);
-    src.start();
-    this.src = src; this.musicPlayed++;
-    this.startedAt = this.ctx.currentTime;   // the music's own clock: a rhythm phase steps by it (PAD-1663)
+    src.start(t);
+    this.cur = { i, src, gain: g, t0: t }; this.musicPlayed++;
   }
-  async cue(c) {
-    if (c.op === 1) { this.music = c.sound; if (this.on) this.startMusic(c.sound); return; }
-    if (c.op === 2) { this.music = -1; this.stopMusicSource(); return; }
-    if (!this.on || !this.ctx) return;
-    const b = await this.buffer(c.sound);
-    if (!b) return;
-    const s = this.list[c.sound] || {};
-    const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
-    src.buffer = b; g.gain.value = s.volume == null ? 1 : s.volume;
-    src.connect(g); g.connect(this.master); src.start(); this.played++;
-    if (c.duck) {                                    // duck_music: the music dips under it
-      const t = this.ctx.currentTime, mg = this.musicGain.gain;
-      mg.cancelScheduledValues(t); mg.setTargetAtTime(0.35, t, 0.03); mg.setTargetAtTime(1, t + b.duration, 0.15);
+  note(step, c, did) { if (this.log.length < 4000) this.log.push({ step, sound: c.sound, op: c.op, duck: c.duck, fade: c.fade, did }); }
+  cue(c, step) {
+    const sec = (c.fade || 0) / 60;
+    if (c.op === 1) {                                   // the music is this bed from now
+      const was = this.music; this.music = c.sound;
+      this.note(step, c, was >= 0 ? "changes" : "starts");
+      if (!this.on || !this.ctx) return;
+      if (this.cur) { this.fadeBed(sec); this.startBed(c.sound, sec + SND.START_GAP, sec); }
+      else this.startBed(c.sound, 0, sec);
+      return;
     }
+    if (c.op === 2) { this.music = -1; this.note(step, c, "stops"); if (this.on && this.ctx) this.fadeBed(sec); return; }
+    this.play(c, step);
   }
-  reset() { this.music = -1; this.stopMusicSource(); }
+  async play(c, step) {
+    const s = this.list[c.sound] || {}, now = step / 60;   // a step's own time: the same skips on every replay
+    if (s.role !== "callout" && (this.until.get(c.sound) || -1) > now) { this.skipped++; this.note(step, c, "skipped"); return; }
+    this.until.set(c.sound, now + (s.seconds || 0));
+    this.note(step, c, "played");
+    if (!this.on || !this.ctx) return;
+    const t0 = this.ctx.currentTime;
+    let wait = 0;
+    if (this.voice && this.voice.end > t0) {           // the newest event speaks: the one sounding fades first
+      const v = this.voice, g = v.gain.gain;
+      g.cancelScheduledValues(t0); g.setValueAtTime(g.value, t0); g.linearRampToValueAtTime(0, t0 + SND.VOICE_FADE);
+      try { v.src.stop(t0 + SND.VOICE_FADE + 0.01); } catch (e) { /* already stopped */ }
+      wait = SND.VOICE_WAIT;
+    }
+    const b = await this.buffer(c.sound);
+    if (!b || !this.on) return;
+    const t = this.ctx.currentTime + wait, src = this.ctx.createBufferSource(), g = this.ctx.createGain();
+    src.buffer = b; g.gain.value = this.vol(c.sound);
+    src.connect(g); g.connect(this.master); src.start(t); this.played++;
+    const v = { src, gain: g, end: t + b.duration, duck: !!c.duck };
+    this.voice = v;
+    if (v.duck) this.duck(+1);
+    src.onended = () => { if (v.duck) this.duck(-1); if (this.voice === v) this.voice = null; };
+  }
+  duck(d) {                                            // the music down while a ducking sound plays
+    const was = this.ducking; this.ducking = Math.max(0, this.ducking + d);
+    if (!this.ctx || (was > 0) === (this.ducking > 0)) return;
+    const t = this.ctx.currentTime, mg = this.musicGain.gain, down = this.ducking > 0;
+    mg.cancelScheduledValues(t); mg.setValueAtTime(mg.value, t);
+    mg.linearRampToValueAtTime(down ? SND.DUCK : 1, t + (down ? SND.DUCK_DOWN : SND.DUCK_UP));
+  }
+  reset() {
+    this.music = -1; this.dropBed(); this.until.clear(); this.log = []; this.skipped = 0;
+    if (this.voice) { try { this.voice.src.stop(); } catch (e) { /* already stopped */ } this.voice = null; }
+    this.ducking = 0; if (this.musicGain) this.musicGain.gain.value = 1;
+  }
   close() { this.reset(); if (this.ctx) this.ctx.close(); this.ctx = null; }
 }
 
@@ -321,13 +378,21 @@ class Run {
   constructor(info, eng, stage, overlay, clipEl, onTick) {
     this.info = info; this.e = eng; this.stage = stage; this.overlay = overlay; this.clipEl = clipEl; this.onTick = onTick;
     this.sounds = new Sounds(info.sounds);
-    this.keys = 0; this.mouse = 0; this.pad = 0; this.padStart = false; this.padName = "";
+    this.latch = 0; this.keys = 0; this.mouse = 0; this.pad = 0; this.padStart = false; this.padName = "";
     this.paused = false; this.speed = 1; this.fps = 60; this.hits = false;
     this.acc = 0; this.last = 0; this.lastDraw = 0; this.nextDraw = 0; this.raf = 0;
     this.calib = readCalib(); this.offset = 0; this.wait = 0; this.drift = null;
     this.perfReset();
     this.restart(null);
   }
+  // the buttons from the keyboard, the on-screen pads and a gamepad. A press is latched until a step has seen it:
+  // a tap that comes and goes between two steps (a frame that runs none) still reaches the engine (PAD-1663)
+  get keys() { return this._keys; }
+  set keys(v) { this.latch |= v & ~(this._keys || 0); this._keys = v; }
+  get mouse() { return this._mouse; }
+  set mouse(v) { this.latch |= v & ~(this._mouse || 0); this._mouse = v; }
+  get pad() { return this._pad; }
+  set pad(v) { this.latch |= v & ~(this._pad || 0); this._pad = v; }
   cardIndex(id) { return this.info.cards.findIndex((c) => c.id === id); }
   // a new play: from the flow's start (card null) or from a card; replay: a recording to feed instead of the buttons
   restart(card, replay = null) {
@@ -336,7 +401,7 @@ class Run {
     // the sound calibration the play runs with: this computer's output latency and the player's own (Calibrate);
     // a replay runs with the one it was recorded with, so it ends on the same hash
     this.offset = replay ? (replay.audio_offset || 0) : (this.sounds.on ? this.sounds.latencyMs() : 0) + this.calib;
-    this.e.audioOffset(this.offset); this.wait = 0; this.drift = null;
+    this.e.audioOffset(this.offset); this.wait = 0; this.drift = null; this.latch = 0;
     if (c == null) this.e.start(seed, 0); else this.e.startAt(seed, 0, c);
     this.seed = seed; this.card = c; this.replay = replay; this.rec = new Uint8Array(1 << 14); this.nrec = 0;
     this.alive = true; this.done = null; this.log = []; this.score = 0; this.kills = 0; this.pickups = 0;
@@ -345,7 +410,8 @@ class Run {
     this.step(true);
   }
   input() {
-    let v = this.keys | this.mouse | this.pad;
+    let v = this.keys | this.mouse | this.pad | this.latch;
+    this.latch = 0;
     if (this.clipDone) { v |= IN.CLIP_DONE; this.clipDone = false; }
     return v & 15;
   }
@@ -365,7 +431,7 @@ class Run {
     this.pf.stepMs += performance.now() - t0; this.pf.steps++;
     this.lastList = words;
     for (const ev of this.e.events()) this.event(ev);
-    for (const c of this.e.cues()) this.sounds.cue(c);
+    for (const c of this.e.cues()) this.sounds.cue(c, this.e.stepNo() - 1);   // the step it came out of, as vmrun numbers it
     if (this.clip && !this.clip.file && !this.replay && this.e.stepNo() - this.clip.at >= NO_FILE_CLIP_STEPS) this.clipDone = true;
     if (!more) {
       this.alive = false;
@@ -463,6 +529,10 @@ class Run {
       const sync = this.musicSync();
       if (sync != null) { n = sync; this.acc = 0; }
       for (let k = 0; k < n && this.step(); k++);
+      if (sync != null) {                     // how far the engine is from its music once this frame's steps are run
+        const pos = this.sounds.musicPos();
+        if (pos != null) this.drift = { lag: Math.floor(pos * 60) - this.e.songSteps(), ms: Math.round(pos * 1000 - this.e.songSteps() * STEP_MS), pos };
+      }
     } else this.acc = 0;
     this.draw(now);
   }
@@ -722,7 +792,7 @@ export function VideoModePlayer({ s, onClose, startCard }) {
           verdict: () => r.verdict, done: () => r.done, hash: () => eng.hash(),
           sync: () => ({ drift: r.drift, offset: r.offset, calib: r.calib, kind: eng.kind(), songSteps: eng.songSteps(), latency: r.sounds.latencyMs() }),
           setCalib: (ms) => r.setCalib(ms),
-          sound: () => ({ on: r.sounds.on, state: r.sounds.ctx ? r.sounds.ctx.state : "none", played: r.sounds.played, music: r.sounds.musicPlayed }),
+          sound: () => ({ on: r.sounds.on, state: r.sounds.ctx ? r.sounds.ctx.state : "none", played: r.sounds.played, music: r.sounds.musicPlayed, skipped: r.sounds.skipped, ducking: r.sounds.ducking, log: r.sounds.log.slice() }),
           clip: () => { const v = clipEl.current && clipEl.current.querySelector("video"); return { clip: r.clip, playing: !!(v && !v.hidden && v.currentTime > 0 && !v.paused), t: v ? v.currentTime : 0 }; },
         };
       } catch (e) { if (live) setErr(String(e && e.message || e)); }

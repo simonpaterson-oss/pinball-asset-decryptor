@@ -59,7 +59,7 @@
       "kind": "rhythm",
       "inputs": "rhythm_win.inputs",
       "max": 20000,
-      "hash": "b9d1fbdf8672b6fb",
+      "hash": "70e01777648ae43f",
       "steps": 3067,
       "outcome": 1,
       "score": 21400
@@ -68,7 +68,7 @@
       "kind": "rhythm",
       "inputs": "idle",
       "max": 12000,
-      "hash": "b97a829ab44e880b",
+      "hash": "6fde588c3409a017",
       "steps": 1214,
       "outcome": 0,
       "score": 0

@@ -98,7 +98,7 @@
 
 #define PA_UNUSED __attribute__((unused))
 
-struct pa_call { char cue[PA_CUE]; unsigned request, ms, prio; };
+struct pa_call { char cue[PA_CUE]; unsigned request, ms, prio; int noduck; };   /* PAD-1667: noduck */
 
 struct pa_assets {
     const char *folder;                   /* the mode's folder name: its file is <folder>.assets */
@@ -146,6 +146,9 @@ struct pa_music_state {
     int nbus1;
     unsigned long check_due;              /* after the end: look at the music bus once, then */
     int ducked, duck_said;                /* PAD-678: ours is down under a call of the mode's; said so once */
+    int hushed;                           /* PAD-1667: pa_music_change(NULL): quiet, not started again */
+    unsigned fade_in_ms;                  /* PAD-1667: the bed starting fades in over this (0 = at once) */
+    int fade_stage;                       /*   1: pulled down as it started, 2: ramping up */
 };
 __attribute__((weak, visibility("hidden"))) struct pa_music_state pa_music;
 
@@ -320,6 +323,7 @@ static PA_UNUSED void pa_parse_line(struct pa_assets *a, const char *s)
         c->ms = pa_word(&s, w, sizeof w) ? pa_num(w) : 0;
         c->prio = pa_word(&s, w, sizeof w) ? pa_num(w) : 4;
         if (c->prio < 1 || c->prio > 7) c->prio = 4;
+        c->noduck = pa_word(&s, w, sizeof w) && pa_is(w, "noduck");   /* PAD-1667: the music stays up under it */
         a->n_calls++;
     }
     /* screen and anything newer: the mode finds its screen by name (intricate_kit.h) */
@@ -560,6 +564,7 @@ static PA_UNUSED void pa_music_begin(struct pa_assets *a)
     pa_music.game = 0;
     for (i = 0; i < 4; i++) pa_music.silenced[i] = 0;
     pa_music.ducked = pa_music.duck_said = 0;
+    pa_music.hushed = 0; pa_music.fade_in_ms = 0; pa_music.fade_stage = 0;
     a->music_restarts = 0;
     if (a->music_sid)
         pm_log("own sound: music %u plays its own bed, sound id %u%s", a->music, a->music_sid,
@@ -615,13 +620,15 @@ static PA_UNUSED void pa_music_bus_note(const unsigned *reqs, const unsigned *bu
 #define PA_MUSIC_DUCK_STEPS   28
 #define PA_MUSIC_DUCK_DOWN_MS 150
 #define PA_MUSIC_DUCK_UP_MS   400
+#define PA_MUSIC_FADE_IN_STEPS 90    /* PAD-1667: a bed fading in starts 30 dB down */
 
 static PA_UNUSED void pa_music_duck(struct pa_assets *a)
 {
     unsigned i;
     int want = 0;
     for (i = 0; i < a->n_calls && !want; i++)
-        if (a->calls[i].request && a->calls[i].request != a->music && pm_sound_active(a->calls[i].request)) want = 1;
+        if (a->calls[i].request && a->calls[i].request != a->music && !a->calls[i].noduck
+            && pm_sound_active(a->calls[i].request)) want = 1;
     want = want && pm_sound_active(a->music);
     if (want == pa_music.ducked) return;
     if (want && !pm_sound_duck(a->music, PA_MUSIC_DUCK_STEPS, PA_MUSIC_DUCK_DOWN_MS)) return;   /* no voice offsets */
@@ -640,6 +647,18 @@ static PA_UNUSED void pa_music_under(struct pa_assets *a)
     if (!a->music || pa_music.request != a->music || pa_music.owner != a->folder) return;
     if (pa_music.start_due) {
         if (pm_ms() >= pa_music.start_due) pa_music_start_now();
+        return;
+    }
+    if (pa_music.hushed) return;                        /* PAD-1667: quiet until the next pa_music_change */
+    if (pa_music.fade_in_ms && pm_sound_active(a->music)) {   /* PAD-1667: the new bed fades in */
+        if (!pa_music.fade_stage) {
+            if (pm_sound_duck(a->music, PA_MUSIC_FADE_IN_STEPS, 0)) pa_music.fade_stage = 1;
+            else pa_music.fade_in_ms = 0;               /* no voice offsets in the port: it plays at once */
+            return;
+        }
+        pm_sound_duck(a->music, 0, pa_music.fade_in_ms);
+        pm_log("own sound: music %u fades in over %u ms", a->music, pa_music.fade_in_ms);
+        pa_music.fade_in_ms = 0; pa_music.fade_stage = 0;
         return;
     }
     pa_music_duck(a);
@@ -704,6 +723,69 @@ static PA_UNUSED int pa_music_bed(struct pa_assets *a, const char *name)
     return 1;
 }
 
+/* PAD-1667: the bed called `name` ("" or "music": the mode's own first bed): its sound id or swapped record.
+ * 1 = the card carries it. */
+static PA_UNUSED int pa_bed_find(struct pa_assets *a, const char *name, unsigned *sid, const unsigned char **swap)
+{
+    char tag[PA_SWAP_TAG];
+    unsigned i, k;
+    *sid = 0; *swap = 0;
+    if (!name[0] || pa_is(name, "music")) {
+        *sid = a->music_sid;
+        *swap = pa_swap_of(a, a->music, "music");
+        return 1;
+    }
+    for (i = 0; i < a->n_beds; i++)
+        if (pa_is(a->beds[i].name, name)) *sid = a->beds[i].sid;
+    for (k = 0; k + 1 < PA_SWAP_TAG && "music:"[k]; k++) tag[k] = "music:"[k];
+    for (i = 0; name[i] && k + 1 < PA_SWAP_TAG; i++) tag[k++] = name[i];
+    tag[k] = 0;
+    if (!*sid)
+        for (i = 0; i < a->n_swaps; i++)
+            if (a->swaps[i].request == a->music && pa_is(a->swaps[i].tag, tag)) *swap = a->swaps[i].keys;
+    return *sid || *swap;
+}
+/* PAD-1667: a video mode's music, phase by phase. `name` is the bed to play from now ("" or "music": its own
+ * first bed, a name: one of its further beds, NULL: none). The carrier plays one bed at a time, so a change is
+ * the bed playing fading out over `ms`, then the new one starting and fading in over `ms`; NULL fades the music out
+ * over `ms` and keeps it quiet while the mode plays on - the game's music is NOT given back (pa_end does that), and
+ * the next change starts a bed again (fading in). The same bed again plays on. 1 = done (or that bed already
+ * plays); 0 when the mode's music is not on (no pa_start, or another mode's) or the card does not carry the bed. */
+static PA_UNUSED int pa_music_change(struct pa_assets *a, const char *name, unsigned ms)
+{
+    const unsigned char *swap;
+    unsigned sid;
+    if (!a->music || pa_music.request != a->music || pa_music.owner != a->folder) return 0;
+    if (!name) {
+        if (pa_music.hushed) return 1;
+        if (pa_music.start_due) pa_music.start_due = 0;          /* had not started yet: it never does */
+        else pm_sound_fade(a->music, ms);
+        pa_music.hushed = 1; pa_music.ducked = 0; pa_music.fade_in_ms = 0; pa_music.fade_stage = 0;
+        pm_log("own sound: music %u fades out over %u ms and stays quiet (the mode plays on)", a->music, ms);
+        return 1;
+    }
+    if (!pa_bed_find(a, name, &sid, &swap)) {
+        pm_log("own sound: music bed %s is not on this card - the music plays on", name);
+        return 0;
+    }
+    if (!pa_music.hushed && sid == pa_music.sid && swap == pa_music.swap) return 1;
+    if (!pa_music.hushed && !pa_music.start_due) {
+        pm_sound_fade(a->music, ms);
+        if (pa_music.swap && pa_music.swap != swap)              /* the old bed's swap lasts out the fade only */
+            pm_sound_swap(a->music, pa_music.swap, pa_music.swap + 8, -1, ms);
+    }
+    if (sid) pm_sound_sid(a->music, sid);
+    else if (pa_music.sid) pm_sound_sid(a->music, 0);
+    pa_music.sid = sid;
+    pa_music.swap = swap;
+    pa_music.start_due = pm_ms() + (pa_music.hushed ? 1 : ms + 60);
+    pa_music.fade_in_ms = ms; pa_music.fade_stage = 0;
+    pm_log("own sound: music %u %s %s%s (%s %u), fading in over %u ms", a->music,
+           pa_music.hushed ? "starts again on" : "changes to", name[0] && !pa_is(name, "music") ? "the bed " : "its own bed",
+           name[0] && !pa_is(name, "music") ? name : "", sid ? "sound id" : "swapped record, request", sid ? sid : a->music, ms);
+    pa_music.hushed = 0;
+    return 1;
+}
 /* PAD-682: the carrier's own priority and steal flag back once the mode's music is over: the game may play that
  * request itself (Bond LE 1.06: music carrier 94 is Bird One Multiball's music), and with the flag left cleared its
  * next music could not take the bus back - Bird One's played on through the rest of the game. */

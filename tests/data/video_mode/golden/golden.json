@@ -7,7 +7,7 @@
       "seed": 1,
       "level": 0,
       "max": 200000,
-      "hash": "8a60ee8060149edf",
+      "hash": "dcce8b6ae668bb35",
       "steps": 3101,
       "outcome": 1,
       "score": 33000
@@ -18,7 +18,7 @@
       "seed": 9,
       "level": 2,
       "max": 40000,
-      "hash": "ed86b0fc1abca8e7",
+      "hash": "e9d69439670a9313",
       "steps": 1249,
       "outcome": 0,
       "score": 1000
@@ -29,7 +29,7 @@
       "seed": 4,
       "level": 0,
       "max": 6000,
-      "hash": "ef96db641f113174",
+      "hash": "0b628718fee07068",
       "steps": 1533,
       "outcome": 0,
       "score": 0
