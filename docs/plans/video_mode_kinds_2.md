@@ -93,3 +93,6 @@ and a 24-bar chart that grows busier. `new_doc(kind)` is a one-phase mode of a k
   every logged step within 6 ms of the machine's 60 a second clock, none off it; the music's request taken by the
   game's sound worker 13 ms after its cue's step and its bed started at 14 ms; 384 of 384 notes perfect, outcome
   won, the same hash as the native build. Hence the 14 ms machine calibration.
+- The picker: with PAD-1662's catalog (kinds.py at 9083c92fd) beside this branch, `catalog()` lists all seven under
+  "Buttons and timing", and a mode made of each by its `new_doc` / `add_phase` checks, compiles, is won by the bot
+  and lost with no buttons; the rhythm one gets its drum loop written by `write_files`.
