@@ -878,6 +878,67 @@ placeholder and the beat finder; the player's Sounds class against `cue_log`; th
 muted at the process: its 55 cues the native build's, step for step, 52 sounds and 2 beds played through Web Audio)
 and `scripts/proof_pad1667_rig.py` (the same run on James Bond LE 1.06 in the emulator, muted: see the ticket).
 
+### HUD and feel (PAD-1666)
+
+**All of it is the engine's.** The HUD's looks, its words' styles and every effect are drawn by `vm_engine.c` into
+the same draw list of quads and boxes, so the machine shows what the app shows and no backend gained a feature:
+
+- **Words** are glyph quads from fonts baked once (`core/video_mode/fonts.py`) from the game's own glyph table
+  (`card:<name>` in the extracted project; `card:default` is its largest named face) or the font file a font names;
+  a stand-in is the app's own condensed face. Each glyph is baked three ways, white so the quad's tint colours it:
+  its fill, its outline (the fill's alpha grown by a disc of the font's `outline` px) and a ramp (the fill's alpha
+  times how far down the line it is). A styled word is up to four passes: the shadow (outline glyph, offset), the
+  outline, the fill, and the ramp tinted the gradient's foot colour over it, so a two-colour gradient runs evenly
+  across a whole word. The app's player and editor load one sheet a font and compile with its metrics; the machine's
+  pack carries the same glyphs (item index the code point, +1000 outline, +2000 ramp, named in `atlas.json`).
+- **The HUD's looks**: pips, hearts (seven boxes a heart), bars with a sheen and danger zones (a tinted band and a
+  foot strip; the fill takes a zone's colour and pulses), rings of 24 dots, numbers. A part at or under `low` turns
+  its `danger` colour and pulses. Scores and counters roll up to a new number over `count_up`; a number that went
+  up pops for 10 steps. The prompts put each button's word in its place (left flipper, Action, right flipper) and
+  light the held one; PAD-1663's round buttons draw for its own kinds. The combo multiplies kill points by
+  `1 + (combo - 1) / every`, up to `max`.
+- **Pop-up words** rise from where a kill, pick-up, hit, hurt or shot happened (24 alive at once; the oldest makes
+  room), and a prompt's judgement from the part's own place.
+- **Particles**: an emitter table of the document's particles then the four presets (spark, smoke, debris, glow),
+  512 alive; a burst per happening (`style.bursts`) and a thing's `trail`. Each particle is a box (1 to 3 nested
+  for a glow, stretched along its speed for a streak) or the particle's picture, growing and changing colour as it
+  ages, full strength for 60% of its life then fading. Drag and gravity in 16.16 a step.
+- **The feel**: shake (scaled by `shake_amount`), a red flash on a hurt and a white one when a boss goes down,
+  hit-stop (`hit_stop_frames` on a kill or hit, two more on a hurt, three times on a boss), squash and stretch on a
+  hit thing and a hurt player, the damage blink, transitions out of a phase as well as into the next
+  (`transition_s`), and a CRT look (192 scan-line boxes and a 16-box edge).
+- **Every effect has a switch** (`style`: VM_FX_* bits), so each can be turned off per mode; the editor shows what
+  each costs, and `feel.costs` reports each effect's draw list entries at its worst against the machine's "Quads
+  drawn a frame" row.
+- **Style presets** (`feel.STYLE_PRESETS`: arcade, comic, clean, retro pixel) set the whole feel and every HUD part's
+  look, colours and text style at once, adding pop-up words when there are none; places, sizes, fonts and values
+  stay the maker's. Applied once as one undo step; the worked example carries the comic preset.
+
+**In the editor** the still is taken with every HUD part showing sample numbers (`vm_edit_still` flag 2: a score,
+a combo and its multiplier, the prompts, each pop-up at its own place), and the engine works out each part's box
+from the entries it drew (`vmw_hud_boxes`). Parts are picked over things (the HUD is drawn on top), dragged with the
+same snapping (`vmw_hud_set` moves them live), nudged, removed, listed under HUD in Layers and added from the HUD
+palette under Assets (drag onto the stage or Enter). The HUD inspector covers place and size, look, what it shows,
+colour and frame, words (text with `{n}`, font, align, outline, shadow, gradient, count-up, pop), danger colour and
+low point, danger zones, a pop-up's happenings, rise and life, and its phases. **Style** opens the look and feel:
+the presets, the cost against the machine's budget, each effect's switch with its cost and amount, the transition,
+the bursts, the combo, and the particle editor (preset, count, speed, aim, spread, life, sizes, gravity, drag,
+streak, glow, colours, blend) whose preview is the engine bursting the particle over the stage (`vm_edit_burst`,
+editor only).
+
+**Proved by** `tests/test_video_mode_feel.py`: format 2 reads on as 3; every preset checks, compiles, keeps the
+maker's places and fits Spike 2's budget; a run shows shake, flashes, squash, blink, CRT, particles, pop-ups and the
+count-up, and with every switch off (and each alone) shows none of it; hit-stop lengthens a run; the combo
+multiplies; every preset gives the same hash natively and in WebAssembly; the busiest frame of glow bursts stays
+under 1500 entries; a card's glyph table bakes fill, outline and ramp at the asked size into the sheet and the
+pack; the editor's HUD boxes come from the engine and move where they are put; the tab gives the presets, switches
+and costs and applies a preset as one undo step. On 32-bit ARM (the Spike 2 cross compiler, mode.so's rules, run
+under qemu) the bot's winning run gives the golden hash, and a deliberately heavy setup (glow bursts on every
+happening, smoke trails on every enemy and shot, CRT on) took 159 us a step against the 2 ms budget, its busiest
+frame 1,374 entries of 1,500. In the app (Edge, `scripts/shot_pad1666.py`) the bot's run played at 55 to 57 frames
+a second with 0.04 ms a step and 0.06 ms a frame of drawing. The same run on a real game's display in the emulator is
+PAD-1669's match check, once PAD-1660 plays a video mode inside a game.
+
 ## 5 Budgets per machine
 
 **Spike 2 is measured** (PAD-1655 in the emulator, `video_mode_spike2_drawing.md`; checked
@@ -1075,7 +1136,7 @@ Status is kept current here as tickets land.
 | 4 | PAD-1662 | Game kinds 1: chase, thrust, aim, boss; and from the survey defend, catch, runner, lander, route | PAD-1661 | queued |
 | 4 | PAD-1663 | Game kinds 2: mash, alternate, tug, rhythm, sequence, dodge, shield; and from the survey timing, pick | PAD-1661 | queued |
 | 4 | PAD-1664 | Editor: storyboard, cutscenes, timeline with keyframes | PAD-1661 | queued |
-| 4 | PAD-1666 | HUD and feel | PAD-1661 | queued |
+| 4 | PAD-1666 | HUD and feel | PAD-1661 | done, waiting to ship |
 | 5 | PAD-1665 | Rule cards | PAD-1662, 1663 | queued |
 | 5 | PAD-1670 | Starter games, guide page, limits page | PAD-1662, 1663, 1664, 1666, 1667, 1668 | queued |
 | 6 | PAD-1671 | The professional finish pass | PAD-1665, 1669, 1670 | queued |
@@ -1119,6 +1180,13 @@ that order; two tickets that bump at once take numbers in merge order.
   (with a format bump) when a kind needs it.
 - **Win before lose on the same step**, and a clock that runs out with no condition met
   loses the phase.
+- **Outline, shadow and gradient are baked glyph variants** (PAD-1666): an outline glyph and a ramp glyph per letter,
+  tinted, rather than offset copies of the fill or a backend shader: two to four quads a styled letter, any colours,
+  the same on every backend.
+- **A preset is applied once**, not kept live: it writes the looks into the document, so the maker's changes after it
+  stay and a later preset is a new step, not a theme that overrides.
+- **The HUD and its effects are on the engine's list, inside the machine's quad budget**, each switchable and costed,
+  rather than a second layer a backend draws.
 - **Pictures without a file yet are drawn as placeholders** the size of their hitbox, and
   fonts use monospace placeholder metrics, until PAD-1658 packs the real atlases and
   glyphs; the compiler takes both as inputs, so nothing in the engine changes then.

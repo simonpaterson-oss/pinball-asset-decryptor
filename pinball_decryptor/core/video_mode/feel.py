@@ -25,8 +25,8 @@ ONE = 65536
 #: colour and colour_end ("#rrggbbaa"), blend (normal or add), glow (1 plain box, 2-3 nested boxes, a soft edge),
 #: streak (a streak along its speed: px of length per px a step of speed)
 PARTICLE_PRESETS = {
-    "spark": {"count": 14, "speed": [180, 480], "direction": 0, "spread": 360, "life_s": 0.45, "size": 5, "size_end": 1,
-              "gravity": 600, "drag": 0.2, "colour": "#fff3b0ff", "colour_end": "#ff8a3d00", "blend": "add", "glow": 1,
+    "spark": {"count": 16, "speed": [200, 520], "direction": 0, "spread": 360, "life_s": 0.5, "size": 7, "size_end": 2,
+              "gravity": 600, "drag": 0.2, "colour": "#fffbe0ff", "colour_end": "#ff7a1a60", "blend": "add", "glow": 2,
               "streak": 2.5},
     "smoke": {"count": 8, "speed": [20, 70], "direction": -90, "spread": 120, "life_s": 1.2, "size": 18, "size_end": 56,
               "gravity": -40, "drag": 0.5, "colour": "#9a9ea6b0", "colour_end": "#4a4e5600", "blend": "normal", "glow": 2,
