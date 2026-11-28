@@ -131,7 +131,7 @@
 .vmp-ph.on { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
 .vmp-ph .st { font-size: 11.5px; color: var(--ink-2); }
 .vmp-log { display: flex; flex-direction: column; gap: 2px; font-size: 12px; height: 132px; overflow: hidden; }
-.vmp-log > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vmp-log > div { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* rows never squash: a busy log runs off the foot */
 .vmp-log .s { display: inline-block; width: 44px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .vmp-kv { display: grid; grid-template-columns: 80px 1fr; gap: 4px 8px; font-size: 12.5px; }
 .vmp-kv > span { color: var(--ink-3); }

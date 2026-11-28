@@ -538,10 +538,13 @@ static void draw_tell(vm_engine *e, const int32_t *s, int shield)
     int32_t x = btn_x(e, b, W / 2, W / 3), y = H * 3 / 5;
     if (e->bk_state == VM_BK_TELL) {
         int32_t blink = ((e->bk_t >> 2) & 1) ? 255 : 150;
-        uint32_t warn = 0xff5a3c00u | (uint32_t)(blink / 3);
-        if (b == VM_BTN_LEFT) box(e, 0, 0, W / 6, H, warn, PM_BLEND_ADD);
-        else if (b == VM_BTN_RIGHT) box(e, W - W / 6, 0, W / 6, H, warn, PM_BLEND_ADD);
-        else box(e, 0, 0, W, H / 8, warn, PM_BLEND_ADD);
+        int32_t k, sw = W / 40, sh = H / 40;       /* a glow fading in from the side it comes from */
+        for (k = 0; k < 5; k++) {
+            uint32_t warn = 0xff5a3c00u | (uint32_t)(((5 - k) * blink) / 14);
+            if (b == VM_BTN_LEFT) box(e, k * sw, 0, sw, H, warn, PM_BLEND_NORMAL);
+            else if (b == VM_BTN_RIGHT) box(e, W - (k + 1) * sw, 0, sw, H, warn, PM_BLEND_NORMAL);
+            else box(e, 0, k * sh, W, sh, warn, PM_BLEND_NORMAL);
+        }
         draw_button(e, b, x, y, r, shield && held(e, b) ? GL_DOWN | GL_LIT : 0, -1, blink);
         caption(e, shield ? VM_S_HOLD : VM_S_DODGE, x, y - r - DEG(56), 0xffffffffu, blink);
     } else if (e->bk_state == VM_BK_WINDOW) {

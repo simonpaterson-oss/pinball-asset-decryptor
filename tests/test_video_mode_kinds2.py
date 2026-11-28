@@ -88,7 +88,8 @@ def test_the_catalog_matches_the_schema(kind):
             assert st["min"] <= st["default"] <= st["max"], st
         if st["type"] == "choice":
             assert st["default"] in [c[0] for c in st["choices"]]
-    for key in kinds_buttons.starter(kind)["phase"]["settings"]:
+    assert entry["group"] == kinds_buttons.GROUP2
+    for key in entry["starter"](kinds_buttons._Starter())["phase"]["settings"]:
         assert key in [s["name"] for s in entry["settings"]], key
 
 
@@ -271,7 +272,7 @@ def test_prompts_are_the_cabinets_buttons_in_their_places(kind, want):
     _, _, dumps, _ = harness.parse(out)
     step, words = dumps[150]                          # well into the play, past the title card
     discs = {round(e["x"] + e["w"] / 2) for e in harness.entries(words)
-             if e["tag"] == "box" and 58 <= e["w"] <= 70 and e["h"] < 10}
+             if e["tag"] == "box" and 58 <= e["w"] <= 70 and e["h"] < 10 and e["y"] > 600}   # the prompts strip
     got = {x for x in discs if 400 < x < 960}
     if want == "held":                                # tug: Action, and the flipper it names full size
         assert 680 in got and len(got & {530, 830}) == 1, (step, sorted(discs))

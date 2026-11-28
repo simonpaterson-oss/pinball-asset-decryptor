@@ -396,6 +396,10 @@ class Run {
     else if (ev.type === 9) say = "hurt · health " + ev.a;
     else if (ev.type === 10) return;                 // fire: too many to list
     else if (ev.type === 11) say = "weak point " + ev.a + " hit · " + ev.b + " left";
+    else if (ev.type >= 13 && ev.type <= 15) {       // the button kinds' prompts (PAD-1663)
+      const btn = ["left", "right", "Action"][ev.a] || "";
+      say = ev.type === 15 ? "miss · " + btn : ev.type === 14 ? "perfect · " + btn : (ev.c === 1 ? "early · " : ev.c === 2 ? "late · " : "good · ") + btn;
+    }
     else if (ev.type === 12) say = (ev.a ? "WON" : "LOST") + " · " + ev.b.toLocaleString() + (ev.c ? " · no hit taken" : "");
     this.log.unshift({ s, say, kind: name });
     if (this.log.length > 80) this.log.length = 80;
