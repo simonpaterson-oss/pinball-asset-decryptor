@@ -175,3 +175,119 @@ def test_real_card_contents(tmp_path):
         pytest.skip("Godzilla 1.16 card and its extraction not found (PAD494_CARDS)")
     from pinball_decryptor.plugins.stern.stock_prints import card_matches_project
     assert card_matches_project(card, folder) is True
+
+
+# -- "we need to cover all cards" (Simon): a hash of the whole card file, any maker ------
+
+import pytest
+
+from pinball_decryptor.core import card_hash
+
+
+@pytest.fixture(autouse=True)
+def _own_hash_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(card_hash, "HASH_CACHE", str(tmp_path / "card_hashes.json"))
+
+
+def _hashed(folder, card):
+    _extract(folder, card)
+    extract_source.amend_extract_source(folder, card_sha256=card_hash.card_sha256(card))
+    return folder
+
+
+def test_card_hash_is_the_files_sha256_and_cached(tmp_path):
+    import hashlib
+    card = _card(tmp_path)
+    want = hashlib.sha256(open(card, "rb").read()).hexdigest()
+    assert card_hash.cached(card) is None
+    assert card_hash.card_sha256(card) == want
+    assert card_hash.cached(card) == want
+    # a changed file is read again
+    with open(card, "r+b") as f:
+        f.write(b"\1")
+    os.utime(card, ns=(1, 1))
+    assert card_hash.cached(card) is None
+    assert card_hash.card_sha256(card) != want
+
+
+def test_recorded_hash_confirms_the_card(tmp_path, monkeypatch):
+    monkeypatch.setattr(EE, "_contents_checks", [])
+    card = _card(tmp_path)
+    folder = _hashed(str(tmp_path / "proj"), card)
+    assert EE.check(card, folder)["kind"] == EE.SOURCE
+
+
+def test_recorded_hash_refuses_a_twin_of_the_same_name_and_size(tmp_path, monkeypatch):
+    monkeypatch.setattr(EE, "_contents_checks", [])
+    card = _card(tmp_path)
+    folder = _hashed(str(tmp_path / "proj"), card)
+    (tmp_path / "other").mkdir()
+    twin = str(tmp_path / "other" / "godzilla.raw")
+    open(twin, "wb").write(b"\1" * 4096)
+    v = EE.check(twin, folder)
+    assert v["kind"] == EE.OTHER and v.get("same_name")
+
+
+def test_the_hash_wins_over_a_makers_check(tmp_path, monkeypatch):
+    monkeypatch.setattr(EE, "_contents_checks", [lambda c, f: True])
+    card = _card(tmp_path)
+    folder = _hashed(str(tmp_path / "proj"), card)
+    (tmp_path / "other").mkdir()
+    twin = str(tmp_path / "other" / "godzilla.raw")
+    open(twin, "wb").write(b"\1" * 4096)
+    assert EE.check(twin, folder)["kind"] == EE.OTHER
+
+
+def test_renamed_card_with_a_new_date_is_found_by_its_hash(tmp_path, monkeypatch):
+    monkeypatch.setattr(EE, "_contents_checks", [])
+    card = _card(tmp_path)
+    folder = _hashed(str(tmp_path / "proj"), card)
+    renamed = str(tmp_path / "my godzilla.raw")
+    os.replace(card, renamed)
+    os.utime(renamed, (1000000, 1000000))
+    assert EE.check(renamed, folder)["kind"] == EE.SOURCE
+
+
+def test_older_extraction_without_a_hash_needs_the_recorded_date(tmp_path, monkeypatch):
+    monkeypatch.setattr(EE, "_contents_checks", [])
+    card = _card(tmp_path)
+    folder = _extract(str(tmp_path / "proj"), card)
+    assert EE.check(card, folder)["kind"] == EE.SOURCE          # same date: a copy
+    os.utime(card, (1000000, 1000000))
+    v = EE.check(card, folder)
+    assert v["kind"] == EE.UNSURE and v["kind"] not in EE.VIABLE
+    assert "cannot confirm it is this card" in EE.message(v)
+    # a maker's own check still answers for it
+    monkeypatch.setattr(EE, "_contents_checks", [lambda c, f: True])
+    assert EE.check(card, folder)["kind"] == EE.SOURCE
+
+
+def test_the_box_is_told_while_the_card_is_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(EE, "_contents_checks", [])
+    card = _card(tmp_path)
+    folder = _hashed(str(tmp_path / "proj"), card)
+    open(card, "r+b").write(b"\0")          # same bytes, but no longer cached
+    os.utime(card, (1000000, 1000000))
+    said = []
+    assert EE.check(card, folder, say=said.append)["kind"] == EE.SOURCE
+    assert said and said[0].startswith("Reading the card to compare")
+    said.clear()
+    EE.check(card, folder, say=said.append)                     # cached now: nothing read
+    assert said == []
+
+
+def test_extract_records_the_card_hash():
+    src = open(os.path.join(ROOT, "pinball_decryptor", "app.py"), encoding="utf-8").read()
+    body = src[src.index("def _record_extract_facts"):src.index("def _port_sub_runner")]
+    assert "card_hash.card_sha256(in_path)" in body
+    assert "amend_extract_source(out_path, card_sha256=digest)" in body
+
+
+def test_open_project_is_checked_the_same_way():
+    src = open(os.path.join(ROOT, "pinball_decryptor", "webui", "tabs", "extract.py"),
+               encoding="utf-8").read()
+    body = src[src.index("def _existing_follow"):src.index("def _open_folder")]
+    assert "self._start_existing_check(card" in body
+    js = open(os.path.join(ROOT, "pinball_decryptor", "webui", "static", "js", "tabs",
+                           "card.js"), encoding="utf-8").read()
+    assert "Not confirmed: the open project may not be this card's extraction" in js

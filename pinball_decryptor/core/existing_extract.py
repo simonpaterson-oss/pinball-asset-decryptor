@@ -17,11 +17,14 @@ Reset dialog's kinds (:mod:`project_reset`).
 """
 
 import os
+import time
 
 from . import extract_source
 
-#: the verdicts :func:`check` gives
+#: the verdicts :func:`check` gives; UNSURE: the folder names this card's file name and
+#: size, but nothing could check its content and the card file's date is not the recorded one
 NONE, ARCHIVED, OTHER, SOURCE, BUILD = "none", "archived", "other", "source", "build"
+UNSURE = "unsure"
 VIABLE = (SOURCE, BUILD)
 
 
@@ -37,8 +40,49 @@ def register_contents_check(fn):
         _contents_checks.append(fn)
 
 
-def contents_match(card, folder):
-    """The first registered check's answer, or ``None`` when none can tell."""
+def hash_match(card, folder, say=None):
+    """Simon, 2026-11-28 ("we need to cover all cards"): True / False when the folder's
+    record holds the hash of the whole card file it was extracted from (every Extract keeps
+    one, any maker: :mod:`card_hash`), ``None`` when it has none (an older extraction).
+    *say(text)* is told while a card not read before is being read."""
+    from . import card_hash
+    want = (extract_source.read_extract_source(folder) or {}).get("card_sha256")
+    if not want:
+        return None
+    if say is not None and not card_hash.cached(card):
+        last = [0.0]
+
+        def _progress(done, total):
+            now = time.monotonic()
+            if now - last[0] >= 0.5 and total:
+                last[0] = now
+                say("Reading the card to compare it with the folder's record… %d%%"
+                    % (100 * done // total))
+        say("Reading the card to compare it with the folder's record…")
+        got = card_hash.card_sha256(card, _progress)
+    else:
+        got = card_hash.card_sha256(card)
+    if not got:
+        return None
+    return got == want
+
+
+def _same_date(card, folder):
+    """Is the card file's modified time the one the folder recorded at extraction?
+    (Copying a file in Windows keeps its date; another card of that name rarely has it.)"""
+    rec = extract_source.read_extract_source(folder) or {}
+    try:
+        return rec.get("mtime") is not None and int(os.stat(card).st_mtime) == rec.get("mtime")
+    except OSError:
+        return False
+
+
+def contents_match(card, folder, say=None):
+    """The whole-card hash's answer (:func:`hash_match`), else the first registered check's,
+    or ``None`` when none can tell."""
+    got = hash_match(card, folder, say)
+    if got is not None:
+        return got
     for fn in list(_contents_checks):
         try:
             got = fn(card, folder)
@@ -83,7 +127,7 @@ def resolve(card, folder):
     return os.path.normpath(up) if up else folder
 
 
-def check(card, folder, game_of=None):
+def check(card, folder, game_of=None, say=None):
     """What *folder* holds for *card*: ``{"kind", "folder", "game", "source_name",
     "extracted"}``.
 
@@ -91,7 +135,8 @@ def check(card, folder, game_of=None):
     was archived), :data:`OTHER` (another card's: ``game`` / ``source_name`` say whose),
     :data:`SOURCE` (extracted from this card) or :data:`BUILD` (this card was built from
     it).  ``folder`` is the extraction folder itself (:func:`resolve`).  *game_of(folder)*
-    names the folder's game (the "This project" card's caption); optional."""
+    names the folder's game (the "This project" card's caption); optional.  *say(text)* is
+    told what is happening while the card is read (:func:`hash_match`)."""
     out = {"kind": NONE, "folder": "", "game": "", "source_name": "", "extracted": ""}
     if not folder or not os.path.isdir(folder):
         return out
@@ -127,10 +172,25 @@ def check(card, folder, game_of=None):
     out["kind"] = kind if kind in VIABLE else OTHER
     if kind == SOURCE and not _by_fingerprint(card, folder):
         # matched by the folder's record of the card's name and size: check the content
-        if contents_match(card, folder) is False:
+        got = contents_match(card, folder, say)
+        if got is False:
             out["kind"] = OTHER
             out["same_name"] = True
+        elif got is None and not _same_date(card, folder):
+            # nothing could read the content (an extraction from before the hash, a maker
+            # without a check of its own), and the date does not back the name up
+            out["kind"] = UNSURE
+    elif kind not in VIABLE and _same_size(card, rec) and hash_match(card, folder, say):
+        # the very card file under another name (renamed, then its date changed)
+        out["kind"] = SOURCE
     return out
+
+
+def _same_size(card, rec):
+    try:
+        return rec.get("size") is not None and os.path.getsize(card) == rec.get("size")
+    except OSError:
+        return False
 
 
 def _by_fingerprint(card, folder):
@@ -165,6 +225,11 @@ def message(verdict, card_caption=""):
     if kind == ARCHIVED:
         return ("The selected folder is an archived project: its extraction was removed. "
                 "Please select another folder, or extract into it again.")
+    if kind == UNSURE:
+        return ("The selected folder was extracted from a card with this card's file name and "
+                "size (%s), but PAD cannot confirm it is this card: the card file's date is not "
+                "the one recorded when it was extracted. Extract this card again to be sure."
+                % name)
     if kind == OTHER:
         if verdict.get("same_name"):
             return ("The selected folder was extracted from a card with this card's file name "

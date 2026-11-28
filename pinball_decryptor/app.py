@@ -5198,6 +5198,17 @@ class App:
                     (stock or {}).get("status") or "")
         except Exception:
             pass
+        # Simon (DragonRR), 2026-11-28: "we need to cover all cards" - a hash of the whole
+        # card file, so the Select card tab's "Existing extraction" box can tell this
+        # card from another of the same name and size, for every maker (core/card_hash.py).
+        try:
+            from .core import card_hash
+            from .core.extract_source import amend_extract_source
+            digest = card_hash.card_sha256(in_path)
+            if digest:
+                amend_extract_source(out_path, card_sha256=digest)
+        except Exception:
+            pass
 
     def _port_sub_runner(self):
         """``(log_cb, progress_cb, extract, run_sub)`` for a port worker:

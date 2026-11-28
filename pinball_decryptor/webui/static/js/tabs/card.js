@@ -117,7 +117,9 @@ function ExistingBox({ s, ps }) {
     </div>
     ${state === "checking" ? html`<div class="row small muted"><${Spinner} />${e.text}</div>`
       : state === "bad" ? html`<div class="c-viable c-notviable" role="status">
-          <div class="c-viable-hd"><${Icon} name="warn" /><span>Not viable: PAD is not using this folder</span></div>
+          <div class="c-viable-hd"><${Icon} name="warn" /><span>${e.open
+            ? "Not confirmed: the open project may not be this card's extraction"
+            : "Not viable: PAD is not using this folder"}</span></div>
           <div class="small">${e.text}</div>
         </div>`
       : state === "viable" ? html`<div class="c-viable" role="status">
