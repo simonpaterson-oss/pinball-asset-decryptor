@@ -152,7 +152,17 @@ _DISKS = {'/games': 'Room on the card, games', '/dump': 'Room on the card, logs'
           '/': 'Room on the disk, system', '/jjpe/perm': 'Room on the disk, settings'}
 
 
-def parse_status(text):
+def _bluetooth_installed():
+    """The Bluetooth headphones release installed on this computer ('' when none).  Never raises."""
+    try:
+        from . import bluetooth_card, card_plugins
+        rec = card_plugins.installed(bluetooth_card.PLUGIN)
+        return rec['tag'] if rec else ''
+    except Exception:                                       # noqa: BLE001 - a note on a status page only
+        return ''
+
+
+def parse_status(text, bluetooth_installed=''):
     """``[(what, value), ...]`` for the Network tab, from :data:`STATUS`'s (or :data:`JJP_STATUS`'s) answer.
     A value is a sentence, or a list of short lines the page shows as bullets (what PAD put on the card)."""
     got, wifi, disks, pad = {}, {}, [], []
@@ -223,8 +233,15 @@ def parse_status(text):
             names.append('Files sent from PAD')
         elif key == 'bluetooth':
             tag = item.split()[1] if len(item.split()) == 2 and re.match(r'^v[0-9.]{1,16}$', item.split()[1]) else ''
-            names.append('Bluetooth headphones plugin%s%s' % (
-                ' ' + tag if tag else '',
+            late = ''
+            if tag and bluetooth_installed:
+                # PAD-1678: a machine left on an older release than this computer has says so here too
+                from . import bluetooth_card
+                if bluetooth_card.needs_update(tag, bluetooth_installed):
+                    late = (' (older than the %s on this computer: Put it on the machine now, on the Plugins tab, '
+                            'updates it)' % bluetooth_installed)
+            names.append('Bluetooth headphones plugin%s%s%s' % (
+                ' ' + tag if tag else '', late,
                 ' (switched itself off after a game that ended badly; Check it on the machine, on the Plugins '
                 'tab, switches it back on)' if bt_off else ''))
     rows.append(('From PAD on this card', names))
@@ -232,7 +249,7 @@ def parse_status(text):
 
 
 def status(machine):
-    return parse_status(_sh(machine, JJP_STATUS if kind(machine) == 'jjp' else STATUS, 40))
+    return parse_status(_sh(machine, JJP_STATUS if kind(machine) == 'jjp' else STATUS, 40), _bluetooth_installed())
 
 
 # ------------------------------------------------------------------ logs

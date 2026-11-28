@@ -2019,8 +2019,9 @@ for _name in ("state", "sizes", "read_ranges", "free", "remount", "mkdir", "uplo
     setattr(SshMachine, _name, _again(getattr(SshMachine, _name)))
 del _name
 
-def connect(address, log=None):
-    """An :class:`SshMachine` for ``host`` or ``host:port``.
+def connect(address, log=None, look=True):
+    """An :class:`SshMachine` for ``host`` or ``host:port``.  *look* False never searches the network for a
+    machine that does not answer (a quiet question asked without the user pressing anything).
 
     PAD-1427: when nothing answers there and it is the machine this computer remembers (a scan found it, so its
     identity is known), the home network is looked over for that same machine at another address (the router
@@ -2029,6 +2030,8 @@ def connect(address, log=None):
     try:
         return SshMachine(host, port)
     except Unreachable:
+        if not look:
+            raise
         from . import machine_scan, pad_ssh_key
         rec = next((m for m in pad_ssh_key.machines() if m["host_key"] and _same_address(m["address"], host, port)),
                    None)
