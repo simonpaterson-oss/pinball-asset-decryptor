@@ -806,6 +806,55 @@ at about 0.5 ms of work a frame; a phase laid out from nothing with the mouse on
 aligned and distributed) and with the keyboard only (the palette, Tab, arrows, Ctrl D, align), and the keyboard one
 undone, after a reload of the page, back to an empty stage.
 
+### The storyboard and the timeline (PAD-1664)
+
+**The storyboard** (`webui/static/js/tabs/vmodes_story.js`; the toolbar's Storyboard button, Ctrl B) shows the whole
+mode's `flow` as a board over the stage: cards laid out left to right by their distance from the start, the ends on
+a row below, wires coloured by what takes them (won `--ok`, lost `--err`, a clip's then `--ink-3`, a phase's tries a
+dashed `--info` loop). Clicking a phase card opens it on the stage. A wire is made by dragging from a card's won,
+lost or then port (or W / L and the arrows from the keyboard); while it is dragged, only the cards that leave a flow
+the checker accepts light up, and each of the others says why not, by the same rules as `document.py`'s flow check
+(ported to `flowProblems`), so the board cannot be wired wrong. A "+" on any wire inserts a clip (from the mode's
+clips, made with the tab's clip tools) or a phase of any of the 19 kinds (`document.phase_template`, through
+`vmodes.phase_template`, which adds the placeholder things, meters and pictures the kind needs so it checks and
+compiles); the new phase's loss goes where the card before it sends its own. Deleting a card sends what led to it
+to where it led. The side panel holds a card's settings (title, objective, tries, clip, outcome, the start).
+
+**The timeline** (`webui/static/js/tabs/vmodes_timeline.js`, a dock under the stage) shows the phase's seconds:
+markers, then each placed thing with its tracks (position, scale, turn, fade, tint), its spawn waves and the sounds.
+Keys are dragged in time (snapped to quarter seconds, the music's beats when it has a tempo, markers, other keys and
+the playhead; Ctrl: by single steps) and double-clicked into a track; K adds keys at the playhead for the picked
+things. Picking a key opens it in the inspector: its value, its time, the eight easing presets or a curve of its own
+(two handles, as CSS cubic-bezier), and for position the path's handles (Smooth, Straight). The picked things'
+motion paths are drawn on the stage as dashed `--info` beziers with their keys as diamonds and the picked key's
+handles; dragging a key or handle there reshapes the path (Alt: one handle on its own). Moving a thing that has a
+position track, at any playhead, makes or moves its key there instead of its place. Spawn waves are bars with a
+tick per spawn: dragged to move, their end dragged to change the count, painted by dragging across an empty
+stretch of a thing's row. Shift drag on the ruler marks a loop region (L turns it off and on), and the play button
+(or a tap of Space) plays the phase in the editor with nothing pressed, looping there. Markers live in
+`editor.markers`; the loop and the snap are the user's, in the browser.
+
+**Scrubbing is replaying.** At the playhead the stage is the engine's own replay of the phase from its card's start
+with nothing pressed (`vm_edit_seek_begin`, `vm_edit_seek_step`, `vm_edit_seek_draw`; the title card's steps are not
+played, since their only lasting work is a flash that is gone by their end), never a second drawing of it. The
+WebAssembly side keeps a snapshot of the play state every second (`vmw_seek`), so a seek restores the one at or
+before it and plays at most 59 steps; a change to the tables throws away only the snapshots it can have changed
+(`vmw_seek_dirty`). With the flag `VM_SEEK_ENDLESS` the phase never ends, so the whole timeline can be seen past a
+loss. Live drags of keys put them into the loaded tables (`vmw_key_set`, `vmw_key_at`, `vmw_key_insert`) and the
+stage follows every frame; the change is committed as one undo step when the pointer lets go, and a refused change
+puts the last pack back.
+
+**Proved by** `tests/test_video_mode_timeline.py` (the document's rules in plain words; the compiler's tables and
+refusals; keyed things where the keys say, against the same maths in floats; a scrub word for word the game's list at
+that step, on native and WebAssembly in any order; 60 s of timeline scrubbed: ~10 ms for the first seek to the end,
+then ~0.1 ms a seek; the keyframe goldens on the Spike 2's ARM build of the engine under qemu, the same hashes as
+native and WebAssembly), `tests/test_video_mode_story.py` (every kind's template checks and compiles, in Night
+Harbour's flow and a new mode's), the keyframe goldens in `test_video_mode_engine.py`, and `scripts/shot_pad1664.py`
+in Edge: the boat chase rebuilt on the board (intro, chase, boss with two tries, aim, charge, won or lost) with the
+board's own insert; in the app, 300 seeks across a minute at ~0.05 ms each, the stage at a scrub the same list as
+the game at that step, the app's engine replaying the keyframe golden to the hash the ARM build gives, a path key
+dragged on the stage and a thing dragged at 14 s making a key exactly where it was dropped, both undone.
+
 ## 5 Budgets per machine
 
 **Spike 2 is measured** (PAD-1655 in the emulator, `video_mode_spike2_drawing.md`; checked
@@ -1002,7 +1051,7 @@ Status is kept current here as tickets land.
 | 3 | PAD-1677 | Spike 1, American, Dutch, Pinball Brothers, Barrels of Fun | PAD-1660 | queued |
 | 4 | PAD-1662 | Game kinds 1: chase, thrust, aim, boss; and from the survey defend, catch, runner, lander, route | PAD-1661 | queued |
 | 4 | PAD-1663 | Game kinds 2: mash, alternate, tug, rhythm, sequence, dodge, shield; and from the survey timing, pick | PAD-1661 | queued |
-| 4 | PAD-1664 | Editor: storyboard, cutscenes, timeline with keyframes | PAD-1661 | queued |
+| 4 | PAD-1664 | Editor: storyboard, cutscenes, timeline with keyframes | PAD-1661 | done, waiting to ship (format 2) |
 | 4 | PAD-1666 | HUD and feel | PAD-1661 | queued |
 | 5 | PAD-1665 | Rule cards | PAD-1662, 1663 | queued |
 | 5 | PAD-1670 | Starter games, guide page, limits page | PAD-1662, 1663, 1664, 1666, 1667, 1668 | queued |
@@ -1047,6 +1096,12 @@ that order; two tickets that bump at once take numbers in merge order.
   (with a format bump) when a kind needs it.
 - **Win before lose on the same step**, and a clock that runs out with no condition met
   loses the phase.
+- **A key without a handle has it a third of the way to its neighbour** (PAD-1664), so an unhandled motion segment
+  is a straight line travelled at the pace its ease says; a cubic with its handles on its ends would ease in and out
+  by itself, and a "linear" key would not be.
+- **Scrubbing replays from the phase's start with nothing pressed**, through snapshots a second apart, rather than
+  interpolating a recorded run: what the timeline shows is the game, so a key's effect on collisions and spawns is
+  seen too.
 - **Pictures without a file yet are drawn as placeholders** the size of their hitbox, and
   fonts use monospace placeholder metrics, until PAD-1658 packs the real atlases and
   glyphs; the compiler takes both as inputs, so nothing in the engine changes then.

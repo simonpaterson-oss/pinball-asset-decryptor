@@ -124,9 +124,10 @@ EXPORT(vmw_place_boxes) int32_t vmw_place_boxes(void)
     ph = &E.doc.phase[E.phase];
     n = ph->nplace < VM_MAX_THINGS ? ph->nplace : VM_MAX_THINGS;
     for (i = 0; i < n; i++) {
-        const vm_thing *t = &E.th[i];
+        int32_t slot = E.place_th[i];      /* PAD-1664: after a seek, place i is wherever it was put, if still alive */
+        const vm_thing *t = slot >= 0 ? &E.th[slot] : 0;
         int32_t *o = &boxes[i * 9];
-        if (!t->alive) { o[0] = 0; continue; }
+        if (!t || !t->alive || t->place != i) { o[0] = 0; continue; }
         {
             const vm_picture *p = &E.doc.pic[E.doc.kind[t->kind].picture];
             int32_t w = vm_fxmul(p->w * p->texel, t->scale), h = vm_fxmul(p->h * p->texel, t->scale);
@@ -189,5 +190,41 @@ EXPORT(vmw_key_set) int32_t vmw_key_set(int32_t i, int32_t a, int32_t b, int32_t
     if (i < 0 || i >= E.doc.nkey) return 0;
     k = &E.doc.key[i];
     k->a = a; k->b = b; k->ox = ox; k->oy = oy; k->ix = ix; k->iy = iy;
+    return 1;
+}
+/* key i's time (steps into the play): kept a step clear of its track's neighbours, so the keys stay in order */
+EXPORT(vmw_key_at) int32_t vmw_key_at(int32_t i, int32_t at)
+{
+    int32_t t;
+    if (i < 0 || i >= E.doc.nkey || at < 0) return 0;
+    for (t = 0; t < E.doc.ntrack; t++) {
+        const vm_track *tr = &E.doc.track[t];
+        if (i < tr->key0 || i >= tr->key0 + tr->nkey) continue;
+        if (i > tr->key0 && at <= E.doc.key[i - 1].at) return 0;
+        if (i < tr->key0 + tr->nkey - 1 && at >= E.doc.key[i + 1].at) return 0;
+        E.doc.key[i].at = at;
+        return 1;
+    }
+    return 0;
+}
+/* a key put into track t (over every track in order) at its place `pos`, while a drag that makes it is live: the
+ * tables shift as the compiler would lay them out with it. The page's own copy of the document gets the same key, and
+ * the pack the commit brings back replaces all of it. */
+EXPORT(vmw_key_insert) int32_t vmw_key_insert(int32_t t, int32_t pos, int32_t at, int32_t a, int32_t b, int32_t ease)
+{
+    vm_track *tr;
+    int32_t i, at_i;
+    if (t < 0 || t >= E.doc.ntrack || E.doc.nkey >= VM_MAX_KEYS) return 0;
+    tr = &E.doc.track[t];
+    if (pos < 0 || pos > tr->nkey) return 0;
+    if ((pos > 0 && at <= E.doc.key[tr->key0 + pos - 1].at) || (pos < tr->nkey && at >= E.doc.key[tr->key0 + pos].at)) return 0;
+    at_i = tr->key0 + pos;
+    for (i = E.doc.nkey; i > at_i; i--) E.doc.key[i] = E.doc.key[i - 1];
+    E.doc.nkey++;
+    memset(&E.doc.key[at_i], 0, sizeof(vm_key));
+    E.doc.key[at_i].at = at; E.doc.key[at_i].a = a; E.doc.key[at_i].b = b;
+    E.doc.key[at_i].ease = ease; E.doc.key[at_i].curve = -1;
+    tr->nkey++;
+    for (i = 0; i < E.doc.ntrack; i++) if (i != t && E.doc.track[i].key0 >= at_i) E.doc.track[i].key0++;
     return 1;
 }

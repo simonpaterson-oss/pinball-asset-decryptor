@@ -578,8 +578,14 @@ static void tracks(vm_engine *e)
         }
         if (s == n - 1 || w == 0) { a = k[s].a; b = k[s].b; }
         else if (tr->prop == VM_TK_MOTION) {
-            a = bezier(k[s].a, k[s].a + k[s].ox, k[s + 1].a + k[s + 1].ix, k[s + 1].a, w);
-            b = bezier(k[s].b, k[s].b + k[s].oy, k[s + 1].b + k[s + 1].iy, k[s + 1].b, w);
+            /* a key without a handle on this side has it a third of the way along the line to the other key, so a
+             * segment with none is straight and even, and its ease alone says how it moves along it */
+            int32_t ox = k[s].ox, oy = k[s].oy, ix = k[s + 1].ix, iy = k[s + 1].iy;
+            int32_t dx = k[s + 1].a - k[s].a, dy = k[s + 1].b - k[s].b;
+            if (!ox && !oy) { ox = dx / 3; oy = dy / 3; }
+            if (!ix && !iy) { ix = -dx / 3; iy = -dy / 3; }
+            a = bezier(k[s].a, k[s].a + ox, k[s + 1].a + ix, k[s + 1].a, w);
+            b = bezier(k[s].b, k[s].b + oy, k[s + 1].b + iy, k[s + 1].b, w);
         } else if (tr->prop == VM_TK_TINT) {
             int32_t c, sh;
             a = 0; b = 0;

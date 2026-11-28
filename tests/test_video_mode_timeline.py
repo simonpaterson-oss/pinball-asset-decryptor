@@ -239,6 +239,11 @@ def expect(track, step):
             m = 1 - w
             return m ** 3 * p0 + 3 * m * m * w * p1 + 3 * m * w * w * p2 + w ** 3 * p3
         o, i_ = k0.get("out", (0, 0)), k1.get("in", (0, 0))
+        dx, dy = k1["x"] - k0["x"], k1["y"] - k0["y"]
+        if not any(o):                                   # a missing handle: a third of the way along the line
+            o = (dx / 3, dy / 3)
+        if not any(i_):
+            i_ = (-dx / 3, -dy / 3)
         return (bz(k0["x"], k0["x"] + o[0], k1["x"] + i_[0], k1["x"]), bz(k0["y"], k0["y"] + o[1], k1["y"] + i_[1], k1["y"]))
     if track["prop"] == "tint":
         a, b = int((k0["tint"] + "ff")[1:9], 16), int((k1["tint"] + "ff")[1:9], 16)

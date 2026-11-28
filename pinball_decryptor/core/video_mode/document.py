@@ -490,3 +490,166 @@ def new(slug, title):
             {"id": "e_won", "card": "end", "outcome": "won"},
             {"id": "e_lost", "card": "end", "outcome": "lost"}]},
     }
+
+
+# ---- the storyboard's "Add a phase" (PAD-1664) ------------------------------------
+KIND_WORDS = {
+    "chase": ("Chase", "Steer, fire and dodge"), "thrust": ("Thrust flight", "Hold to rise, fly the gaps"),
+    "aim": ("Aim and fire", "Hit the targets"), "boss": ("Boss", "Hit the weak spots"),
+    "mash": ("Mash", "Mash the button!"), "alternate": ("Alternate", "Left, right, left, right!"),
+    "tug": ("Tug of war", "Hold on and pull"), "rhythm": ("Rhythm", "Press on the beat"),
+    "sequence": ("Sequence", "Repeat the buttons"), "dodge": ("Dodge", "Dodge the way it says"),
+    "shield": ("Shield", "Hold the shield up"), "timing": ("Timing", "Stop it in the window"),
+    "defend": ("Defend", "Strike what comes at you"), "catch": ("Catch", "Catch what falls"),
+    "runner": ("Runner", "Jump the gaps"), "lander": ("Lander", "Land it gently"),
+    "route": ("Route", "Pick the right side"), "pick": ("Pick", "Pick a prize, or cash out"),
+    "custom": ("Custom", "Things and rules of your own"),
+}
+
+
+def phase_template(doc, kind, phase_id=None):
+    """A new document: ``doc`` with one playable phase of game kind ``kind`` added at the end of its phases, and
+    whatever that phase names (things, values, pictures, music) reused from the document where something suits, or
+    added as placeholders (a picture whose file does not exist yet is drawn as a placeholder). The flow is left
+    alone: the storyboard wires the new phase in. Pure: nothing is read from or written to the disk."""
+    if kind not in KIND_WORDS:
+        raise VideoModeError(['"%s" is not a game kind' % kind])
+    d = copy.deepcopy(doc)
+    d.setdefault("assets", {}).setdefault("pictures", [])
+    d.setdefault("things", [])
+    phases = d.setdefault("phases", [])
+    taken = set()
+    for key in ("things", "values", "phases"):
+        taken |= {x.get("id") for x in d.get(key) or [] if isinstance(x, dict)}
+    pics = {p.get("id") for p in d["assets"]["pictures"] if isinstance(p, dict)}
+
+    def fresh(base, pool):
+        base = re.sub(r"[^a-z0-9_]", "_", base.lower())[:36] or "x"
+        n, out = 1, base
+        while out in pool:
+            n += 1
+            out = "%s_%d" % (base, n)
+        pool.add(out)
+        return out
+
+    def thing(team, base, size, **extra):
+        """The document's first thing of this team (one that moves by itself, when that is asked for), or a new
+        placeholder one."""
+        for t in d["things"]:
+            if isinstance(t, dict) and t.get("team") == team and (not extra.get("mover") or t.get("mover")):
+                return t["id"]
+        pid = fresh(base, pics)
+        d["assets"]["pictures"].append({"id": pid, "file": "art/%s.png" % pid, "frame_w": size[0], "frame_h": size[1]})
+        tid = fresh(base, taken)
+        t = {"id": tid, "picture": pid, "team": team}
+        t.update(extra)
+        d["things"].append(t)
+        return tid
+
+    def meter(base, goal=100):
+        vid = fresh(base, taken)
+        d.setdefault("values", []).append({"id": vid, "type": "meter", "start": 0, "min": 0, "max": goal})
+        return vid
+
+    pid = phase_id if phase_id and phase_id not in taken else fresh(kind, taken)
+    title, objective = KIND_WORDS[kind]
+    ph = {"id": pid, "kind": kind, "title": title, "objective": objective, "length_s": 30, "settings": {},
+          "place": [], "win": [{"when": "survive_s", "value": 30}], "lose": []}
+    s = ph["settings"]
+    W, H = 1360, 768
+    if kind in ("chase", "thrust"):
+        p = thing("player", "player", (96, 48), health=3)
+        s["player"] = p
+        ph["place"] = [{"thing": p, "x": 240 if kind == "thrust" else 680, "y": 384 if kind == "thrust" else 640}]
+        foe = thing("enemy", "enemy", (64, 64), points=100, mover={"type": "straight", "speed": 300, "direction": 180})
+        ph["spawns"] = [{"thing": foe, "at_s": 2, "every_s": 3, "count": 8, "x": W + 60, "y": 520 if kind == "chase" else 300}]
+        ph["lose"] = [{"when": "health_gone"}]
+        ph["length_s"] = 40
+        ph["win"] = [{"when": "survive_s", "value": 40}]
+    elif kind == "aim":
+        s["sight"] = thing("scenery", "sight", (64, 64))
+        foe = thing("enemy", "target", (64, 64), points=100)
+        ph["place"] = [{"thing": s["sight"], "x": W // 2, "y": H // 2, "depth": 20},
+                       {"thing": foe, "x": 400, "y": 300}, {"thing": foe, "x": 960, "y": 300}]
+        s.update(move="sweep", sweep_path=[[200, 300], [1160, 300]], sweep_s=3, fire="press")
+        ph["win"] = [{"when": "kills", "value": 2}]
+        ph["lose"] = [{"when": "time_up"}]
+    elif kind == "boss":
+        b = thing("enemy", "boss", (320, 160), health=10, points=5000)
+        s.update(boss=b, hit_with="sight",
+                 weak_points=[{"x": -80, "y": 0, "r": 30, "hits": 2, "open_s": 2, "closed_s": 1.5},
+                              {"x": 80, "y": 0, "r": 30, "hits": 2, "open_s": 2, "closed_s": 1.5, "offset_s": 1}])
+        s["sight"] = thing("scenery", "sight", (64, 64))
+        ph["place"] = [{"thing": b, "x": W // 2, "y": 300}, {"thing": s["sight"], "x": 400, "y": 300, "depth": 20}]
+        ph["win"] = [{"when": "boss_down"}]
+        ph["lose"] = [{"when": "time_up"}]
+        ph["length_s"] = 40
+    elif kind in ("mash", "alternate", "tug"):
+        s["meter"] = meter({"mash": "power", "alternate": "charge", "tug": "pull"}[kind])
+        if kind == "mash":
+            s.update(button="action", per_press=6, drain_per_s=10, goal=100)
+        elif kind == "alternate":
+            s.update(per_pair=9, drain_per_s=12, start_side="either", goal=100)
+        else:
+            s.update(hold="shown", switch_every_s=3, per_press=5, pull_back_per_s=8, goal=100)
+        ph["win"] = [{"when": "goal"}]
+        ph["lose"] = [{"when": "time_up"}]
+        ph["length_s"] = 12
+    elif kind == "rhythm":
+        sounds = d["assets"].setdefault("sounds", [])
+        music = next((x["id"] for x in sounds if isinstance(x, dict) and x.get("role") == "music"), None)
+        if music is None:
+            music = fresh("rhythm_music", {x.get("id") for x in sounds if isinstance(x, dict)})
+            sounds.append({"id": music, "file": "sound/%s.ogg" % music, "role": "music", "loop": True})
+        s.update(music=music, tempo_bpm=120, travel_beats=4,
+                 chart=[{"beat": 4 + 2 * i, "button": ["left", "right", "action"][i % 3]} for i in range(24)])
+        ph["music"] = music
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "sequence":
+        s.update(length=4, shown=True, per_press_s=2, rounds=3)
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "dodge":
+        s.update(buttons=["left", "right"], tell_s=1, window_s=0.8, count=8)
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "shield":
+        s.update(button="action", tell_s=1, hold_s=1.5, count=6)
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "timing":
+        s.update(input="press", button="action", sweep_s=1.5, window_from=0.45, window_to=0.6, shrink_pct=10, rounds=5)
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "defend":
+        s.update({"enemy": thing("enemy", "enemy", (64, 64), points=100), "from": "sides", "speed": 300, "every_s": 1.5,
+                  "count": 12, "reach": 200, "let_through": 3})
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "catch":
+        c = thing("player", "catcher", (128, 48))
+        s.update(catcher=c, move="lanes", lanes=3, speed=900, misses_allowed=3)
+        ph["place"] = [{"thing": c, "x": W // 2, "y": 680}]
+        item = thing("pickup", "prize", (48, 48), points=200)
+        ph["spawns"] = [{"thing": item, "at_s": 1, "every_s": 1.5, "count": 15, "x": W // 2, "y": -40, "spread": 400,
+                         "mover": {"type": "straight", "speed": 300, "direction": 90}}]
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "runner":
+        r = thing("player", "runner", (64, 96))
+        s.update(runner=r, jump="action", long_jump="both_flippers", jump_px=220, long_jump_px=360, scroll_speed=400, waves=5)
+        ph["place"] = [{"thing": r, "x": 300, "y": 600}]
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "lander":
+        sh = thing("player", "ship", (80, 80))
+        s.update(ship=sh, gravity=200, side_thrust=300, up="action", up_thrust=500, fuel_s=20, max_land_speed=120,
+                 pads=[{"x": 300, "w": 160, "points": 1000}, {"x": 1000, "w": 100, "points": 3000}])
+        ph["place"] = [{"thing": sh, "x": W // 2, "y": 120}]
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "route":
+        v = thing("player", "vehicle", (96, 96))
+        s.update(vehicle=v, fork_count=5, speed=400, speed_up_pct=10)
+        ph["place"] = [{"thing": v, "x": W // 2, "y": 640}]
+        ph["win"] = [{"when": "time_up"}]
+    elif kind == "pick":
+        s.update(choices=3, bank_start=0, cash_out="none", rounds=3,
+                 outcomes=[{"label": "+500", "weight": 3, "result": "prize", "amount": 500},
+                           {"label": "Double", "weight": 1, "result": "double"},
+                           {"label": "Bust", "weight": 1, "result": "bust"}])
+        ph["win"] = [{"when": "time_up"}]
+    phases.append(ph)
+    return d

@@ -79,6 +79,11 @@ export class VideoModeEngine {
     const f = (v) => Math.round(v * 65536) | 0;
     return this.x.vmw_key_set(i | 0, raw ? a | 0 : f(a), f(b), f(ox), f(oy), f(ix), f(iy)) !== 0;
   }
+  keyAt(i, step) { return this.x.vmw_key_at(i | 0, step | 0) !== 0; }
+  keyInsert(track, pos, step, a, b = 0, ease = 0, raw = false) {
+    const f = (v) => Math.round(v * 65536) | 0;
+    return this.x.vmw_key_insert(track | 0, pos | 0, step | 0, raw ? a | 0 : f(a), f(b), ease | 0) !== 0;
+  }
   placeSet(i, x, y, scale, turn, depth, hidden) {
     const f = (v) => Math.round(v * 65536) | 0;
     return this.x.vmw_place_set(i | 0, f(x), f(y), f(scale), f(turn), depth == null ? NONE : depth | 0, hidden ? 1 : 0) !== 0;
