@@ -30,6 +30,7 @@ from pinball_decryptor.core.video_mode import compiler, document, harness  # noq
 ENGINE = os.path.join(ROOT, "pinball_decryptor", "core", "video_mode", "engine")
 sys.path.insert(0, ENGINE)
 import build  # noqa: E402
+import gen_tables  # noqa: E402
 
 sys.path.pop(0)
 
@@ -387,6 +388,18 @@ def test_engine_object_keeps_the_mode_rules():
     # only what mode.so already allows: libgcc's division helpers, the unwinder, memset/memcpy
     allowed = re.compile(r"^(__aeabi_\w+|__gnu_\w+|memset|memcpy|memmove)$")
     assert [u for u in undefined if not allowed.match(u)] == [], undefined
+
+
+# ---- the integer tables are what the generator makes --------------------------------
+def test_tables_are_what_gen_tables_writes(tmp_path, monkeypatch):
+    out = tmp_path / "vm_tables.h"
+    real_join = os.path.join
+    monkeypatch.setattr(gen_tables.os.path, "join", lambda *a: str(out) if a[-1] == "vm_tables.h" else real_join(*a))
+    gen_tables.main()
+    with open(os.path.join(ENGINE, "vm_tables.h"), encoding="utf-8") as f:
+        assert out.read_text(encoding="utf-8") == f.read().replace("
+", "
+")
 
 
 # ---- regenerate ------------------------------------------------------------------------
