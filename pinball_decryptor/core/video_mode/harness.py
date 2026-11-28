@@ -189,7 +189,7 @@ def main(argv=None):
     if not runner:
         print("no engine to run: install a C compiler or Node")
         return 2
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="pad_vm_") as td:
         pack = os.path.join(td, "mode.pack")
         with open(pack, "wb") as f:
             f.write(res.pack)
