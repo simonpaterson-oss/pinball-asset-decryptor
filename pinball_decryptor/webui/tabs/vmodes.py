@@ -17,6 +17,7 @@ The rules live in :mod:`...core.video_mode.art` and :mod:`...core.video_mode.pac
 """
 
 import base64
+import copy
 import json
 import os
 import re
@@ -58,8 +59,10 @@ class VideoModesTab(TabService):
         self._tmp = None
         self.set(project="", available=False, why="", intro=INTRO, modes=[], slug="", title="", problems=[],
                  pictures=[], phases=[], draft=None, machine="spike2", machines=[], report=None, packing=False,
-                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000", play_mem=None)
+                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000", play_mem=None, history=None)
         self._play_id = 0
+        self._hist = None             # the open mode's undo history (core/video_mode/history.py, PAD-1661)
+        self._saved = None            # the document as last written, what the next step is measured from
 
     # -- the project -------------------------------------------------------------------------------------------
     def _folder(self):
@@ -137,7 +140,18 @@ class VideoModesTab(TabService):
             except (OSError, ValueError) as e:
                 problems = list(getattr(e, "problems", None) or [str(e)])
         self.set(slug=slug, title=(self._doc or {}).get("title", ""), problems=problems, report=None, written="")
+        self._hist_open()
         self._paint()
+
+    # -- the undo history: every change to the document is one step (PAD-1661) --------------------------------
+    def _hist_open(self):
+        from ...core.video_mode import history as H
+        self._hist = H.History(self._mode_dir()).open(self._doc) if self._doc is not None else None
+        self._saved = copy.deepcopy(self._doc)
+        self._hist_state()
+
+    def _hist_state(self):
+        self.set(history=self._hist.state() if self._hist else None)
 
     @rpc
     def select(self, slug):
@@ -174,6 +188,10 @@ class VideoModesTab(TabService):
             self._open(self._slug)
             compat.messagebox.showerror("Video modes", "Not saved: %s" % e)
             return False
+        if self._hist is not None and self._saved is not None:
+            self._hist.push(what or "Change", self._saved, self._doc)
+        self._saved = copy.deepcopy(self._doc)
+        self._hist_state()
         self.set(report=None, written="")
         self._paint()
         return True
@@ -335,7 +353,7 @@ class VideoModesTab(TabService):
         except A.ArtError as e:
             compat.messagebox.showerror("Video modes", str(e))
             return False
-        if self._save():
+        if self._save("Bring art in"):
             self._draft = None
             self.set(draft=None)
             return pid
@@ -382,7 +400,7 @@ class VideoModesTab(TabService):
                     if lay.get("picture") == pid:
                         lay["picture"] = new
             p["id"] = new
-        return self._save()
+        return self._save("Change a picture")
 
     @rpc
     def remove_picture(self, pid):
@@ -395,7 +413,7 @@ class VideoModesTab(TabService):
                                         % (pid, ", ".join(uses)))
             return False
         self._doc["assets"]["pictures"].remove(p)
-        return self._save()
+        return self._save("Remove a picture")
 
     # -- backgrounds -------------------------------------------------------------------------------------------
     @rpc
@@ -411,7 +429,7 @@ class VideoModesTab(TabService):
         except (A.ArtError, KeyError, ValueError) as e:
             compat.messagebox.showerror("Video modes", str(e))
             return False
-        return self._save()
+        return self._save("Change the backgrounds")
 
     # -- touch-up in the pixel editor --------------------------------------------------------------------------
     def _frame_ref(self, rel):
@@ -700,6 +718,114 @@ class VideoModesTab(TabService):
         if not isinstance(meta, dict):
             return None
         return dict(meta, name=name, data=base64.b64encode(data).decode("ascii"))
+
+
+    # -- the editor (PAD-1661): the stage, the layers and the inspector ----------------------------------------
+    def _stage_parts(self, comp, doc):
+        """What the page needs to draw a compiled document: the pack, the engine's files, the pictures and fonts by
+        the index the engine names them, and where each phase's places start in the engine's place table."""
+        from ...core.video_mode import compiler as C
+        names = comp.names
+        eng = os.path.join(os.path.dirname(C.__file__), "engine")
+        stage = doc.get("stage") or {}
+        return {
+            "pack": base64.b64encode(comp.pack).decode("ascii"),
+            "engine_js": os.path.join(eng, "vm_engine.js"), "engine_wasm": os.path.join(eng, "vm_engine.wasm"),
+            "stage": [int(stage.get("width", 1360)), int(stage.get("height", 768))],
+            "pictures": self._play_pictures(doc, names),
+            "fonts": [{"atlas": f["atlas"], "size": f["size"], "cell_w": max(1, int(round(f["size"] * 0.6)))}
+                      for f in names.get("fonts") or []],
+            "place0": names.get("place0") or [], "phases": names.get("phases") or [],
+        }
+
+    def _edit_reply(self, doc, with_doc=False, assets_changed=False):
+        from ...core.video_mode import compiler as C
+        comp = C.compile_doc(doc, self._mode_dir())
+        out = {"ok": True, "history": self._hist.state() if self._hist else None, "notes": comp.notes[:20],
+               "problems": comp.problems[:20]}
+        if comp.ok:
+            parts = self._stage_parts(comp, doc)
+            if not assets_changed and not with_doc:
+                parts.pop("pictures")
+                parts.pop("fonts")
+            out.update(parts)
+        else:
+            out["pack"] = None
+        if with_doc:
+            out["doc"] = doc
+        return out
+
+    @rpc
+    def edit_open(self):
+        """Open the editor on the mode picked: the document, the compiled pack and what draws it, and the history."""
+        if self._doc is None:
+            return {"ok": False, "problems": ["Pick a video mode first."]}
+        _, B, _, _ = _mods()
+        out = self._edit_reply(self._doc, with_doc=True)
+        out["slug"] = self._slug
+        out["machine"] = self.get("machine") or B.DEFAULT
+        return out
+
+    @rpc
+    def edit_commit(self, doc, label=""):
+        """One change made in the editor: the whole document after it. Checked, saved (there is no save button)
+        and kept as one undo step. Refused, with every reason, when it does not check or compile; the page then
+        puts its copy back."""
+        from ...core.video_mode import compiler as C
+        _, _, D, _ = _mods()
+        if self._doc is None:
+            return {"ok": False, "problems": ["Pick a video mode first."]}
+        try:
+            doc = D.migrate(doc)
+        except ValueError as e:
+            return {"ok": False, "problems": list(getattr(e, "problems", None) or [str(e)])}
+        probs = D.check(doc)
+        if not probs:
+            comp = C.compile_doc(doc, self._mode_dir())
+            probs = [] if comp.ok else comp.problems
+        if probs:
+            return {"ok": False, "problems": probs[:12], "doc": self._doc}
+        assets_changed = (doc.get("assets") or {}) != (self._doc.get("assets") or {})
+        self._doc = doc
+        if not self._save(str(label or "Change")[:80]):
+            return {"ok": False, "problems": ["The change was not saved."], "doc": self._doc}
+        return self._edit_reply(self._doc, assets_changed=assets_changed)
+
+    def _edit_move(self, which):
+        _, _, D, _ = _mods()
+        if self._doc is None or self._hist is None:
+            return {"ok": False}
+        label = self._hist.undo_label() if which == "undo" else self._hist.redo_label()
+        doc = self._hist.undo(self._doc) if which == "undo" else self._hist.redo(self._doc)
+        if doc is None:
+            return {"ok": False}
+        assets_changed = (doc.get("assets") or {}) != (self._doc.get("assets") or {})
+        try:
+            D.save(self._doc_path(), doc)
+        except ValueError as e:
+            # a step that no longer leads to a document that checks: step back over it and say so
+            if which == "undo":
+                self._hist.redo(doc)
+            else:
+                self._hist.undo(doc)
+            return {"ok": False, "problems": list(getattr(e, "problems", None) or [str(e)])}
+        self._doc = doc
+        self._saved = copy.deepcopy(doc)
+        self._hist_state()
+        self.set(report=None, written="")
+        self._paint()
+        out = self._edit_reply(doc, with_doc=True, assets_changed=assets_changed)
+        out["label"] = label
+        return out
+
+    @rpc
+    def edit_undo(self):
+        """One step back. Returns the document and its pack, or {"ok": False} at the start of the history."""
+        return self._edit_move("undo")
+
+    @rpc
+    def edit_redo(self):
+        return self._edit_move("redo")
 
 
 TAB = VideoModesTab
