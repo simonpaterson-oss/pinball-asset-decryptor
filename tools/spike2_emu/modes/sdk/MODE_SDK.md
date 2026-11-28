@@ -7954,3 +7954,51 @@ port drafts its own), never a recipe's. On a rig, run_game.sh answers node 2 whe
 **Emulator-proven** (docs/plans/pad1448_added_cabinet_lights.md): on all 21 latest builds that take them, 23 added
 speaker lights (Godzilla's layout) - 69 channel configs on node 2, and a show's red, green and blue on every pixel in
 the game's own colour frames (cmd b6 / 96).
+
+## Moving pictures (PAD-1655)
+
+A mode can draw pictures of its own over the game's display, placed freely every frame: position, scale, turn,
+alpha, tint and depth per quad, words in the card's own font, and a switch that covers the game's display. It is
+the drawing half of a video mode (the video mode maker, PAD-1654). The calls are in `pad_mode.h` ("moving
+pictures"); `gfx_test_mode.c` is a whole example.
+
+```c
+static int set, orb, font;
+static void on_tick(void)
+{
+    if (!set) { set = pm_gfx_load("my_mode.padgfx"); orb = pm_gfx_picture(set, "orb"); font = pm_gfx_font(set, ""); }
+    if (pm_gfx_begin()) {
+        struct pm_quad q = { 0 };
+        q.pic = orb; q.x = 680; q.y = 384; q.ax = q.ay = 0.5f; q.turn = pm_ms() / 10 % 360; q.alpha = 1;
+        q.tint = PM_RGB(255, 128, 0);
+        pm_gfx_quad(&q);
+        pm_gfx_text(font, "HIT THE TARGET", 680, 40, 48, PM_ALIGN_CENTER, PM_RGB(255, 255, 255), 1, 1);
+        pm_gfx_end();
+    }
+}
+```
+
+**The picture set** is one `.padgfx` file beside `mode.so` (or in `/dump` in the emulator), written by
+`pinball_decryptor/plugins/stern/gfx_set.py`: PNGs (each named after its file), PAD's own placeholder shapes
+(`--placeholder`), and a font - the card's own from an extract (`--card-font <extract>`, laid out by the same
+rule the Scenes preview uses, so the letters are the game's) or a desktop one (`--ttf`). A picture is at most 2048
+a side; many small ones go in one sheet, and a quad draws a part of it (`sx, sy, sw, sh`). A quad's anchor
+(`ax, ay`, 0..1 inside that part, 0, 0 its top left) lands at `x, y` and it turns and scales about it; `blend`
+`PM_GFX_ADD` adds its light (glows, sparks) where `PM_GFX_NORMAL` lays it over. This is the backend contract of the
+video mode engine's draw list (docs/plans/video_mode_maker.md section 4): pictures are drawn premultiplied, a set
+says whether it stores them so.
+
+**Where it draws.** At the end of every frame the game builds, in its own `eglSwapBuffers` (the import slot is
+found from the game program's relocations the first time a mode loads a set, so no port names a site for it). The
+pictures go to the GPU there, a few MB a frame; then the newest list the tick finished is drawn with a program of
+the runtime's own and every piece of GL state touched is put back. The game's display is never held back: its frame
+is built as before and the quads go on top, so nothing of the game (a magnet's hold, a coil) ever waits on a mode's
+drawing. A list not replaced is drawn again; `pm_gfx_clear` takes it off.
+
+**When it ends.** When the mode stops running (`pm_end`, its ball, the game's end) its list comes off the glass at
+the next frame, the cover with it, and its sets' textures and memory are freed. `pm_gfx_free` frees one sooner.
+
+**The budget**, logged once a minute while armed (`gfx: in the last 60 s ...`): the frames that went to the glass
+and how many carried the list, quads a frame, the runtime's part of a frame in microseconds, a list's build time on
+the tick, the pictures on the GPU and the process's memory. The numbers measured in the emulator are in
+`docs/plans/video_mode_spike2_drawing.md`.

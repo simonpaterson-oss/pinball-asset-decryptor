@@ -397,3 +397,31 @@ def load(path):
 def dumps(doc):
     """The file's text: two-space indent, keys in the order given, a final newline."""
     return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+
+
+def save(path, doc):
+    """Check ``doc`` and write it to ``path`` (a whole file, swapped in at once). A document
+    with problems is refused with every one of them and nothing is written."""
+    probs = check(doc)
+    if probs:
+        raise VideoModeError(probs)
+    tmp = path + ".part"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(dumps(doc))
+    os.replace(tmp, path)
+    return path
+
+
+def new(slug, title):
+    """The smallest document that checks: one empty phase, won after 20 seconds."""
+    return {
+        "format": FORMAT, "kind": KIND, "id": slug, "title": title[:40],
+        "stage": {"width": 1360, "height": 768, "steps_per_second": 60, "background": "#000000"},
+        "assets": {"pictures": []}, "things": [],
+        "phases": [{"id": "main", "kind": "custom", "settings": {}, "win": [{"when": "survive_s", "value": 20}],
+                    "lose": [{"when": "time_up"}]}],
+        "flow": {"start": "c_main", "cards": [
+            {"id": "c_main", "card": "phase", "phase": "main", "won": "e_won", "lost": "e_lost"},
+            {"id": "e_won", "card": "end", "outcome": "won"},
+            {"id": "e_lost", "card": "end", "outcome": "lost"}]},
+    }

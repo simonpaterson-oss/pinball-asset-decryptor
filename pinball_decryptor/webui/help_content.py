@@ -4510,6 +4510,38 @@ PREVIEW_HELP = {
     },
 }
 
+# PAD-1658: the Video modes tab rides the mode maker's switch
+PREVIEW_HELP["modes"]["Video Modes"] = [
+    ("What it's for", [
+        "A video mode is a short game on the machine's screen, played with the left and right flipper buttons and "
+        "Action while the ball is held. This tab holds the pictures it is made of: bring art in, set how each "
+        "picture plays, give each phase its background, and see what it all costs on the machine before anything "
+        "goes on a card.",
+    ]),
+    ("Bring art in", [
+        "**Bring art in…** reads a picture, a numbered run of PNGs (pick any file of the run), an animated GIF, a "
+        "sprite sheet cut by a grid or at its empty gutters, or a few seconds of a video. A video is cut out by a "
+        "key colour (a green or blue screen) or by its own see-through parts (a WebM or a ProRes 4444 MOV). Each "
+        "becomes one picture with its frames.",
+        "Pick a picture to set its **frame rate**, whether it **loops** or plays **once**, its **anchor** (the cross: "
+        "the point that sits where the thing is placed) and its **hit box** (box or circle: what collides). Drag "
+        "both on the frame. **Touch up frame** opens a frame in the pixel editor.",
+    ]),
+    ("Backgrounds", [
+        "Each phase has up to 8 layers behind everything, back to front. **Still** is drawn once, **Tiled** is "
+        "repeated across the stage, **Scrolling** is tiled and moving at its own speed in pixels a second (minus "
+        "is to the left). Layers at different speeds give depth; the preview plays them as they will move.",
+    ]),
+    ("What it costs", [
+        "**Check the cost** packs the pictures as the machine loads them: every frame trimmed to what it shows, "
+        "frames that are the same kept once, all packed into atlases no larger than the machine takes, "
+        "premultiplied. It shows the memory they take and the card space the mode needs, against what the "
+        "machine you pick allows, and how much each picture costs.",
+        "**Pack for the card** writes the packed atlases into the mode's build folder. Over a budget, nothing is "
+        "written and it names the pictures to shrink.",
+    ]),
+]
+
 
 def _play_options_intro():
     """The Play Options tab's opening section. The tab rides the game's modes

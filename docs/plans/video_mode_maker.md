@@ -581,6 +581,27 @@ outline, shadow and gradient are glyph-atlas variants, not backend features.
    slows rather than skips). It draws the newest list; there is no blending between two
    steps, so the frame at step N is the same picture everywhere.
 
+### Packed pictures (PAD-1658)
+
+`core/video_mode/pack.py` is what a backend loads. Per machine it writes `atlas.json` and
+the atlases into `<mode>/build/<backend>/`, only through `for_card`, which refuses
+(naming the sprites to shrink) when the mode is over a budget of section 5.
+
+- Every frame is trimmed to its visible pixels (a tiled background is not, and its edge
+  extrudes by wrapping), frames that are the same texel for texel are kept once, and all
+  are packed (MaxRects, largest first) into the smallest power-of-two atlas that holds
+  them, else pages of the machine's largest. 2 texels of extruded edge round each.
+- `webgl`: `atlas_<n>.png`. Every machine: `atlas_<n>.pmat`, a 16-byte header (`PMAT`,
+  u16 version 1, u16 format 1 = RGBA8 premultiplied, u16 width, u16 height, u16 flags:
+  bit 0 nearest, bit 1 zlib, u16 0) and the texels, rows top down, zlib-compressed.
+- `atlas.json`: per picture, per frame, `atlas`, `sx sy sw sh` (texels), `ax ay` (the
+  anchor inside the source box, 16.16, exactly what `pm_vm_quad` carries), `fw fh ox oy`
+  (the frame before the trim); per font, its glyphs the same way with `adv`, `x`, `y`.
+  `texel_scale` is stage px per texel: 1, or 8 on dot-matrix screens, whose art is packed
+  at 1/8 (they show the stage at 1/10.625).
+- Memory is every atlas at 4 bytes a texel; card space is the written atlases plus the
+  mode's sounds, clips and font files as they are.
+
 ### The stage on other screens
 
 Every mode is made on the 1360x768 stage. A screen of `W` x `H` shows it at a uniform
@@ -676,18 +697,29 @@ sanitizers on Linux; 120 broken packs are refused or played safely, never crash.
 
 ## 5 Budgets per machine
 
-**All numbers are placeholders** until PAD-1655 measures Spike 2 and each platform ticket
-measures its own; those tickets replace this table with what they find, and PAD-1658's
-cost report and PAD-1669's budget meter read it from here.
+**Spike 2 is measured** (PAD-1655 in the emulator, `video_mode_spike2_drawing.md`; checked
+against the cost report by PAD-1679): its runtime sends every picture to GL as RGBA8, and its
+"KB of pictures on GL" line read 12,039 KB for a set whose atlases are exactly that at 4 bytes a
+texel; its set file (`.padgfx`) holds the texels raw, so a Spike 2 atlas costs the card what it
+costs memory. It kept 48 MB and 2048 x 2048. PAD-1679 packed the worked example (Night
+Harbour) in the Video modes tab, wrote its atlas as a `.padgfx` with PAD-1655's writer and loaded
+it on Godzilla Premium 1.16 in the emulator: the report said 8,388,608 bytes of memory and the
+runtime "8192 KB of pictures on GL" (0% apart); the report's card bytes were the file's 8,388,672
+plus the font tables the file will carry (0.04%). **The other columns are placeholders** until each
+platform ticket measures its own and replaces its column; PAD-1658's cost report and PAD-1669's
+budget meter read this table through `budgets.py`, and `tests/test_video_mode_pack.py` keeps the
+two in step (memory, largest atlas, card space, texel format, how the card holds an atlas).
 
 | Budget | Spike 2 | Spike 3 | JJP | Spooky | Dots (CGC, Spike 1) | Placeholder until |
 |---|---|---|---|---|---|---|
-| Pictures in memory (packed atlases, after premultiply) | 48 MB | 128 MB | 96 MB | 96 MB | 4 MB | PAD-1655 / 1673 / 1674 / 1675 / 1676 |
-| Largest atlas | 2048 x 2048 | 4096 x 4096 | 4096 x 4096 | 4096 x 4096 | 512 x 512 | same |
-| Things alive at once | 300 | 500 | 400 | 400 | 100 | PAD-1657 (desk) then each platform |
-| Quads drawn a frame (things + glyphs + particles) | 1500 | 3000 | 2000 | 2000 | 400 | same |
-| Draw calls a frame (one per atlas and blend run) | 16 | 32 | 24 | 24 | n/a | same |
-| Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | same |
+| Pictures in memory (packed atlases, after premultiply) | 48 MB | 128 MB | 96 MB | 96 MB | 4 MB | Spike 2 measured (12 MB run, 48 MB kept); PAD-1673 / 1674 / 1675 / 1676 |
+| Texel format in memory | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | RGBA8, 4 bytes | Spike 2 measured; same |
+| Atlases on the card | raw (`.padgfx`, mapped in) | compressed | compressed | compressed | compressed | Spike 2 measured; same |
+| Largest atlas | 2048 x 2048 | 4096 x 4096 | 4096 x 4096 | 4096 x 4096 | 512 x 512 | Spike 2 measured (the emulator's GL takes 4096); same |
+| Things alive at once | 300 | 500 | 400 | 400 | 100 | desk measured (PAD-1657: 306 alive, ~33 us a step on x86); then each platform |
+| Quads drawn a frame (things + glyphs + particles) | 1500 | 3000 | 2000 | 2000 | 400 | Spike 2 measured (1500 at 30 a second); same |
+| Draw calls a frame (one per atlas and blend run) | 16 | 32 | 24 | 24 | n/a | Spike 2 measured (4 to 6 for packed art, 512 still held); same |
+| Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | PAD-1660 on Spike 2 (desk: ~300 us on emulated ARM); then each platform |
 | Card space for one video mode (pictures, sounds, clips) | 128 MB | 256 MB | 256 MB | 256 MB | 16 MB | PAD-1658 / each platform |
 | Sounds | 16 sounds, 6 music beds (today's mode cap) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
 
@@ -700,7 +732,7 @@ alive: 150 orbiting, 150 on looping paths, mines, crates and shots, all collidin
 costs about 33 us on a desktop x86 (Windows and Linux alike), about 54 us in WebAssembly
 under Node (the draw list copied out to JavaScript included), and about 300 us on 32-bit
 ARM emulated under qemu, which is slower than the real chip. The Spike 2 figure is
-PAD-1655's to measure on the machine.
+PAD-1660's to measure, with a video mode inside a real game.
 
 ## 6 The editor's design language
 
@@ -835,7 +867,7 @@ Status is kept current here as tickets land.
 | 1 | PAD-1655 | Spike 2: a mode draws moving pictures on the glass every frame (the risk of the epic; measures the Spike 2 budgets) | - | queued |
 | 1 | PAD-1656 | Mode SDK: held buttons, mash and alternate rates; screen-game state | - | queued |
 | 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | on its branch |
-| 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | queued |
+| 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | this branch |
 | 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | queued |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
 | 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | queued |
