@@ -81,7 +81,7 @@ def test_the_write_puts_the_row_and_its_file_on_the_card():
     from pinball_decryptor.plugins.stern import mode_write as MW
     src = inspect.getsource(E)
     assert "flip_menu = (_BootFlipMenu(log) if not _is_spike3(disk_f)" in src
-    assert "spk_menu, flip_menu,\n                                              show_menu, timer_menu], log)" in src
+    assert "spk_menu, flip_menu,\n                                              show_menu, timer_menu, online_menu], log)" in src
     assert "mode_plan.flip_file = flip_cfg" in src
     assert "settings_cfg or flip_cfg)):" in src                # the runtime's files go on for this row alone too
     assert "or flip_cfg):" in src

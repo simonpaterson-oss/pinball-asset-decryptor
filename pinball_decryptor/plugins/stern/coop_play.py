@@ -85,8 +85,19 @@ ROW_KEY = "row"
 #:   service  CO-OP PLAY is Off / Normal / Characters / Enhanced and every co-op and team game plays that style; no step
 #:   both     the same row, and the start menu's step still asks, starting on the row's style
 #: service and both put the row on the card (menu_asked). coop.cfg ``styles service|both`` (place_line).
-PLACES = ("start", "service", "both")
-PLACE_LABELS = {"start": "On the start menu", "service": "In the service menu", "both": "Both"}
+#:   alt      Simon (2026-11-28, with Nathan Hestley, who made the styles; David: "give users the most options we
+#:            can"): the row is ALTERNATIVE MODES, 0 Off / 1 On / 2 Enhanced (:data:`ALT_VALUES`). 2 is the card with
+#:            no row (the start menu's own style step), 1 the co-op and team games at NORMAL only (TEAMS keeps its team
+#:            step), 0 the stock game. coop.cfg ``styles alt`` beside ``switch``.
+PLACES = ("start", "service", "both", "alt")
+PLACE_LABELS = {"start": "On the start menu", "service": "In the service menu", "both": "Both",
+                "alt": "Alternative Modes in the service menu"}
+#: the alt place's row (menu_settings.ALT_MODES): shown as the numbers, stored from 0; its default counts from 1 (3 = 2
+#: Enhanced). The help line names them (the game shows a PAD-added row's value as a number or as Off / On only)
+ALT_VALUES = 3
+ALT_OFF, ALT_ON, ALT_ENHANCED = 0, 1, 2
+ALT_DEFAULT = ALT_ENHANCED + 1
+ALT_HELP = "0 Off. 1 On: co-op and teams, regular. 2 Enhanced: all"
 #: the row's values where the service menu picks the style (stored 0-3: 0 Off, then STYLES_DEFAULT's 1-3)
 MENU_STYLE_NAMES = ("Off", "Normal", "Characters", "Enhanced")
 MENU_STYLE_HELP = {"service": "Off: no co-op. Else the style every co-op game plays",
@@ -239,12 +250,15 @@ def menu_row(project):
     place = load_place(project)
     if place == "start":
         return MENU_VALUES, (), MENU_DEFAULT, MENU_HELP
+    if place == "alt":                                   # Simon (2026-11-28): ALTERNATIVE MODES 0 / 1 / 2
+        return ALT_VALUES, (), ALT_DEFAULT, ALT_HELP
     return (len(MENU_STYLE_NAMES), MENU_STYLE_NAMES, STYLES_DEFAULT.index(load_style(project)) + 2,
             MENU_STYLE_HELP[place])
 
 
 def place_line(project, game_elf):
-    """coop.cfg's ``styles service|both`` line for a Spike 2 card whose row picks the style, else ""."""
+    """coop.cfg's ``styles service|both`` line for a Spike 2 card whose row picks the style (``styles alt``: the row
+    is ALTERNATIVE MODES), else ""."""
     from .adjustments import is_wide
     place = load_place(project)
     if place == "start" or is_wide(bytes(game_elf[:0x40])):

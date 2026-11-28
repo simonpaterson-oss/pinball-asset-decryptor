@@ -77,6 +77,12 @@ CONTRAST = "contrast"
 SATURATION = "saturation"
 #: PAD-1017 round 2: co-op play switched in the service menu (:mod:`.coop_play`): Off/On (stored 0, 1)
 COOP_PLAY = "coop_play"
+#: Simon (2026-11-28, with Nathan Hestley): the same row where the Modes tab's co-op style is picked as "Alternative
+#: Modes" (:data:`.coop_play.PLACES` ``alt``): ALTERNATIVE MODES, 0 Off / 1 On / 2 Enhanced
+ALT_MODES = "alt_modes"
+#: Simon (2026-11-27): ONLINE CO-OP (:mod:`.online_coop`), Off / On - Off, the machine's score feed reports carry no
+#: online co-op fields (the scores still go)
+ONLINE_COOP = "online_coop"
 #: PAD-1033: a handicap for each player (:mod:`.handicap`), switched in the service menu: Off/On (stored 0, 1)
 HANDICAP = "handicap"
 #: PAD-1390: which of the project's image sets (:mod:`.scene_variants`, scene variants) the screens show: 1..n by name
@@ -109,6 +115,8 @@ SETTINGS = {
     CONTRAST: (None, "CONTRAST", "Contrast", 11),
     SATURATION: (None, "SATURATION", "Saturation", 11),
     COOP_PLAY: (None, "CO-OP PLAY", "Co-op Play", 16),
+    ALT_MODES: (None, "ALTERNATIVE MODES", "Alternative Modes", 16),   # Simon (2026-11-28): Off / On / Enhanced
+    ONLINE_COOP: (None, "ONLINE CO-OP", "Online Co-op", 16),            # Simon (2026-11-27): Off / On
     HANDICAP: (None, "HANDICAP", "Handicap", 16),
     IMAGE_SET: (None, "IMAGE SET", "Image Set", 16),
     SAVED_PROGRESS: (None, "SAVED PROGRESS", "Saved Progress", 16),

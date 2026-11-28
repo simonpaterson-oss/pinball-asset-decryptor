@@ -19,12 +19,14 @@ def _fns(src, *sigs):
 
 ROW_FNS = ("static unsigned coop_row_mode(unsigned v)", "static int coop_switched_on(void)",
            "static int coop_row_styles(void)",           # Simon: an Off / On row (coop.cfg `switch`)
+           "static int coop_alt_value(void)", "static int coop_regular_only(void)",   # Simon: ALTERNATIVE MODES
+           "static int coop_alt_off(void)",
            "static int coop_classic(void)", "static unsigned team_menu_kinds(unsigned *kinds)\n{")
 
 PRELUDE = r"""
 #include <stdio.h>
 #include <string.h>
-static struct { unsigned teams_always, setting, style; int onoff; unsigned rowsty, style_default; } coop;
+static struct { unsigned teams_always, setting, style; int onoff; unsigned rowsty, style_default; int alt; } coop;
 static unsigned row;
 static int coop_ch_n, coop_pick_on;                   /* PAD-1443: characters to pick */
 static char team_name_2v2[] = "TEAM PLAY 2 VS 2", team_name_2v1[] = "TEAM PLAY 2 VS 1", team_name_coop[] = "CO-OP PLAY";
@@ -103,6 +105,7 @@ static void sty_menu_own(unsigned own) { tm.own = own; }
 static void sty_menu_walk(pm_reg *b, unsigned l, unsigned r) { (void)b; (void)l; (void)r; }   /* PAD-1449 round 2 */
 static void sty_menu_frame(unsigned c, int t, int o, unsigned m, unsigned i) { (void)c; (void)t; (void)o; (void)m; (void)i; }   /* round 4 */
 static void sty_overlay_read(void) {}                  /* round 7: the game's Insider overlay */
+static void sty_alt_off_tidy(void) {}                  /* Simon: ALTERNATIVE MODES Off's tidy-up */
 static unsigned long pm_ms(void) { return 7; }
 static void say(const char *f, ...) { (void)f; }
 static const char *lettered = "-", *captioned = "-";   /* PAD-1449 round 3: the name line's and the caption's */
