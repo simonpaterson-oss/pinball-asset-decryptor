@@ -424,3 +424,127 @@ def beat_of(path):
     """:func:`find_beat` of a sound file (the first 60 s)."""
     samples, rate = decode(path)
     return find_beat(samples[:int(rate * 60)], rate)
+
+
+# ---- the machine's files --------------------------------------------------------------------------
+#: a phase with no length plays this long for a bed's baking
+OPEN_PHASE_S = 120.0
+BED_MAX_S = 300.0
+
+
+def bed_seconds(doc, sid):
+    """How long a bed may have to play without a break: every phase on it, each try, with its title and result
+    cards (the music plays on through them and through a phase tried again), capped at :data:`BED_MAX_S`."""
+    tries = {}
+    for c in (doc.get("flow") or {}).get("cards") or []:
+        if isinstance(c, dict) and c.get("card") == "phase":
+            tries[c.get("phase")] = max(tries.get(c.get("phase"), 1), int(c.get("tries", 1) or 1))
+    total = 0.0
+    for ph in doc.get("phases") or []:
+        if isinstance(ph, dict) and phase_music(ph) == sid:
+            length = float(ph.get("length_s") or 0) or OPEN_PHASE_S
+            total += (length + 3.0) * tries.get(ph.get("id"), 1)
+    return min(BED_MAX_S, max(total, 10.0))
+
+
+def bake_bed(samples, rate, loop_start_s, seconds):
+    """A bed as the machine plays it: the machine's music loops a record from its start, so the loop point is baked
+    in - the whole file once, then the part from the loop point again and again until it outlasts ``seconds``."""
+    out = list(samples)
+    a = int(max(0.0, float(loop_start_s or 0)) * rate)
+    body = samples[a:] if a < len(samples) else samples
+    if not body:
+        return out
+    while len(out) < seconds * rate:
+        out.extend(body)
+    return out
+
+
+def _write_wav(path, samples, rate):
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(struct.pack("<%dh" % len(samples), *[max(-32767, min(32767, int(v * 32767))) for v in samples]))
+
+
+def machine_files(doc, mode_dir, out_dir, machine=DEFAULT, placeholder=None):
+    """Write the machine's sound files for a video mode into ``out_dir``: a 48 kHz stereo WAV for each sound the
+    plan carries (a sound without its file: its placeholder), each sound at its own ``volume``, each bed baked
+    (:func:`bake_bed`). Returns ``(plan, fields)``: the plan, and the code mode ``assets.json`` sound fields naming
+    the files (``music``, ``beds``, ``calls``) - the music's names and call names are the plan's."""
+    plan = machine_plan(doc, machine)
+    by_id = {s["id"]: s for s in sounds(doc) if "id" in s}
+    order = [s["id"] for s in sounds(doc) if "id" in s]
+    os.makedirs(out_dir, exist_ok=True)
+    ff = _ffmpeg()
+
+    def make(sid, bed):
+        snd = by_id[sid]
+        src = file_of(mode_dir, snd)
+        if src:
+            samples, rate = decode(src)
+        else:
+            data = (placeholder or placeholder_wav)(snd, order.index(sid))
+            with wave.open(io.BytesIO(data)) as w:
+                rate, raw = w.getframerate(), w.readframes(w.getnframes())
+            samples = [v / 32768.0 for v in struct.unpack("<%dh" % (len(raw) // 2), raw)]
+        vol = float(snd.get("volume", 1.0))
+        samples = [v * vol for v in samples]
+        if bed:
+            samples = bake_bed(samples, rate, snd.get("loop_start_s") if snd.get("loop", True) else None,
+                               bed_seconds(doc, sid))
+        name = re.sub(r"[^0-9A-Za-z_]+", "_", sid)[:40] + ".wav"
+        mono = os.path.join(out_dir, "_mono_" + name)
+        _write_wav(mono, samples, rate)
+        out = os.path.join(out_dir, name)
+        r = subprocess.run([ff, "-v", "error", "-y", "-i", mono, "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", out],
+                           capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if r.returncode == 0:
+            os.remove(mono)
+        else:
+            os.replace(mono, out)
+        return name
+
+    fields = {"music": "", "beds": {}, "calls": {}}
+    if plan["music"]:
+        fields["music"] = make(plan["music"]["id"], True)
+    for b in plan["beds"]:
+        fields["beds"][b["name"]] = make(b["id"], True)
+    for c in plan["calls"]:
+        fields["calls"][c["name"]] = {"wav": make(c["id"], False), "priority": c["priority"], "duck": c["duck"]}
+    return plan, fields
+
+
+def machine_names(doc, plan):
+    """The machine name of each of the engine's sounds, in the engine's order ("" for one the plan leaves off)."""
+    named = {}
+    if plan["music"]:
+        named[plan["music"]["id"]] = plan["music"]["name"]
+    for r in plan["beds"] + plan["calls"]:
+        named[r["id"]] = r["name"]
+    return [named.get(s.get("id"), "") for s in sounds(doc)]
+
+
+def cue_log(cues, info, sps=60):
+    """What each sound cue does under the machine's rules, in step time: the player's log and the rig's are held
+    to this.  ``cues``: ``[(step, sound, op, duck, fade)]`` as the engine gives them; ``info``: per sound index
+    ``{"role", "seconds"}``.  Returns ``[(step, sound, op, did)]``: did is ``played`` or ``skipped`` (an effect
+    whose previous play still sounds) for a sound, ``starts`` / ``changes`` / ``stops`` for the music."""
+    out, until, music = [], {}, -1
+    for step, snd, op, _duck, _fade in cues:
+        if op == 1:
+            out.append((step, snd, op, "changes" if music >= 0 else "starts"))
+            music = snd
+        elif op == 2:
+            out.append((step, snd, op, "stops"))
+            music = -1
+        else:
+            now = step / float(sps)
+            meta = info.get(snd) or {}
+            if meta.get("role") != "callout" and until.get(snd, -1.0) > now:
+                out.append((step, snd, op, "skipped"))
+                continue
+            until[snd] = now + float(meta.get("seconds") or 0)
+            out.append((step, snd, op, "played"))
+    return out

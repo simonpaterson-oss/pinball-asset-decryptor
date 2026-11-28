@@ -143,7 +143,7 @@ function SoundRow({ r, peaks, busy, disabled }) {
       <${Seg} value=${r.role} disabled=${disabled} onChange=${(v) => set({ role: v })}
         options=${[{ value: "music", label: "Music", title: T.role }, { value: "effect", label: "Effect", title: T.role },
                    { value: "callout", label: "Callout", title: T.role }]} />
-      <${Field} sm type="number" width="64px" min="0" max="100" step="5" suffix="%" title=${T.volume} disabled=${disabled}
+      <${Field} sm type="number" width="84px" min="0" max="100" step="5" suffix="%" title=${T.volume} disabled=${disabled}
         value=${String(Math.round(r.volume * 100))} onCommit=${(v) => set({ volume: Number(v) / 100 })} />
       <${Button} kind="ghost" icon=${pv.playing ? "stop" : "play"} title=${pv.playing ? T.stop : T.preview}
         disabled=${!r.path} onClick=${() => (pv.playing ? pv.stop() : pv.play())} />
@@ -157,20 +157,20 @@ function SoundRow({ r, peaks, busy, disabled }) {
     ${music ? html`<div class="vm-snd-opts row">
       <${Check} checked=${r.loop} disabled=${disabled} label="Loop" title=${T.loop} onChange=${(v) => set({ loop: v })} />
       <label class="vm-lbl" ...${tip(T.loopFrom)}>From</label>
-      <${Field} sm type="number" width="66px" min="0" step="0.1" suffix="s" disabled=${disabled || !r.loop}
+      <${Field} sm type="number" width="80px" min="0" step="0.1" suffix="s" disabled=${disabled || !r.loop}
         value=${fmtS(r.loop_start_s || 0)} onCommit=${(v) => set({ loop_start_s: v })} />
       <label class="vm-lbl" ...${tip(T.fade)}>Fade</label>
-      <${Field} sm type="number" width="66px" min="0" max="10" step="0.1" suffix="s" disabled=${disabled}
+      <${Field} sm type="number" width="80px" min="0" max="10" step="0.1" suffix="s" disabled=${disabled}
         value=${fmtS(r.fade_s)} onCommit=${(v) => set({ fade_s: v })} />
       <span class="vm-snd-gap"></span>
       <label class="vm-lbl" ...${tip(T.tempo)}>Tempo</label>
-      <${Field} sm type="number" width="74px" min="30" max="300" step="0.5" suffix="bpm" disabled=${disabled}
+      <${Field} sm type="number" width="118px" min="30" max="300" step="0.5" suffix="bpm" disabled=${disabled}
         value=${fmtS(r.tempo_bpm)} placeholder="none" onCommit=${(v) => set({ tempo_bpm: v === "" ? null : v })} />
       <label class="vm-lbl" ...${tip(T.first)}>First beat</label>
-      <${Field} sm type="number" width="66px" min="0" step="0.01" suffix="s" disabled=${disabled || !r.tempo_bpm}
+      <${Field} sm type="number" width="94px" min="0" step="0.01" suffix="s" disabled=${disabled || !r.tempo_bpm}
         value=${fmtS(r.beat_offset_s || 0)} onCommit=${(v) => set({ beat_offset_s: v })} />
       <label class="vm-lbl" ...${tip(T.bar)}>A bar</label>
-      <${Field} sm type="number" width="50px" min="1" max="16" step="1" disabled=${disabled || !r.tempo_bpm}
+      <${Field} sm type="number" width="60px" min="1" max="16" step="1" disabled=${disabled || !r.tempo_bpm}
         value=${String(r.beats_per_bar || 4)} onCommit=${(v) => set({ beats_per_bar: v })} />
       <${Button} size="sm" icon="search" busy=${busy} disabled=${disabled || busy || !r.path} title=${T.find}
         onClick=${() => call("vmodes.find_beat", r.id)}>Find the beat<//>
