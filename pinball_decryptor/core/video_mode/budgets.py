@@ -4,7 +4,14 @@ The plan's table is the source; this is the same table in code, and
 tests/test_video_mode_pack.py reads the plan's rows and proves the two agree, so a
 platform ticket that measures its machine (PAD-1655 Spike 2, 1673 Spike 3, 1674 JJP,
 1675 Spooky, 1676 dots) changes both in one branch or the test says which row moved.
-The numbers are placeholders until those tickets measure them.
+Spike 2 is measured (PAD-1655, docs/plans/video_mode_spike2_drawing.md): its runtime sends every
+picture to GL as RGBA8, w x h x 4 bytes, and its "KB of pictures on GL" line read 12,039 KB for a
+set whose atlases sum to exactly that; the 48 MB and 2048 x 2048 budgets were kept. The other
+machines' numbers are placeholders until their tickets measure them (``measured`` False).
+
+``card_atlas`` is how the machine's card holds a packed atlas: ``"raw"`` when the runtime maps the
+texels straight in (Spike 2's ``.padgfx`` set file: w x h x 4 bytes a picture plus its tables, so
+the card costs what memory does), ``"zlib"`` when it is written compressed and unpacked on load.
 
 ``texel_bytes`` is what one texel of a packed atlas costs in the machine's memory:
 4 for RGBA8, the format every backend loads today (docs/plans/video_mode_maker.md
@@ -22,7 +29,7 @@ MB = 1024 * 1024
 #: key -> what the machine takes
 MACHINES = {
     "spike2": {"label": "Stern Spike 2", "memory": 48 * MB, "atlas": 2048, "card": 128 * MB, "texel_bytes": 4,
-               "backend": "spike2"},
+               "backend": "spike2", "card_atlas": "raw", "measured": True},
     "spike3": {"label": "Stern Spike 3", "memory": 128 * MB, "atlas": 4096, "card": 256 * MB, "texel_bytes": 4,
                "backend": "spike3"},
     "jjp": {"label": "Jersey Jack", "memory": 96 * MB, "atlas": 4096, "card": 256 * MB, "texel_bytes": 4,
@@ -39,9 +46,13 @@ DEFAULT = "spike2"
 PLAN_COLUMN = {"spike2": "Spike 2", "spike3": "Spike 3", "jjp": "JJP", "spooky": "Spooky",
                "dots": "Dots (CGC, Spike 1)"}
 
+#: Spike 2's set file (``.padgfx``, pinball_decryptor/plugins/stern/gfx_set.py from PAD-1655): a 24-byte header,
+#: 40 bytes a picture and a font, 16 a glyph, then each picture's texels, 4-aligned.
+PADGFX = {"header": 24, "picture": 40, "font": 40, "glyph": 16}
+
 
 def machine(key):
     m = MACHINES.get(key or DEFAULT)
     if m is None:
         raise ValueError("No budgets for %r; the machines are %s." % (key, ", ".join(ORDER)))
-    return dict({"art_scale": 1.0}, **m, key=key or DEFAULT)
+    return dict({"art_scale": 1.0, "card_atlas": "zlib", "measured": False}, **m, key=key or DEFAULT)

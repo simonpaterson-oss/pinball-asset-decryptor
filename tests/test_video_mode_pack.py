@@ -372,9 +372,10 @@ def test_cost_matches_what_is_written(tmp_path):
     (tmp_path / "modes" / "test-mode" / "sound").mkdir()
     (tmp_path / "modes" / "test-mode" / "sound" / "zap.wav").write_bytes(b"\0" * 5000)
     doc["assets"]["sounds"] = [{"id": "zap", "file": "sound/zap.wav", "role": "effect"}]
-    pk = P.for_card(md, doc, "spike2")
+    # a machine whose card holds the atlases compressed: the card bytes are the files written
+    pk = P.for_card(md, doc, "spike3")
     r = pk.report
-    out = os.path.join(md, "build", "spike2")
+    out = os.path.join(md, "build", "spike3")
     files = sorted(n for n in os.listdir(out) if n.endswith(".pmat"))
     assert r["memory"] == sum(w * h * 4 for w, h in pk.atlases)
     assert r["card_pictures"] == sum(os.path.getsize(os.path.join(out, n)) for n in files)
@@ -388,6 +389,45 @@ def test_cost_matches_what_is_written(tmp_path):
     P.write(pk, str(tmp_path / "web"), "webgl")
     png = Image.open(tmp_path / "web" / "atlas_0.png")
     assert np.array_equal(np.asarray(png), pk.texels[0])
+
+
+def _padgfx_size(pk):
+    """The size of Spike 2's set file for this pack, as PAD-1655's writer lays it out: with that writer on hand,
+    the file itself; without it, its documented layout."""
+    try:
+        from pinball_decryptor.plugins.stern import gfx_set
+    except ImportError:
+        gfx_set = None
+    glyphs = {}
+    for it in pk.items:
+        if it.owner.startswith("font:"):
+            glyphs[it.owner] = glyphs.get(it.owner, 0) + 1
+    L = B.PADGFX
+    fonts = sum(L["font"] + L["glyph"] * n for n in glyphs.values())
+    if gfx_set is None:
+        return L["header"] + sum(L["picture"] + w * h * 4 for w, h in pk.atlases) + fonts
+    pics = [("atlas_%d" % i, Image.fromarray(a, "RGBA")) for i, a in enumerate(pk.texels)]
+    return len(gfx_set.pack(pics, premultiplied=True)) + fonts
+
+
+def test_spike2_card_is_the_set_file_and_matches_what_was_measured(tmp_path):
+    """Spike 2 maps its set file's texels straight into GL (PAD-1655): the card holds each atlas raw, so card space
+    is the set file's size, and memory is what the runtime's "KB of pictures on GL" line counts (w x h x 4 a
+    picture, RGBA8)."""
+    md, doc = _mode(tmp_path)
+    A.save_sprite(md, doc, "s", A.Sprite(_frames(8, (100, 80))))
+    A.save_sprite(md, doc, "big", A.Sprite([Image.new("RGBA", (1200, 700), (40, 90, 200, 255))]))
+    pk = P.pack(md, doc, "spike2")
+    r = pk.report
+    assert r["budget"]["measured"] is True
+    assert r["memory"] == sum(w * h * 4 for w, h in pk.atlases)
+    assert r["card_pictures"] == _padgfx_size(pk)
+    # the card costs what memory does, within the file's tables
+    assert 0 <= r["card_pictures"] - r["memory"] < 1024
+    # and so does each sprite's share: its own texels, never the atlas's empty space
+    for sp in r["sprites"]:
+        assert sp["card"] - sp["memory"] == (0 if not sp["font"] else 40 + 16 * sp["frames"]), sp
+    assert not P.pack(md, doc, "spike3").report["budget"]["measured"]
 
 
 def test_over_budget_names_the_sprite_and_writes_nothing(tmp_path, monkeypatch):
@@ -443,6 +483,9 @@ def test_budgets_match_the_plan():
         assert mb(row("Pictures in memory")[i]) == m["memory"], key
         assert row("Largest atlas")[i] == "%d x %d" % (m["atlas"], m["atlas"]), key
         assert mb(row("Card space")[i]) == m["card"], key
+        mm = B.machine(key)
+        assert row("Texel format")[i] == "RGBA8, %d bytes" % mm["texel_bytes"], key
+        assert row("Atlases on the card")[i].split()[0] == {"raw": "raw", "zlib": "compressed"}[mm["card_atlas"]], key
 
 
 # ---- the Video modes tab -----------------------------------------------------------------------------------------

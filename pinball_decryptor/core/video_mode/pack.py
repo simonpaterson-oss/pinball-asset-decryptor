@@ -394,13 +394,18 @@ def _atlas_bytes(arr):
 
 def cost(pk, mode_dir, doc):
     """What the mode costs on ``pk.machine``: memory (every atlas, texel for texel), card
-    space (the packed atlases compressed, as :func:`write` writes them for the machine,
-    plus the sounds, clips and font files as they are in the mode folder), each sprite's
-    share, and the problems, each naming what to shrink."""
+    space (the packed atlases as the machine's card holds them: raw texels in Spike 2's set
+    file, compressed as :func:`write` writes them elsewhere; plus the sounds, clips and font
+    files as they are in the mode folder), each sprite's share, and the problems, each
+    naming what to shrink."""
     m = pk.machine
     tb = int(m["texel_bytes"])
     memory = sum(w * h * tb for w, h in pk.atlases)
-    atlas_card = [_atlas_bytes(a) for a in pk.texels]
+    raw = m.get("card_atlas") == "raw"
+    if raw:   # the set file maps the texels straight in: each atlas as it sits in memory, plus its row in the table
+        atlas_card = [B.PADGFX["picture"] + w * h * tb for w, h in pk.atlases]
+    else:
+        atlas_card = [_atlas_bytes(a) for a in pk.texels]
     pics_card = sum(atlas_card)
     # each sprite's share: the texels its own (unfolded) boxes take, and that share of the card bytes
     own = {}
@@ -416,13 +421,17 @@ def cost(pk, mode_dir, doc):
         area = (it.img.width + 2 * EXTRUDE) * (it.img.height + 2 * EXTRUDE)
         own[it.owner] = own.get(it.owner, 0) + area
     used = sum(own.values())
+    if raw:   # the file's header, and each font's row and glyph table
+        fonts = [o for o in frames if o.startswith("font:")]
+        pics_card += B.PADGFX["header"] + sum(B.PADGFX["font"] + B.PADGFX["glyph"] * frames[o][0] for o in fonts)
     total_area = sum(w * h for w, h in pk.atlases) or 1
     sprites = []
     for owner, (n, u) in frames.items():
         a = own.get(owner, 0)
         sprites.append({"id": owner, "label": _label(owner), "font": owner.startswith("font:"), "frames": n,
                         "unique": u, "texels": a, "memory": a * tb,
-                        "card": int(round(pics_card * a / float(used))) if used else 0,
+                        "card": (a * tb + (B.PADGFX["font"] + B.PADGFX["glyph"] * n if owner.startswith("font:") else 0))
+                        if raw else int(round(pics_card * a / float(used))) if used else 0,
                         "pct": round(100.0 * a / total_area, 1)})
     sprites.sort(key=lambda s: (-s["memory"], s["id"]))
     others = []
@@ -448,7 +457,7 @@ def cost(pk, mode_dir, doc):
             + [('%s "%s"' % (o["kind"].capitalize(), o["id"]), o["card"]) for o in others], card))
     return {
         "machine": m["key"], "label": m["label"],
-        "budget": {"memory": m["memory"], "card": m["card"], "atlas": m["atlas"]},
+        "budget": {"memory": m["memory"], "card": m["card"], "atlas": m["atlas"], "measured": bool(m["measured"])},
         "memory": memory, "card": card, "card_pictures": pics_card,
         "atlases": [{"w": w, "h": h, "memory": w * h * tb, "card": atlas_card[i],
                      "used_pct": round(100.0 * _used_on(pk, i) / float(w * h), 1)}
