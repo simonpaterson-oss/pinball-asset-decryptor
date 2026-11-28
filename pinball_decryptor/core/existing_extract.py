@@ -132,7 +132,9 @@ def message(verdict, card_caption=""):
             return ("The selected folder holds an extraction, but it does not say which card "
                     "it came from. Please select a valid folder.")
         whose = "%s (%s)" % (game, name) if game else name
-        same = card_caption and game and game == card_caption
+        # "Godzilla" (the folder's) and "Godzilla LE" (the card's chip) are one game
+        a, b = (card_caption or "").lower(), game.lower()
+        same = bool(a and b) and (a == b or a.startswith(b + " ") or b.startswith(a + " "))
         return ("The selected folder contains %s%s. Please select a valid folder."
                 % (whose, ", a different card of the same game" if same else ""))
     what = game or name or "this card"
