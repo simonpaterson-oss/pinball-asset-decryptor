@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Video mode editor: the stage (PAD-1654 mock-up)</title>
+<link rel="stylesheet" href="../../../pinball_decryptor/webui/static/css/app.css">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+<script>if (location.hash === '#light') document.documentElement.classList.add('light');</script>
+</head><body>
+<div class="vm">
+  <div class="vm-top">
+    <span class="name">Night Harbour</span><span class="crumb">video mode</span>
+    <span class="vsep"></span>
+    <span class="phase-pick"><span class="k">Phase</span> 1 · Chase <span class="chip sm">chase</span> <span class="kbd">Ctrl P</span></span>
+    <button class="btn ghost" title="Storyboard">Storyboard</button>
+    <span class="vsep"></span>
+    <button class="btn ghost icon" title="Undo (Ctrl Z)">↶</button><button class="btn ghost icon" title="Redo">↷</button>
+    <span class="sp"></span>
+    <span class="chip ok sm">Saved</span>
+    <span class="vsep"></span>
+    <div class="seg sm"><button>Fit</button><button class="on">73%</button><button>100%</button></div>
+    <span class="vsep"></span>
+    <button class="btn">Try on the machine</button>
+    <button class="btn primary">▶ Play <span class="kbd" style="color:inherit;border-color:rgba(0,0,0,.25);background:transparent">F5</span></button>
+  </div>
+
+  <div class="dock left">
+    <div class="dock-h"><span class="t">Layers</span><span class="sp"></span><span class="chip sm">9 things</span></div>
+    <div class="dock-b" style="gap:12px">
+      <div class="layers">
+        <div class="lay grp"><span class="ic">▾</span><span class="nm">HUD</span><span class="d">100</span></div>
+        <div class="lay child"><span class="team t-scenery"></span><span class="nm">health · pips</span><span class="ic">◉</span></div>
+        <div class="lay child"><span class="team t-scenery"></span><span class="nm">score</span><span class="ic">◉</span></div>
+        <div class="lay child"><span class="team t-scenery"></span><span class="nm">prompt bar</span><span class="ic">◉</span></div>
+        <div class="lay"><span class="team t-player"></span><span class="nm">player_boat</span><span class="d">10</span></div>
+        <div class="lay on"><span class="team t-enemy"></span><span class="nm">drone · spawn 2</span><span class="d">0</span></div>
+        <div class="lay"><span class="team t-enemy"></span><span class="nm">drone · spawn 1</span><span class="d">0</span></div>
+        <div class="lay"><span class="team t-enemy"></span><span class="nm">mine · lane 1</span><span class="d">0</span></div>
+        <div class="lay"><span class="team t-pickup"></span><span class="nm">crate · lane 2</span><span class="d">0</span></div>
+        <div class="lay dim"><span class="team t-scenery"></span><span class="nm">sea · scroll 420</span><span class="ic">🔒</span></div>
+        <div class="lay dim"><span class="team t-scenery"></span><span class="nm">skyline · scroll 30</span><span class="ic">🔒</span></div>
+      </div>
+      <div class="group"><span class="lab">Assets</span>
+        <div class="asset-grid" id="assets"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-wrap">
+    <div class="stage-ruler-x"></div><div class="stage-ruler-y"></div>
+    <div class="stage" id="stage" style="width:960px;height:542px"></div>
+    <div class="stage-badge"><span class="chip sm">1360 × 768</span><span class="chip sm info">Safe area</span><span class="chip sm">Grid 8</span></div>
+    <div class="zoom-chip"><span class="chip sm">x 905 · y 250</span></div>
+  </div>
+
+  <div class="dock right">
+    <div class="dock-h"><span class="team t-enemy"></span><span class="t">drone</span><span class="chip sm">spawn 2 of 10</span><span class="sp"></span><button class="btn ghost xs">⋯</button></div>
+    <div class="dock-b">
+      <div class="group"><span class="lab">Place</span>
+        <div class="row2"><div class="nf focus"><span class="l">X</span>905<span class="u">px</span></div><div class="nf"><span class="l">Y</span>250<span class="u">px</span></div></div>
+        <div class="row2"><div class="nf"><span class="l">Scale</span>1.05<span class="u">×</span></div><div class="nf"><span class="l">Turn</span>0<span class="u">°</span></div></div>
+      </div>
+      <div class="group"><span class="lab">Picture</span>
+        <div style="display:flex;gap:8px;align-items:center"><div class="asset" style="width:44px" id="pic"></div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div class="sel-f">drone.png · 2 frames<span class="caret">▼</span></div><div class="sel-f">hover · 8 fps · loop<span class="caret">▼</span></div></div></div>
+      </div>
+      <div class="group"><span class="lab">Team and hit box</span>
+        <div class="seg sm fill"><button>Player</button><button class="on">Enemy</button><button>Shot</button><button>Pickup</button></div>
+        <div class="row3"><div class="sel-f">Circle<span class="caret">▼</span></div><div class="nf"><span class="l">R</span>26</div><div class="nf"><span class="l">Health</span>1</div></div>
+      </div>
+      <div class="group"><span class="lab">How it moves</span>
+        <div class="sel-f">Along a path · 4 points<span class="caret">▼</span></div>
+        <div class="row2"><div class="nf"><span class="l">Speed</span>260<span class="u">px/s</span></div><div class="sel-f">Ease in-out<span class="caret">▼</span></div></div>
+        <label class="chk"><input type="checkbox"> Loop the path</label>
+      </div>
+      <div class="group"><span class="lab">Scores</span>
+        <div class="nf"><span class="l">Points</span>500</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tl">
+    <div class="tl-h"><span class="t">Timeline</span><span class="chip sm">Chase · 45 s</span><span style="flex:1"></span><button class="btn ghost xs">+ Spawn wave</button><button class="btn ghost xs">+ Keyframe <span class="kbd">K</span></button></div>
+    <div class="tl-names">
+      <div style="height:20px;border-bottom:1px solid var(--line)"></div>
+      <div class="tl-name"><span class="team t-enemy"></span>drone · every 3 s × 10</div>
+      <div class="tl-name"><span class="team t-enemy"></span>mine · every 2.5 s × 14</div>
+      <div class="tl-name"><span class="team t-pickup"></span>crate · every 9 s × 4</div>
+      <div class="tl-name"><span class="team t-scenery"></span>chase_music</div>
+      <div class="tl-name"><span class="team t-scenery"></span>cues</div>
+    </div>
+    <div class="tl-area" id="tl"></div>
+  </div>
+
+  <div class="pb">
+    <button class="btn ghost">▶</button><button class="btn ghost" title="Step">⏭</button><button class="btn ghost" title="Back to the start">⏮</button>
+    <span class="time">00:12.40</span><span class="dim">/ 00:45.00 · step 744</span>
+    <span class="sp"></span>
+    <span class="meter">Things <span class="bar"><i style="width:12%;background:var(--ok)"></i></span><b>38/300</b></span>
+    <span class="meter">Pictures <span class="bar"><i style="width:21%;background:var(--ok)"></i></span><b>10.1/48 MB</b></span>
+    <span class="meter">Card <span class="bar"><i style="width:34%;background:var(--ok)"></i></span><b>43/128 MB</b></span>
+  </div>
+</div>
+<script>
+  const st = document.getElementById('stage');
+  const k = 960 / 1360;
+  st.innerHTML = VM.scene('chase', { hudOpts: {} }) + `<svg class="ov" viewBox="0 0 1360 768">
+    <rect x="40" y="24" width="1280" height="720" fill="none" stroke="var(--info)" stroke-dasharray="8 6" stroke-opacity=".55" stroke-width="1.5"/>
+    <circle cx="905" cy="245" r="26" fill="var(--err)" fill-opacity=".2" stroke="var(--err)" stroke-width="1.5"/>
+    <rect x="${470-22}" y="${430-22}" width="44" height="44" fill="none" stroke="var(--accent-line)" stroke-width="1.5"/>
+    <line x1="905" y1="285" x2="905" y2="392" stroke="var(--info)" stroke-width="1.5"/>
+    <rect x="915" y="325" width="64" height="24" rx="4" fill="var(--panel)" stroke="var(--info)"/>
+    <text x="947" y="342" text-anchor="middle" font-family="IBM Plex Mono" font-size="14" fill="var(--info)">170 px</text>
+    <path d="M1420 180 Q1150 230 905 250 T 400 200 L -80 260" fill="none" stroke="var(--accent)" stroke-dasharray="6 6" stroke-opacity=".7" stroke-width="2"/>
+    ${[[1420,180],[900,260],[400,200]].map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>`).join('')}
+    ${VM.selection(853, 207, 104, 56, { anchor: [905, 250] })}
+  </svg>`;
+  const ax = document.getElementById('assets');
+  for (const a of ['boat', 'drone', 'mine', 'crate', 'warship', 'sight']) ax.insertAdjacentHTML('beforeend', `<div class="asset" title="${a}">${VM.icon(a)}</div>`);
+  ax.insertAdjacentHTML('beforeend', `<div class="asset" style="border-style:dashed;color:var(--ink-3);font-size:20px">+</div>`);
+  document.getElementById('pic').innerHTML = VM.icon('drone');
+  // timeline
+  const tl = document.getElementById('tl'), W = tl.clientWidth || 1340, s2x = (s) => 10 + s / 45 * (W - 30);
+  let h = '<div class="tl-ruler">';
+  for (let s = 0; s <= 45; s += 5) h += `<span style="position:absolute;left:${s2x(s)}px;top:3px">${s}s</span>`;
+  h += '</div>';
+  const row = (inner, on) => `<div class="tl-row${on ? ' on' : ''}">${inner}</div>`;
+  const marks = (a, e, n, col) => { let r = ''; for (let i = 0; i < n; i++) r += `<span class="kf" style="left:${s2x(a + e * i)}px;background:${col};border-color:${col}"></span>`; return r; };
+  h += row(marks(2, 3, 10, 'var(--err)'), true) + row(marks(4, 2.5, 14, 'color-mix(in srgb, var(--err) 60%, var(--panel-3))')) + row(marks(9, 9, 4, 'var(--ok)'));
+  let wv = ''; for (let i = 0; i < 260; i++) wv += `<i style="height:${4 + Math.abs(Math.sin(i * .37) * Math.cos(i * .11)) * 14}px"></i>`;
+  h += row(`<div class="wave" style="left:${s2x(0)}px">${wv}</div>`);
+  h += row(`<span class="chip sm" style="position:absolute;left:${s2x(0)}px;top:3px">go_now</span>`);
+  h += `<div class="playhead" style="left:${s2x(12.4)}px"></div>`;
+  tl.innerHTML = h;
+</script>
+</body></html>
