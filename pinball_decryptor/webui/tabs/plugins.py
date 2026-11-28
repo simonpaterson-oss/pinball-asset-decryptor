@@ -107,6 +107,9 @@ class PluginsTab(TabService):
         self._pick = {}                 # key -> the version chosen in the list
         self._games = {}                # (key, card, its size and time, release) -> game_check's answer
         self._games_busy = set()
+        # PAD-1678: what the machine was last seen to carry: key -> dict(address, release, on_card)
+        self._machine = {}
+        self._looked = set()            # (key, address, installed release): looked at by itself already
         self.set(intro=INTRO, project='', running=False, plugins=[], store=card_plugins.store_root())
 
     def rail_needs(self):
@@ -159,7 +162,19 @@ class PluginsTab(TabService):
             hint = 'No card image is picked yet: the card is checked when it is written.'
         text, kind = self._said.get(plugin.key, ('', ''))
         game = self._game(plugin, card, rec) if can and info['supported'] and not info.get('unpicked') else {}
+        # PAD-1678: installing a newer version here changes no machine and no card, so each is said beside the
+        # version on this computer whenever it is known to carry another one
+        seen = self._machine.get(plugin.key) or {}
+        if seen.get('address') != self._address() or not seen.get('on_card'):
+            seen = {}
+        mine = rec['tag'] if rec else ''
+        compare = getattr(card, 'behind', None)
+        late = bool(seen and getattr(card, 'needs_update', lambda *_a: False)(seen.get('release'), mine))
         return {
+            'machine_release': seen.get('release', ''), 'machine_behind': late,
+            'machine_note': compare(seen.get('release'), mine) if compare and seen else '',
+            'card_note': compare(info.get('release'), mine, 'The card you picked')
+            if compare and info.get('enabled') else '',
             'game_note': game.get('text', ''), 'game_kind': {True: 'ok', False: 'warn'}.get(game.get('known'), ''),
             'address': self._address(),
             'key': plugin.key, 'name': plugin.name, 'what': plugin.what, 'author': plugin.author,
@@ -230,13 +245,56 @@ class PluginsTab(TabService):
                 machine = remote_send.connect(address)
             except remote_send.SendError as e:
                 raise card_plugins.PluginError(str(e)) from None
+            rec = card_plugins.installed(plugin)
             try:
-                return card.check_machine(machine)
+                if not hasattr(card, 'machine_report'):
+                    return card.check_machine(machine)
+                got = card.machine_report(machine, rec['tag'] if rec else '')
             except (card_extras.ExtrasError, remote_send.SendError) as e:
                 raise card_plugins.PluginError(str(e)) from None
             finally:
                 machine.close()
+            self._seen(key, address, got['release'], got['on_card'])
+            # a machine left on an older version is not good news: not said in green
+            return (got['text'], 'warn') if got['behind'] else got['text']
         return self._start(key, 'Asking the machine at %s' % address, work, lambda text: text)
+
+    def _seen(self, key, address, release, on_card):
+        """Remember what the machine at *address* carries (from any thread)."""
+        def keep():
+            self._machine[key] = {'address': address, 'release': release, 'on_card': bool(on_card)}
+            self.publish()
+        self.ctx.loop.post(keep)
+
+    def _look(self, key):
+        """PAD-1678: read, once for each version installed here, which version the machine the Network tab knows
+        carries, so the page says by itself when the machine is behind.  One short question over remote access
+        on a worker; nothing on the machine changes, and a machine that does not answer is left alone (no
+        search of the network, nothing said)."""
+        plugin = self._plugin(key)
+        address = self._address()
+        card = CARDS[key]['card'] if plugin is not None else None
+        rec = card_plugins.installed(plugin) if plugin is not None else None
+        if rec is None or not address or not hasattr(card, 'machine_state') or self.get('running') \
+                or not card.offered(self.mfr):
+            return
+        mark = (key, address, rec['tag'])
+        if mark in self._looked:
+            return
+        self._looked.add(mark)
+
+        def work():
+            from ...core import remote_send
+            try:
+                machine = remote_send.connect(address, look=False)
+                try:
+                    state = card.machine_state(machine)
+                finally:
+                    machine.close()
+            except Exception:                               # noqa: BLE001 - a look only; Check says why
+                return
+            self._seen(key, address, state['release'], state['on_card'])
+        threading.Thread(target=work, daemon=True, name='pad-plugin-machine').start()
 
     def _to_machine(self, key, on):
         """PAD-1643: put plugin *key* on the machine the Network tab knows, or take it off, over remote access:
@@ -282,6 +340,7 @@ class PluginsTab(TabService):
                                                'the machine, then try again.' % (address, e)) from None
             finally:
                 machine.close()
+            self._seen(key, address, card_plugins.installed(plugin)['tag'] if on else '', on)
             # the project follows the machine, as Turn on remote buttons does: the next card written or sent from
             # it must not undo what was just done
             if os.path.isdir(project or '') and ticked != on and project == self._project():
@@ -325,6 +384,7 @@ class PluginsTab(TabService):
                     self._releases[key] = ('ok', rows)
                 else:
                     self.refresh_releases(key)
+            self._look(key)
         self.publish()
 
     def on_project(self, folder):
@@ -396,7 +456,8 @@ class PluginsTab(TabService):
         def run():
             try:
                 rec = work(say)
-                said = (done_text(rec), 'ok')
+                said = done_text(rec)
+                said = said if isinstance(said, tuple) else (said, 'ok')
             except card_plugins.PluginError as e:
                 said = (str(e), 'err')
             except Exception as e:                          # noqa: BLE001 - said on the card, never raised
@@ -405,6 +466,7 @@ class PluginsTab(TabService):
             def done():
                 self._busy[key] = ''
                 self._said[key] = said
+                self._look(key)                             # a version just installed: is the machine behind it?
                 self.publish()
                 write = self.window.service('write')
                 if write is not None:                       # the installed version is part of what a build does

@@ -802,8 +802,9 @@ class Machine:
 
 def test_a_plugin_that_switched_itself_off_is_switched_back_on_from_here():
     assert BT.parse_status('on-card\nswitched-off\nrelease v0.3.0\n') == dict(
-        on_card=True, switched_off=True, release='v0.3.0', helper=False)
-    assert BT.parse_status('release \n') == dict(on_card=False, switched_off=False, release='', helper=False)
+        on_card=True, switched_off=True, release='v0.3.0', helper=False, no_profile=False)
+    assert BT.parse_status('release \n') == dict(on_card=False, switched_off=False, release='', helper=False,
+                                                 no_profile=False)
     assert BT.parse_status('release ; rm -rf /\n')['release'] == ''
     assert 'has no Bluetooth headphones on it' in BT.check_machine(Machine([]))
     m = Machine([BT.ENABLED, BT.RELEASE, 'helper'])
@@ -845,6 +846,100 @@ def test_the_plugins_tab_checks_the_machine_the_network_tab_knows(tmp_path, monk
         assert w.call('plugins.check_machine', 'bluetooth')
         row = _settle(w, lambda r: not r['busy'] and r['kind'] == 'err')
         assert row['note'] == 'Nothing answered at 192.168.1.40.'
+
+
+# ------------------------------------------------------------------ PAD-1678: a machine left on an older release
+def test_a_machine_on_an_older_release_than_this_computer_is_said_and_how_to_update_it():
+    # David's Godzilla: v0.3.0 on the machine, v0.4.4 installed here, and the page said all was well in green
+    assert BT.behind('v0.3.0', 'v0.3.0') == '' and BT.behind('', 'v0.4.4') == '' and BT.behind('v0.3.0', '') == ''
+    assert BT.behind('junk', 'v0.4.4') == ''
+    said = BT.behind('v0.3.0', 'v0.4.4')
+    assert 'still has spike-pinball-bluetooth v0.3.0; this computer has v0.4.4' in said
+    assert 'Put it on the machine now puts v0.4.4 on it' in said
+    assert 'newer than the v0.3.0 installed on this computer' in BT.behind('v0.4.4', 'v0.3.0')
+    assert 'a card written from this project gets v0.4.4' in BT.behind('v0.3.0', 'v0.4.4', 'The card you picked')
+    assert BT.needs_update('v0.3.0', 'v0.4.4') and BT.needs_update('v0.4.4', 'v0.4.10')
+    assert not BT.needs_update('v0.4.4', 'v0.4.4') and not BT.needs_update('v0.4.4', 'v0.3.0')
+    assert not BT.needs_update('', 'v0.4.4') and not BT.needs_update('v0.3.0', '')
+    # the check: the same sentence as before when the versions agree or nothing is installed here
+    same = 'spike-pinball-bluetooth v0.3.0 is on the machine and switched on, and its helper is running.'
+    m = Machine([BT.ENABLED, BT.RELEASE, 'helper'])
+    assert BT.check_machine(m, 'v0.3.0') == same and BT.check_machine(m) == same
+    got = BT.machine_report(m, 'v0.4.4')
+    assert got['behind'] and got['release'] == 'v0.3.0' and got['on_card']
+    assert got['text'].startswith(same) and 'this computer has v0.4.4' in got['text']
+    assert not BT.machine_report(m, 'v0.3.0')['behind']
+    assert not any(x.startswith('rm') for x in m.ran)                # still nothing touched
+    assert BT.machine_state(m)['release'] == 'v0.3.0' and m.ran[-1] == BT.STATUS
+    # nothing on the machine: nothing to be behind
+    got = BT.machine_report(Machine([]), 'v0.4.4')
+    assert not got['behind'] and 'this computer has' not in got['text']
+    # the menu said it does not know the game program (a release before v0.4): said, with the way out
+    assert 'no validated profile' in BT.STATUS and '/tmp/spikebt-game.log' in BT.STATUS
+    state = BT.parse_status('on-card\nrelease v0.3.0\nhelper-running\nno-profile\n')
+    assert state['no_profile'] and state['helper']
+
+    class Refused(Machine):
+        def sh(self, script, timeout=20, check=True):
+            rc, out = super().sh(script, timeout, check)
+            return rc, out + ('no-profile\n' if script == BT.STATUS else '')
+    got = BT.machine_report(Refused([BT.ENABLED, BT.RELEASE, 'helper']), 'v0.4.4')
+    assert 'no Bluetooth entry in the menus' in got['text'] and 'puts v0.4.4 on it' in got['text'] and got['behind']
+
+
+def test_my_machines_says_a_plugin_older_than_the_one_on_this_computer():
+    from pinball_decryptor.core import machine_care as C
+    text = 'game x/game\npad bluetooth v0.3.0\n'
+    assert dict(C.parse_status(text))['From PAD on this card'][1] == 'Bluetooth headphones plugin v0.3.0'
+    got = dict(C.parse_status(text, 'v0.4.4'))['From PAD on this card'][1]
+    assert got.startswith('Bluetooth headphones plugin v0.3.0 (older than the v0.4.4 on this computer')
+    assert 'Plugins tab' in got
+    assert dict(C.parse_status(text, 'v0.3.0'))['From PAD on this card'][1] == 'Bluetooth headphones plugin v0.3.0'
+
+
+def test_the_plugins_tab_says_by_itself_that_the_machine_is_behind(tmp_path, monkeypatch, store, plugin):
+    from pinball_decryptor.core import pad_ssh_key, remote_send
+    from tests.webui_harness import web_app
+    fake, blobs, sums = plugin
+    monkeypatch.setitem(P.PLUGINS, 'bluetooth', fake)
+    monkeypatch.setattr(P.net, 'urlopen', Web({'v0.3.0': (blobs, sums), 'v0.3.1': (blobs, sums)}))
+    monkeypatch.setattr(pad_ssh_key, 'KEY_DIR', tmp_path / 'keys')
+    js = (ROOT / 'pinball_decryptor/webui/static/js/tabs/plugins.js').read_text(encoding='utf-8')
+    for words in ('p.machine_note', 'p.machine_behind', 'p.card_note', 'warn-ink'):
+        assert words in js, words
+    asked = []
+
+    def connect(address, log=None, look=True):
+        asked.append(look)
+        return Machine([BT.ENABLED, BT.RELEASE, 'helper'])           # the machine carries v0.3.0
+    monkeypatch.setattr(remote_send, 'connect', connect)
+    with web_app(tmp_path, mfr='stern') as w:
+        w.window.current_mfr._era = 'spike2'
+        svc = w.window.service('plugins')
+        w.call('network.set_address', '192.168.1.40')
+        w.run(svc.on_show)
+        _settle(w, lambda r: r['releases_state'] == 'ok')
+        assert not asked                                             # nothing installed here: nothing to compare
+        assert w.call('plugins.install', 'bluetooth', 'v0.3.0')
+        row = _settle(w, lambda r: not r['busy'] and r['machine_release'] == 'v0.3.0')
+        assert asked == [False]                                      # looked by itself, with no network search
+        assert not row['machine_behind'] and row['machine_note'] == ''
+        # the newer version is installed here: the machine is behind it, and the page says so by itself
+        assert w.call('plugins.install', 'bluetooth', 'v0.3.1')
+        row = _settle(w, lambda r: not r['busy'] and r['installed'] == 'v0.3.1' and r['machine_behind'])
+        assert 'still has spike-pinball-bluetooth v0.3.0; this computer has v0.3.1' in row['machine_note']
+        assert asked == [False, False]
+        w.run(svc.on_show)
+        assert asked == [False, False]                               # once for each version, not each visit
+        # Check it on the machine: the same, and not in green
+        assert w.call('plugins.check_machine', 'bluetooth')
+        row = _settle(w, lambda r: not r['busy'] and r['note'])
+        assert row['kind'] == 'warn' and 'this computer has v0.3.1' in row['note']
+        # another machine's address: what was seen belongs to the first one
+        w.call('network.set_address', '192.168.1.41')
+        w.run(svc.publish)
+        row = w.state('plugins')['plugins'][0]
+        assert row['machine_release'] == '' and not row['machine_behind'] and row['machine_note'] == ''
 
 
 # ------------------------------------------------------------------ PAD-1643: straight onto the machine

@@ -8,7 +8,7 @@ import { useNs } from "../core/store.js";
 export const css = true;
 
 function Said({ text, kind }) {
-  return text ? html`<span class=${cx("small", kind === "err" ? "err-ink" : kind === "ok" ? "ok-ink" : "muted")}
+  return text ? html`<span class=${cx("small", kind === "err" ? "err-ink" : kind === "warn" ? "warn-ink" : kind === "ok" ? "ok-ink" : "muted")}
     role=${kind === "err" ? "alert" : undefined}>${text}</span>` : null;
 }
 
@@ -106,14 +106,17 @@ function OnYourCards({ p, s }) {
     ${p.error ? html`<p role="alert" class="err-ink">${p.error}</p>` : null}
     <span class="small muted">${p.needs}</span>
     ${p.game_note ? html`<${Note} kind=${p.game_kind === "warn" ? "warn" : "ok"}>${p.game_note}<//>` : null}
+    ${p.card_note ? html`<${Note} kind="info">${p.card_note}<//>` : null}
     ${p.address ? html`<div class="plg-machine">
       <div class="plg-half-hd"><b>On your machine</b>
         <span class="muted small">The machine at ${p.address} (Network tab), over remote access: no card to write</span></div>
+      ${p.machine_note ? html`<${Note} kind=${p.machine_behind ? "warn" : "info"}>${p.machine_note}<//>` : null}
       <div class="plg-row">
         <${Button} size="sm" kind="primary" disabled=${!!p.busy || s.running || !p.installed || !p.offered}
           title=${p.installed ? "Puts the version installed on this computer on the machine's card over remote access, the same changes a card write makes. The machine restarts."
             : "Install the plugin on this computer first: the machine gets the version installed here."}
-          onClick=${() => call("plugins.put_on_machine", p.key)}>Put it on the machine now<//>
+          onClick=${() => call("plugins.put_on_machine", p.key)}>${p.machine_behind
+            ? "Put " + p.installed + " on the machine now" : "Put it on the machine now"}<//>
         <${Button} size="sm" disabled=${!!p.busy || s.running}
           title="Asks the machine over remote access whether the plugin is on it and switched on. Its launcher switches itself off after a game that ended badly; this switches it back on."
           onClick=${() => call("plugins.check_machine", p.key)}>Check it on the machine<//>

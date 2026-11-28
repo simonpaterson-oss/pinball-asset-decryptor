@@ -773,26 +773,85 @@ def apply_to_build(original, output, config, log=None, cancel=None, key_source=N
 #: His launcher switches itself off (the file DISABLED, on the machine's own data) after a game that ended badly,
 #: and nothing a card write does brings it back: that file is not on the card.  The Plugins tab asks the machine,
 #: and takes the mark away when it is there.
+GAME_LOG = '/tmp/spikebt-game.log'                # what his menu said when the game last started
+NO_PROFILE = 'no validated profile'              # ... when it does not know the game program (before v0.4)
 STATUS = ('[ -f ' + ENABLED + ' ] && echo on-card; [ -e ' + DISABLED + ' ] && echo switched-off; '
           'echo "release $(cat ' + RELEASE + ' 2>/dev/null)"; pidof spikebt >/dev/null 2>&1 && echo helper-running; '
-          'true')
+          'grep -q "' + NO_PROFILE + '" ' + GAME_LOG + ' 2>/dev/null && echo no-profile; true')
 
 
 def parse_status(text):
-    """``dict(on_card, switched_off, release, helper)`` from :data:`STATUS`'s answer."""
+    """``dict(on_card, switched_off, release, helper, no_profile)`` from :data:`STATUS`'s answer."""
     lines = [l.strip() for l in (text or '').splitlines()]
     release = next((l.split(None, 1)[1] for l in lines if l.startswith('release ') and len(l.split()) == 2), '')
     return {'on_card': 'on-card' in lines, 'switched_off': 'switched-off' in lines,
-            'release': release if card_plugins.TAG.match(release) else '', 'helper': 'helper-running' in lines}
+            'release': release if card_plugins.TAG.match(release) else '', 'helper': 'helper-running' in lines,
+            'no_profile': 'no-profile' in lines}
 
 
-def check_machine(machine):
+def _tag(tag):
+    return tag if card_plugins.TAG.match(tag or '') else ''
+
+
+def behind(release, installed, where='The machine'):
+    """PAD-1678: the sentence for a machine (or card) that carries release *release* while this computer has
+    *installed*, '' when they are the same or either is not known.  Installing a newer release on the computer
+    changes no machine and no card: David's Godzilla kept v0.3.0, with no Bluetooth entry in its menus, while the
+    Plugins tab said v0.4.4 was installed and, in green, that the plugin was on the machine and switched on."""
+    release, installed = _tag(release), _tag(installed)
+    if not release or not installed or release == installed:
+        return ''
+    if card_plugins.tag_key(release) > card_plugins.tag_key(installed):
+        return ('%s has spike-pinball-bluetooth %s, newer than the %s installed on this computer.'
+                % (where, release, installed))
+    if where == 'The machine':
+        return ('The machine still has spike-pinball-bluetooth %s; this computer has %s. Installing a version on '
+                'this computer does not change the machine: Put it on the machine now puts %s on it.'
+                % (release, installed, installed))
+    return ('%s has spike-pinball-bluetooth %s; this computer has %s, and a card written from this project gets %s.'
+            % (where, release, installed, installed))
+
+
+def needs_update(release, installed):
+    """Whether *release*, on a machine or a card, is older than the *installed* one."""
+    release, installed = _tag(release), _tag(installed)
+    return bool(release and installed and card_plugins.tag_key(release) < card_plugins.tag_key(installed))
+
+
+def machine_state(machine):
+    """What a connected machine says of the plugin, and nothing changed there: :func:`parse_status`'s dict."""
+    answer = machine.sh(STATUS, timeout=20, check=False)
+    return parse_status(answer[1] if isinstance(answer, tuple) else answer)
+
+
+def check_machine(machine, installed=''):
     """Ask a connected ``remote_send`` machine how the plugin is doing there and, when its launcher has switched
-    itself off, switch it back on.  The sentence to show."""
+    itself off, switch it back on.  The sentence to show; with *installed* (the release on this computer) it
+    says so when the machine carries another one."""
+    return machine_report(machine, installed)['text']
+
+
+def machine_report(machine, installed=''):
+    """``dict(text, release, on_card, behind)`` for :func:`check_machine`: *behind* is True when the machine's
+    release is older than *installed*, and *text* then says how to bring it up to date."""
     def sh(script):
         answer = machine.sh(script, timeout=20, check=False)
         return answer[1] if isinstance(answer, tuple) else answer
     state = parse_status(sh(STATUS))
+    out = {'release': state['release'], 'on_card': state['on_card'],
+           'behind': state['on_card'] and needs_update(state['release'], installed)}
+    extra = behind(state['release'], installed) if state['on_card'] else ''
+    if state['on_card'] and state['no_profile'] and not finds_games(state['release']):
+        # what David's machine said: the helper runs, and the menu is not in the game
+        extra = ('Its menu did not go into the game the last time the game started: %s knows exact game programs '
+                 'only, and this one is not one of them (a game program this app has changed never is), so there '
+                 'is no Bluetooth entry in the menus.%s' % (state['release'] or 'this release',
+                                                            ' ' + extra if extra else ''))
+    out['text'] = _check_text(state, sh) + (' ' + extra if extra else '')
+    return out
+
+
+def _check_text(state, sh):
     if not state['on_card']:
         return ("This machine's card has no Bluetooth headphones on it. Put it on the machine now with the "
                 'button here: there is no card to write.')
