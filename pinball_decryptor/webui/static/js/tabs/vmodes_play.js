@@ -923,8 +923,8 @@ export function VideoModePlayer({ s, onClose, startCard }) {
             <div class="vmp-clip-card" hidden><${Icon} name="film" /><b></b><span></span></div>
           </div>
           ${!info ? html`<div class="vmp-loading"><${Spinner} /> Building the mode for the browser…</div>` : null}
-          ${calOpen ? html`<${CalibPanel} onCancel=${() => setCalOpen(false)}
-            onDone=${(ms) => { setCalOpen(false); setCalib(ms); if (r) { r.setCalib(ms); r.restart(r.card); } else writeCalib(ms); }} />` : null}
+          ${calOpen ? html`<${CalibPanel} onCancel=${() => { setCalOpen(false); set.paused(false); }}
+            onDone=${(ms) => { setCalOpen(false); setCalib(ms); set.paused(false); if (r) { r.setCalib(ms); r.restart(r.card); } else writeCalib(ms); }} />` : null}
           ${ui.done && !ui.replay ? html`<div class="vmp-done">
             <div class="vmp-done-t">${ui.done.outcome === 1 ? "Won" : "Lost"} · ${ui.done.score.toLocaleString()}</div>
             <div class="small">Press Enter (or Start) to play again.</div></div>` : null}
@@ -990,7 +990,7 @@ export function VideoModePlayer({ s, onClose, startCard }) {
       <span ...${tip(T.fps)}><${Seg} value=${fps} onChange=${set.fps} options=${[{ value: 60, label: "60 fps" }, { value: MACHINE_FPS, label: "Machine · " + MACHINE_FPS + " fps" }]} /></span>
       <span class="vsep"></span>
       <span class="vmp-meter" ...${tip(T.calib)}>Sound offset <b class="mono">${calib > 0 ? "+" : ""}${calib} ms</b></span>
-      <${Button} kind="ghost" icon="audio" title="Measure this computer's sound offset with a short tap-along" onClick=${() => setCalOpen(true)}>Calibrate<//>
+      <${Button} kind="ghost" icon="audio" title="Measure this computer's sound offset with a short tap-along" onClick=${() => { set.paused(true); setCalOpen(true); }}>Calibrate<//>
       ${ui.sync && ui.sync.drift ? html`<span class="vmp-meter" ...${tip("A rhythm phase steps by its music's clock: how far the engine is from the music right now")}>Music <b class="mono">${ui.sync.drift.ms > 0 ? "+" : ""}${ui.sync.drift.ms} ms</b></span>` : null}
       <span class="vsep"></span>
       ${ui.verdict ? html`<span class=${cx("vmp-rec", ui.verdict.same ? "ok" : "bad")} ...${tip(ui.verdict.same ? "The replay ended on the recorded draw list hash, " + ui.verdict.hash : "Recorded " + ui.verdict.wantSteps + " steps, hash " + ui.verdict.want + "; the replay " + ui.verdict.steps + " steps, hash " + ui.verdict.hash)}>

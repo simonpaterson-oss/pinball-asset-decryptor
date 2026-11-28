@@ -75,6 +75,12 @@ and a 24-bar chart that grows busier. `new_doc(kind)` is a one-phase mode of a k
   WebAssembly; rhythm's windows to the step, its calibration, held notes and the three-minute chart; tug needs the
   named flipper and its grab is shaken off by alternating; a wrong sequence button, a too-early dodge and a held
   shield; the glyphs in their cabinet places; the catalog against the schema; random buttons for 200,000 steps a kind.
-- `scripts/shot_pad1663.py`: each starter in the app's player, its winning buttons replayed to a win on the native
-  hash and a play with no buttons to a loss; rhythm-3min played for its three minutes with sound on at 60 fps and
-  at the machine's 29.
+- `scripts/shot_pad1663.py` in Edge on David's PC (sound on, Edge muted at the process): each starter in the app's
+  player, its winning buttons replayed to a win on the native build's hash and a play with no buttons to a loss, all
+  seven. rhythm-3min (384 notes at 128 bpm on its own three-minute drum track) played by a player in the page that
+  presses each note when its beat is heard by the audio clock: at 60 fps 384 of 384 perfect, the engine at most 17 ms
+  (one step) from its music, 7 ms on average, over 184 s; at the machine's 29 fps 383 perfect and 1 good, at most
+  27 ms, 8 ms on average. Blocking the page 150 ms, it is back on its music within a frame.
+- The first three-minute run found two faults, both fixed: a tap that came and went within a frame that ran no step
+  never reached the engine (the player now latches a press until a step has seen it; the page player missed runs of
+  notes without it), and the music drift readout was taken before the frame's steps.
