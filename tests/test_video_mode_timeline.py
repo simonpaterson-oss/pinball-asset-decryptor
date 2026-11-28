@@ -76,18 +76,19 @@ def quads(words):
 
 
 # ---- the document ---------------------------------------------------------------------
-def test_keyframes_document_and_the_format_2_fixture_check_clean():
+def test_keyframes_document_and_the_format_3_fixture_check_clean():
     assert problems(doc_of()) == []
-    assert problems(doc_of(os.path.join(DATA, "format_2.json"))) == []
-    assert document.FORMAT == 2 and doc_of()["format"] == 2
+    assert problems(doc_of(os.path.join(DATA, "format_3.json"))) == []
+    assert document.FORMAT == 3 and doc_of()["format"] == 3
 
 
-def test_a_format_1_file_gains_nothing_and_plays_the_same():
-    old = te.load_json(os.path.join(DATA, "format_1.json"))
+@pytest.mark.parametrize("n", [1, 2])
+def test_an_older_file_gains_nothing_and_plays_the_same(n):
+    old = te.load_json(os.path.join(DATA, "format_%d.json" % n))
     new = document.migrate(old)
-    assert new["format"] == 2 and all("tracks" not in p and "sound_track" not in p for p in new["phases"])
+    assert new["format"] == 3 and all("tracks" not in p and "sound_track" not in p for p in new["phases"])
     old2 = copy.deepcopy(old)
-    old2["format"] = 2
+    old2["format"] = 3
     assert new == old2
 
 

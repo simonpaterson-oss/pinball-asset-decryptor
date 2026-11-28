@@ -183,14 +183,22 @@
         "role": "music",
         "volume": 0.8,
         "loop": true,
-        "loop_start_s": 4.0
+        "loop_start_s": 4.0,
+        "fade_s": 1.5,
+        "tempo_bpm": 120,
+        "beat_offset_s": 0.25,
+        "beats_per_bar": 4
       },
       {
         "id": "boss_music",
         "file": "sound/boss.ogg",
         "role": "music",
         "volume": 0.8,
-        "loop": true
+        "loop": true,
+        "fade_s": 1.5,
+        "tempo_bpm": 120,
+        "beat_offset_s": 0.25,
+        "beats_per_bar": 4
       },
       {
         "id": "zap",
@@ -559,84 +567,7 @@
           "when": "health_gone"
         }
       ],
-      "layout": "fixed",
-      "tracks": [
-        {
-          "place": 0,
-          "prop": "motion",
-          "keys": [
-            {
-              "at_s": 0,
-              "x": 680,
-              "y": 330,
-              "out": [
-                0,
-                -40
-              ],
-              "ease": "in_out"
-            },
-            {
-              "at_s": 3,
-              "x": 560,
-              "y": 300,
-              "in": [
-                -60,
-                0
-              ],
-              "out": [
-                60,
-                0
-              ],
-              "ease": "in_out"
-            },
-            {
-              "at_s": 6,
-              "x": 800,
-              "y": 300,
-              "in": [
-                60,
-                0
-              ],
-              "out": [
-                -60,
-                0
-              ],
-              "ease": "in_out"
-            },
-            {
-              "at_s": 9,
-              "x": 680,
-              "y": 330
-            }
-          ]
-        },
-        {
-          "place": 0,
-          "prop": "turn",
-          "keys": [
-            {
-              "at_s": 0,
-              "v": -4,
-              "ease": "in_out"
-            },
-            {
-              "at_s": 4.5,
-              "v": 4,
-              "ease": "in_out"
-            },
-            {
-              "at_s": 9,
-              "v": -4
-            }
-          ]
-        }
-      ],
-      "sound_track": [
-        {
-          "at_s": 2,
-          "sound": "go_now"
-        }
-      ]
+      "layout": "fixed"
     },
     {
       "id": "charge",
@@ -909,13 +840,7 @@
     "length_pct_max": 150
   },
   "editor": {
-    "markers": {
-      "boss": [
-        {
-          "at_s": 3,
-          "label": "Bob left"
-        }
-      ]
-    }
+    "zoom": "fit",
+    "grid": 8
   }
 }

@@ -202,11 +202,13 @@ def test_an_older_registration_is_brought_over():
 def test_the_committed_dll_is_built_from_these_sources():
     """The DLL is prebuilt; a source edit without a rebuild fails here
     (python tools/padicon/build.py, commit the DLL and its .json)."""
-    sys.path.insert(0, os.path.join(ROOT, "tools", "padicon"))
-    try:
-        import build as padicon_build
-    finally:
-        sys.path.pop(0)
+    # by path under its own name: a bare `import build` gets whichever build.py an earlier
+    # test on this worker imported first (the video mode engine's, PAD-1683)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "pad_padicon_build", os.path.join(ROOT, "tools", "padicon", "build.py"))
+    padicon_build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(padicon_build)
     with open(os.path.join(ROOT, "pinball_decryptor", "shell",
                            "padicon64.json"), encoding="utf-8") as f:
         stamp = json.load(f)

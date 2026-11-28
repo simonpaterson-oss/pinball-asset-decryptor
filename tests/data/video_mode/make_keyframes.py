@@ -1,4 +1,4 @@
-"""PAD-1664: writes keyframes.json (the timeline's test document) and format_2.json (the frozen format 2 fixture)
+"""PAD-1664: writes keyframes.json (the timeline's test document) and format_3.json (the frozen format 3 fixture)
 from the worked example, Night Harbour.
 
     python tests/data/video_mode/make_keyframes.py
@@ -102,7 +102,7 @@ def main():
     fixture["phases"][1]["tracks"] = copy.deepcopy(d["phases"][1]["tracks"])
     fixture["phases"][1]["sound_track"] = [{"at_s": 2, "sound": "go_now"}]
     fixture["editor"] = {"markers": {"boss": [{"at_s": 3, "label": "Bob left"}]}}
-    with open(os.path.join(HERE, "format_2.json"), "w", encoding="utf-8", newline="\n") as f:
+    with open(os.path.join(HERE, "format_3.json"), "w", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(fixture, indent=2, ensure_ascii=False) + "\n")
 
 

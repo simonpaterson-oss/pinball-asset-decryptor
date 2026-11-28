@@ -29,8 +29,8 @@ from pinball_decryptor.core.video_mode import compiler, document, harness  # noq
 
 ENGINE = os.path.join(ROOT, "pinball_decryptor", "core", "video_mode", "engine")
 sys.path.insert(0, ENGINE)
-import build  # noqa: E402
 import gen_tables  # noqa: E402
+build = harness._engine_build_dir()     # by path: a bare `import build` collides with tools/padicon's (PAD-1683)
 
 sys.path.pop(0)
 

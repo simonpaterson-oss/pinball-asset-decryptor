@@ -18,7 +18,7 @@
   "additionalProperties": false,
   "properties": {
     "format": {
-      "const": 2,
+      "const": 3,
       "description": "The document's format number. A later PAD migrates an older number step by step; an older PAD refuses a newer one."
     },
     "kind": {
@@ -447,6 +447,30 @@
         },
         "loop_start_s": {
           "$ref": "#/$defs/seconds"
+        },
+        "fade_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Music: the seconds this bed fades in over when it takes over from another (the one before fades out over the same), and out over when it stops. Absent: 1."
+        },
+        "tempo_bpm": {
+          "type": "number",
+          "minimum": 30,
+          "maximum": 300,
+          "description": "Music: its beats a minute, the beat grid a rhythm phase on this music reads and the timeline draws."
+        },
+        "beat_offset_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60,
+          "description": "Music: where its first beat falls, in seconds from the start of the file."
+        },
+        "beats_per_bar": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Music: beats a bar (the grid's strong lines). Absent: 4."
         }
       }
     },
@@ -1774,7 +1798,6 @@
       "type": "object",
       "required": [
         "music",
-        "tempo_bpm",
         "chart"
       ],
       "additionalProperties": false,
@@ -1785,12 +1808,14 @@
         "tempo_bpm": {
           "type": "number",
           "minimum": 30,
-          "maximum": 300
+          "maximum": 300,
+          "description": "Absent: the music's own tempo_bpm."
         },
         "offset_ms": {
           "type": "number",
           "minimum": -2000,
-          "maximum": 2000
+          "maximum": 2000,
+          "description": "Absent: the music's own beat_offset_s."
         },
         "travel_beats": {
           "type": "number",

@@ -50,8 +50,8 @@ export class VideoModeEngine {
     return out;
   }
   cues() {
-    const n = this.x.vmw_ncues(), v = new Int32Array(this.mem(), this.x.vmw_cues(), n * 3), out = [];
-    for (let i = 0; i < n; i++) out.push({ sound: v[i * 3], op: v[i * 3 + 1], duck: v[i * 3 + 2] });
+    const n = this.x.vmw_ncues(), v = new Int32Array(this.mem(), this.x.vmw_cues(), n * 4), out = [];
+    for (let i = 0; i < n; i++) out.push({ sound: v[i * 4], op: v[i * 4 + 1], duck: v[i * 4 + 2], fade: v[i * 4 + 3] });
     return out;
   }
   hash() {

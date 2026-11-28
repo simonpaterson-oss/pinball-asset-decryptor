@@ -23,6 +23,8 @@ code mode, or one of its Examples). What it plays of its own sits beside it, nam
       "beds": {"swamp": "music_swamp.wav"},   PAD-658: more beds by name, which the mode switches to while it runs
                                      (pa_music_bed: a multiball of its own, a stage)
       "calls": {"sever": "sever.wav", "spike": {"wav": "spike.wav", "priority": 3}},
+                                     PAD-1667: a call with "duck": false leaves the mode's music up under it
+                                     (the .assets call line ends "noduck"); every other call ducks it
       "clips": {"intro": "intro.mp4", "loop": "loop.mp4", "sever": "sever.mp4"},
       "hud": {"title": "KING GHIDORAH", "timer": {"label": "GHIDORAH", "icon": "bolt"}, ...},
       "game_modes": "block",         PAD-347: while it runs, the game's own modes wait ("block", the
@@ -148,6 +150,10 @@ class CodeAssets:
             else:
                 out.append((cue, str(v or ""), 4))
         return out
+
+    def call_noduck(self):
+        """PAD-1667: the cues whose call leaves the music up (``"duck": false``)."""
+        return {cue for cue, v in (self.calls or {}).items() if isinstance(v, dict) and v.get("duck") is False}
 
     def clip_list(self):
         """``[(cue, file)]``: every clip, the old start ``clip`` as the "start" cue (hud-layers)."""
@@ -388,6 +394,7 @@ def runtime_text(slug, spec, prof, own_sounds=(), screen=False, clip=False):
             lines.append("clip   %s %s" % (cue, clip_name(slug, cue)))
     mine = [u for u in own_sounds or () if u.get("slug") == slug]
     prio = {cue: p for cue, _w, p in spec.call_list()}
+    noduck = spec.call_noduck()
     for u in mine:
         if u.get("key") == "music":
             # PAD-595: a bed in a sound bank of its own is played by that bank's sound id
@@ -411,7 +418,8 @@ def runtime_text(slug, spec, prof, own_sounds=(), screen=False, clip=False):
         u = next((u for u in mine if u.get("key") == call_key(cue)), None)
         if u is None:
             continue
-        lines.append("call   %s %d %d %d" % (cue, int(u["request"]), int(u.get("ms") or 0), prio.get(cue, 4)))
+        lines.append("call   %s %d %d %d%s" % (cue, int(u["request"]), int(u.get("ms") or 0), prio.get(cue, 4),
+                                               " noduck" if cue in noduck else ""))
     return "\n".join(lines) + "\n"
 
 

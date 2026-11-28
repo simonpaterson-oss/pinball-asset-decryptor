@@ -28,12 +28,17 @@ EV = {1: "clip_start", 2: "clip_stop", 3: "phase_start", 4: "phase_won", 5: "pha
 
 
 def _engine_build_dir():
-    sys.path.insert(0, ENGINE_DIR)
-    try:
-        import build
-    finally:
-        sys.path.pop(0)
-    return build
+    # loaded by path under its own name: a bare `import build` takes whatever `build`
+    # is already in sys.modules (tools/padicon's, tools/padmenu's, pypa's) - PAD-1683
+    name = "pad_video_mode_engine_build"
+    mod = sys.modules.get(name)
+    if mod is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name, os.path.join(ENGINE_DIR, "build.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return mod
 
 
 def native_runner(cache=None):
@@ -72,8 +77,8 @@ def parse(out):
             _, s, t, a, b, c = line.split()
             events.append((int(s), int(t), int(a), int(b), int(c)))
         elif line.startswith("C "):
-            _, s, snd, op, duck = line.split()
-            cues.append((int(s), int(snd), int(op), int(duck)))
+            _, s, snd, op, duck, fade = line.split()
+            cues.append((int(s), int(snd), int(op), int(duck), int(fade)))
         elif line.startswith("D "):
             parts = line.split()
             dumps.append((int(parts[1]), [int(x, 16) for x in parts[2:]]))

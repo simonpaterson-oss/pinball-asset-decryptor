@@ -27,7 +27,7 @@ import json
 import os
 import re
 
-FORMAT = 2
+FORMAT = 3
 KIND = "pad-video-mode"
 FILE_NAME = "video_mode.json"
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video_mode.schema.json")
@@ -35,14 +35,22 @@ SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video_mo
 
 
 def _format_1_to_2(doc):
-    """PAD-1664: a phase gained tracks (keyframed motion of its placed things) and sound_track (sounds at set
-    times). A format 1 file has neither, and plays the same without them."""
+    """PAD-1667: sounds gained fade_s, tempo_bpm, beat_offset_s and beats_per_bar, and a rhythm phase's
+    tempo_bpm became optional (its music's own).  Nothing a format 1 file holds changes: every field it has
+    means what it meant, and the new ones take their defaults when absent (a 1 s fade, no beat grid)."""
     doc["format"] = 2
     return doc
 
 
+def _format_2_to_3(doc):
+    """PAD-1664: a phase gained tracks (keyframed motion of its placed things) and sound_track (sounds at set
+    times). A format 2 file has neither, and plays the same without them."""
+    doc["format"] = 3
+    return doc
+
+
 # n -> function(doc) returning the doc in format n+1.
-MIGRATIONS = {1: _format_1_to_2}
+MIGRATIONS = {1: _format_1_to_2, 2: _format_2_to_3}
 
 TRACK_NEEDS = {"motion": ("x", "y"), "scale": ("v",), "turn": ("v",), "alpha": ("v",), "tint": ("tint",)}
 TRACK_RANGE = {"scale": (0, 16), "turn": (-3600, 3600), "alpha": (0, 1)}
@@ -329,6 +337,12 @@ def reference_problems(doc):
         settings = phase.get("settings") if isinstance(phase.get("settings"), dict) else {}
         for key, kind in _SETTING_REFS.get(phase.get("kind"), {}).items():
             need(settings.get(key), kind, base + ["settings", key])
+        if phase.get("kind") == "rhythm" and "tempo_bpm" not in settings:     # PAD-1667: the music's own grid
+            music = by_kind.get("music", {}).get(settings.get("music"))
+            sounds = (doc.get("assets") or {}).get("sounds") or []
+            if music is not None and not isinstance(sounds[music[-1]].get("tempo_bpm"), (int, float)):
+                out.append((base + ["settings", "tempo_bpm"], 'is not set, and the music "%s" has no tempo_bpm of '
+                            'its own to take the beat grid from' % settings.get("music")))
         if phase.get("kind") == "boss":
             for i, att in enumerate(settings.get("attacks") or []):
                 if isinstance(att, dict):
@@ -360,6 +374,17 @@ def reference_problems(doc):
         for n, ts in enumerate(phase.get("sound_track") or []):
             if isinstance(ts, dict):
                 need(ts.get("sound"), "sound", ["phases", i, "sound_track", n, "sound"])
+    for n, snd in enumerate((doc.get("assets") or {}).get("sounds") or []):      # PAD-1667
+        if not isinstance(snd, dict):
+            continue
+        if snd.get("role") != "music":
+            for key in ("fade_s", "tempo_bpm", "beat_offset_s", "beats_per_bar"):
+                if key in snd:
+                    out.append((["assets", "sounds", n, key], "is for music only; this sound is a %s" % snd.get("role")))
+        elif "tempo_bpm" not in snd:
+            for key in ("beat_offset_s", "beats_per_bar"):
+                if key in snd:
+                    out.append((["assets", "sounds", n, key], "is part of a beat grid, which needs the music's tempo_bpm"))
     for n, award in enumerate((doc.get("pays") or {}).get("awards") or []):
         if isinstance(award, dict):
             need(award.get("phase"), "phase", ["pays", "awards", n, "phase"])

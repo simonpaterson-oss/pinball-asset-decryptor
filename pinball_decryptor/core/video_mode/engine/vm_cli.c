@@ -5,7 +5,7 @@
  *              [--dump N] [--quiet] [--clip N] [--card N] [--fuzz N] [--bench N]
  *   vmrun PACK --seek PHASE --at S1,S2,... [--endless]   (PAD-1664: the editor's scrub; "D step ..." per step)
  *
- * Prints one line per event ("E step type a b c") and sound cue ("C step sound op duck"),
+ * Prints one line per event ("E step type a b c") and sound cue ("C step sound op duck fade"),
  * the draw list every N steps with --dump ("D step w0 w1 ..." in hex), and last
  * "END steps=.. hash=.. outcome=.. score=..". vm_run.mjs prints the same from WebAssembly.
  */
@@ -148,7 +148,7 @@ int main(int argc, char **argv)
             for (k = 0; k < E.nevents; k++)
                 printf("E %lu %d %d %d %d\n", step, E.events[k].type, E.events[k].a, E.events[k].b, E.events[k].c);
             for (k = 0; k < E.ncues; k++)
-                printf("C %lu %d %d %d\n", step, E.cues[k].sound, E.cues[k].op, E.cues[k].duck);
+                printf("C %lu %d %d %d %d\n", step, E.cues[k].sound, E.cues[k].op, E.cues[k].duck, E.cues[k].fade);
         }
         if (dump && (step % dump == 0 || !running)) {
             uint32_t n = vm_list_words(&E, words, sizeof(words) / sizeof(words[0])), w;

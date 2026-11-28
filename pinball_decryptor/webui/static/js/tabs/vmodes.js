@@ -12,6 +12,7 @@ import { useNs } from "../core/store.js";
 import { PixelEditor } from "./pixel_edit.js";
 import { VideoModePlayer } from "./vmodes_play.js";
 import { VideoModeEditor } from "./vmodes_edit.js";
+import { SoundCard } from "./vmodes_sound.js";
 
 export const css = true;
 
@@ -535,6 +536,19 @@ export default function VideoModesTab() {
     return html`<div class="page vm-page vm-editing"><${VideoModeEditor} s=${s} onClose=${() => setEditing(false)}
       onPlay=${(card) => { setEditing(false); setPlaying({ card, from: "edit" }); }} /></div>`;
   }
+  useEffect(() => {                    // PAD-1667: undo / redo on the tab too, on the editor's history (PAD-1661)
+    if (playing || editing) return undefined;
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target, typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+      if (typing) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); call("vmodes.edit_undo"); }
+      else if (k === "y" || (k === "z" && e.shiftKey)) { e.preventDefault(); call("vmodes.edit_redo"); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [playing, editing]);
   const head = html`<${PageHead} title="Video modes" sub=${s.intro}>
     ${canPlay ? html`<${Button} kind="primary" icon="edit" disabled=${s.running}
       title="Lay out its phases on the stage: drag things on, move, scale and turn them, with layers and an inspector"
@@ -542,6 +556,10 @@ export default function VideoModesTab() {
     ${canPlay ? html`<${Button} icon="play" disabled=${s.running}
       title="Play this video mode here, with the keyboard, a gamepad or the mouse: the machine's own engine, built for the browser"
       onClick=${() => setPlaying({})}>Play<//>` : null}
+    ${s.available && s.slug ? html`<${Button} kind="ghost" icon="undo" disabled=${!(s.history && s.history.can_undo) || s.running}
+      title=${"Undo" + (s.history && s.history.undo_label ? ": " + s.history.undo_label : "") + " (Ctrl+Z)"} onClick=${() => call("vmodes.edit_undo")} />
+      <${Button} kind="ghost" icon="redo" disabled=${!(s.history && s.history.can_redo) || s.running}
+      title=${"Redo" + (s.history && s.history.redo_label ? ": " + s.history.redo_label : "") + " (Ctrl+Y)"} onClick=${() => call("vmodes.edit_redo")} />` : null}
     ${s.available ? html`<${NewMode} />` : null}
     <${Button} icon="refresh" onClick=${() => call("vmodes.refresh")}>Read again<//>
   <//>`;
@@ -575,6 +593,7 @@ export default function VideoModesTab() {
       <//>
       ${sel ? html`<${SpriteInspector} p=${sel} running=${s.running} />` : null}
       <${Backgrounds} s=${s} />
+      <${SoundCard} s=${s} />
       <${Pack} s=${s} />` : null}
     ${s.draft ? html`<${ImportDialog} d=${s.draft} kinds=${s.kinds || []} />` : null}
   </div>`;
