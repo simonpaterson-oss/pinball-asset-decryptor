@@ -227,7 +227,11 @@ machines (section 1b).
 A single press after a charge ("UNLEASH", "THROW IT") is a `timing` phase with a wide
 window; title cards are part of every phase (its `title` and `objective`).
 
-## 3 The document: video_mode.json, format 2
+## 3 The document: video_mode.json, format 3
+
+Format 3 (PAD-1666) added the HUD's looks and text styles, `multiplier` and `popup` parts, `particles`, a
+thing's `trail`, the style's new switches and amounts, `combo`, and a font's `outline`; a format 2 file
+migrates unchanged but for its number (no multiplier, the old bursts as presets).
 
 Format 2 (PAD-1667) added the music's `fade_s` and beat grid (`tempo_bpm`, `beat_offset_s`,
 `beats_per_bar`) to `sounds` and let a `rhythm` phase take its tempo from its music; a format 1
@@ -270,14 +274,14 @@ A picture and the thing drawn with it may share a name. The mode's own `id` is i
 
 | Field | Meaning |
 |---|---|
-| `format` | 1 |
+| `format` | 3 |
 | `kind` | Always `"pad-video-mode"`, so a stray JSON file is refused |
 | `id` | The mode's slug, its folder name |
 | `title` | Shown in the modes list and on the card (40 characters) |
 | `notes` | The author's own notes |
 | `seed` | The random seed; the same seed and the same inputs play the same game |
 | `stage` | The stage (below) |
-| `assets` | `pictures`, `sounds`, `fonts`, `clips` |
+| `assets` | `pictures`, `sounds`, `fonts`, `clips`, `particles` |
 | `values` | Meters and counters of the mode's own |
 | `things` | What can be on the stage: one entry per kind of thing, placed or spawned by phases |
 | `phases` | The playable parts |
@@ -285,6 +289,7 @@ A picture and the thing drawn with it may share a name. The mode's own `id` is i
 | `hud` | Health, meters, score, prompts, callouts |
 | `cues` | Sounds on events |
 | `style` | The look and the feel switches |
+| `combo` | Kills close together chain a combo and a multiplier: `window_s`, `every` (kills a step of the multiplier; 0 none), `max` |
 | `pays` | What it pays into the pinball game |
 | `entry` | How it may be entered: `declinable` (offer a choice, paying `decline_score` instead), `skip_clips` (`none`, `double_flip`, `action`), `from_attract` (also playable on its own from attract mode) |
 | `levels` | A mode played again gets harder and pays more: `carry` (`none`, per `player`, or for the whole `game`), `max_level`, `speed_step_pct`, `pay_step_pct` |
@@ -317,7 +322,15 @@ beat grid: `tempo_bpm`, `beat_offset_s` (where the first beat falls in the file)
 `beats_per_bar` (absent 4), which a `rhythm` phase on that music and the timeline read.
 
 `fonts`: `id`, `face` (the card's own font, written `card:<name>`, or a font file in the
-mode folder named in `file`), `size` in stage pixels. The app draws the same face.
+mode folder named in `file`), `size` in stage pixels, `outline` (px of outline baked round each
+glyph; absent a twelfth of the size, at least 2). The app draws the same face: the packer bakes each
+font's glyphs three ways from it (fill, outline, and a ramp for gradients), see section 4 "HUD and feel".
+
+`particles` (format 3): a burst or a trail, `id`, a `preset` (`spark`, `smoke`, `debris`, `glow`) and what
+it changes: `count`, `speed` ([low, high] px/s), `direction` and `spread` (degrees, the whole fan),
+`life_s`, `size` and `size_end` (px), `gravity` (px/s/s, down is +), `drag` (the share of speed kept
+after a second), `colour` and `colour_end`, `blend`, `glow` (1 to 3 nested boxes, a soft edge),
+`streak` (a streak along its speed), `picture` (drawn instead of a box).
 
 `clips`: `id`, `file` (made with the existing clip tools and film_cut.py), `skippable`.
 
@@ -332,7 +345,8 @@ One entry per kind of thing: `id`, `picture`, `animation` (one of the picture's)
 `scale`, `team` (`player`, `enemy`, `enemy_shot`, `player_shot`, `pickup`, `health`,
 `scenery`; collisions are by team), `health`, `points` (score when destroyed), `hitbox`
 (overrides the picture's), `blend` (`normal` or `add`), `depth` (higher draws in front),
-and `mover`.
+`mover`, and `trail` (format 3): `particles` (a particle's id or a preset) left behind every
+`every_s`.
 
 A `mover` has a `type`: `none`, `straight` (`speed` along `direction`), `lanes` and
 `free` (steered by the player), `thrust` (rise and fall), `path` (`path` points,
@@ -435,10 +449,21 @@ loop), no end at all, or no end for a win.
 ### `hud`
 
 Each part: `id`, `part` (`health`, `meter`, `score`, `combo`, `timer`, `lives`,
-`progress`, `prompts`, `callout`, `counter`, `text`), `x`, `y`, `w`, `h`, `value` (the
-meter or counter it shows), `look` (`bar`, `pips`, `hearts`, `ring`, `number`,
-`glyphs`), `font`, `colour`, `accent` (danger zone, outline), `text` (`{n}` is the
-number), `phases` (shown only in these; absent: all).
+`progress`, `prompts`, `callout`, `counter`, `text`, and in format 3 `multiplier` and `popup`), `x`, `y`,
+`w`, `h`, `value` (the meter or counter it shows), `look` (`bar`, `pips`, `hearts`, `ring`, `number`,
+`glyphs`), `font`, `colour`, `accent` (a bar's frame; the prompts' colour for a held button), `text` (`{n}`
+is the number), `phases` (shown only in these; absent: all).
+
+Format 3: words take `align` (`auto`, `left`, `centre`, `right`), `outline`, `shadow` and `gradient`
+(colours; the gradient runs from `colour` at the top to it at the bottom). `danger` is the colour a
+health, lives, timer or meter part turns, pulsing, at or under `low` (a share of full, absent 0.34);
+`zones` (up to 4, `from`, `to`, `colour`) are a meter's danger zones, where its fill takes the zone's
+colour and pulses. `count_up` (seconds) rolls a score or counter up to a new number; `pop` grows a number
+that went up for a moment. `picture` draws pips, hearts and lives from a picture (frame 0 full, frame 1
+empty). A `popup` part is pop-up words: on each happening in `on` (`kill`, `pickup`, `hit`, `hurt`,
+`fire`, `prompt_good`, `prompt_perfect`, `prompt_miss`; absent `kill`) its `text` (absent `+{n}`, the
+points) rises `rise` px from where it happened over `life_s`; a happening with no place (a prompt) uses
+the part's own `x`, `y`.
 
 ### `cues`
 
@@ -451,6 +476,14 @@ number), `phases` (shown only in these; absent: all).
 `preset` (`clean`, `arcade`, `comic`, `retro_pixel`), and switches for each effect:
 `shake`, `flash`, `particles`, `hit_stop`, `crt`; `transition` between phases (`cut`,
 `fade`, `white_flash`, `wipe`, `iris`).
+
+Format 3: every effect has its switch, so each can be turned off per mode: `shake`, `flash`, `particles`,
+`trails`, `hit_stop`, `squash`, `blink`, `popups`, `count_up`, `pulse`, `crt` (absent: on, except
+`hit_stop` and `crt`). Their amounts: `shake_amount` (1 as designed), `hit_stop_frames`, `transition_s`
+(the way out of a phase and the way into the next), `crt_strength`. `bursts` names the particle each
+happening throws (`kill`, `hurt`, `pickup`, `hit`, `fire`, `boss`): a particle's id, a preset, or `none`
+(absent: spark, debris, glow, spark, none, smoke). A preset is a starting point applied once
+(`core/video_mode/feel.py` `apply_preset`); the maker's changes after it are kept.
 
 ### `pays`
 
@@ -467,8 +500,8 @@ the end: `time_left_s`, `health_left`, `ammo_left`, or a value's id).
 
 `pinball_decryptor/core/video_mode/examples/night_harbour.json`, an original boat chase
 shaped like the reference's first mode, with placeholder art paths (PAD-1670 makes the
-art). It checks clean, in format 2 (`tests/data/video_mode/format_1.json` and `format_2.json`
-are the frozen fixtures). In short:
+art). It checks clean, in format 3 (`tests/data/video_mode/format_1.json`, `format_2.json` and
+`format_3.json` are the frozen fixtures), with the comic style preset applied. In short:
 
 ```
 flow:   c_intro (clip "intro")

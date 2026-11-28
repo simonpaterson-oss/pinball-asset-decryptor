@@ -27,7 +27,7 @@ import json
 import os
 import re
 
-FORMAT = 2
+FORMAT = 3
 KIND = "pad-video-mode"
 FILE_NAME = "video_mode.json"
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video_mode.schema.json")
@@ -42,8 +42,17 @@ def _format_1_to_2(doc):
     return doc
 
 
+def _format_2_to_3(doc):
+    """PAD-1666: the HUD's looks and text styles (outline, shadow, gradient, danger colours and zones, count-up, pop),
+    multiplier and pop-up parts, particles, a thing's trail, the style's new switches and amounts, and combo.  Nothing
+    a format 2 file holds changes meaning; absent fields keep what format 2 played (no multiplier, the old bursts
+    as presets)."""
+    doc["format"] = 3
+    return doc
+
+
 # n -> function(doc) returning the doc in format n+1.
-MIGRATIONS = {1: _format_1_to_2}
+MIGRATIONS = {1: _format_1_to_2, 2: _format_2_to_3}
 
 
 class VideoModeError(ValueError):
@@ -227,7 +236,8 @@ def _ids(doc):
             by_kind.setdefault("music", {})[i] = path
 
     assets = doc.get("assets") or {}
-    for key, kind in (("pictures", "picture"), ("sounds", "sound"), ("fonts", "font"), ("clips", "clip")):
+    for key, kind in (("pictures", "picture"), ("sounds", "sound"), ("fonts", "font"), ("clips", "clip"),
+                      ("particles", "particle")):
         for n, item in enumerate(assets.get(key) or []):
             add(kind, item, ["assets", key, n])
     for key, kind in (("values", "value"), ("things", "thing"), ("phases", "phase"), ("hud", "hud")):
@@ -306,8 +316,23 @@ def reference_problems(doc):
             continue
         need(part.get("value"), "value", ["hud", n, "value"])
         need(part.get("font"), "font", ["hud", n, "font"])
+        need(part.get("picture"), "picture", ["hud", n, "picture"])
         for i, ph in enumerate(part.get("phases") or []):
             need(ph, "phase", ["hud", n, "phases", i])
+    # PAD-1666: particles' pictures, and the bursts and trails that name a particle or a preset
+    presets = ("spark", "smoke", "debris", "glow")
+    for n, part in enumerate((doc.get("assets") or {}).get("particles") or []):
+        if isinstance(part, dict):
+            need(part.get("picture"), "picture", ["assets", "particles", n, "picture"])
+
+    def need_particle(name, path):
+        if isinstance(name, str) and name != "none" and name not in presets and name not in by_kind.get("particle", {}):
+            out.append((path, 'names "%s", but there is no particle with that id (or preset: %s)' % (name, ", ".join(presets))))
+    for key, name in ((doc.get("style") or {}).get("bursts") or {}).items():
+        need_particle(name, ["style", "bursts", key])
+    for n, thing in enumerate(doc.get("things") or []):
+        if isinstance(thing, dict) and isinstance(thing.get("trail"), dict):
+            need_particle(thing["trail"].get("particles"), ["things", n, "trail", "particles"])
     for n, cue in enumerate(doc.get("cues") or []):
         if isinstance(cue, dict):
             need(cue.get("sound"), "sound", ["cues", n, "sound"])

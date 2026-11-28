@@ -162,7 +162,8 @@ def test_compiler_codes_match_the_engine(first, prefix, names):
 
 def test_fixed_strings_match_the_engine():
     assert header_enum("VM_S_CLEAR")[:-1] == ["VM_S_%s" % n for n in (
-        "CLEAR", "FAILED", "TRY_AGAIN", "STEER", "FIRE", "LEFT", "RIGHT", "ACTION", "MASH", "BOSS_DOWN", "HOLD")]
+        "CLEAR", "FAILED", "TRY_AGAIN", "STEER", "FIRE", "LEFT", "RIGHT", "ACTION", "MASH", "BOSS_DOWN", "HOLD",
+        "UP", "DOWN", "SHOOT", "THRUST", "MOVE")]   # PAD-1666: the prompts' words in the buttons' places
     assert len(compiler.FIXED_STRINGS) == len(header_enum("VM_S_CLEAR")) - 1
 
 
@@ -173,7 +174,8 @@ def test_compiler_limits_match_the_engine():
              "animations": "ANIMS", "frames": "FRAMES", "values": "VALUES", "things": "KINDS", "movers": "MOVERS",
              "path_points": "PATHPTS", "phases": "PHASES", "layers": "LAYERS", "places": "PLACES",
              "spawns": "SPAWNS", "conditions": "CONDS", "weak_points": "WEAKPTS", "attacks": "ATTACKS",
-             "cards": "CARDS", "hud": "HUD", "cues": "CUES", "sounds": "SOUNDS", "clips": "CLIPS"}
+             "cards": "CARDS", "hud": "HUD", "cues": "CUES", "sounds": "SOUNDS", "clips": "CLIPS",
+             "particles": "EMITTERS"}
     for py, c in pairs.items():
         assert compiler.LIMITS[py] == caps[c], py
     assert caps["SETTINGS"] >= compiler.LIMITS["phases"]

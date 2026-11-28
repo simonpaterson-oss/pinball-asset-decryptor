@@ -18,7 +18,7 @@
   "additionalProperties": false,
   "properties": {
     "format": {
-      "const": 2,
+      "const": 3,
       "description": "The document's format number. A later PAD migrates an older number step by step; an older PAD refuses a newer one."
     },
     "kind": {
@@ -89,6 +89,28 @@
     },
     "style": {
       "$ref": "#/$defs/style"
+    },
+    "combo": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "PAD-1666: kills close together chain a combo; every `every` adds 1 to a multiplier on their points.",
+      "properties": {
+        "window_s": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 100
+        },
+        "every": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
     },
     "pays": {
       "$ref": "#/$defs/pays"
@@ -270,6 +292,13 @@
           "maxItems": 32,
           "items": {
             "$ref": "#/$defs/clip"
+          }
+        },
+        "particles": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/particle"
           }
         }
       }
@@ -499,6 +528,12 @@
           "type": "number",
           "minimum": 6,
           "maximum": 200
+        },
+        "outline": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 12,
+          "description": "PAD-1666: the outline baked round each glyph, px (absent: a twelfth of the size, at least 2)."
         }
       }
     },
@@ -616,6 +651,26 @@
         },
         "mover": {
           "$ref": "#/$defs/mover"
+        },
+        "trail": {
+          "type": "object",
+          "required": [
+            "particles"
+          ],
+          "additionalProperties": false,
+          "description": "PAD-1666: a trail of particles it leaves behind.",
+          "properties": {
+            "particles": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "every_s": {
+              "type": "number",
+              "minimum": 0.016,
+              "maximum": 10
+            }
+          }
         }
       }
     },
@@ -2075,7 +2130,9 @@
             "prompts",
             "callout",
             "counter",
-            "text"
+            "text",
+            "multiplier",
+            "popup"
           ]
         },
         "x": {
@@ -2122,6 +2179,108 @@
           "items": {
             "$ref": "#/$defs/id"
           }
+        },
+        "align": {
+          "enum": [
+            "auto",
+            "left",
+            "centre",
+            "right"
+          ],
+          "description": "Words: which edge x is (auto: by where x is on the stage)."
+        },
+        "outline": {
+          "$ref": "#/$defs/colour",
+          "description": "Words: an outline in this colour (the font's own outline glyphs)."
+        },
+        "shadow": {
+          "$ref": "#/$defs/colour",
+          "description": "Words: a drop shadow in this colour."
+        },
+        "gradient": {
+          "$ref": "#/$defs/colour",
+          "description": "Words: the fill runs from colour at the top to this at the bottom."
+        },
+        "danger": {
+          "$ref": "#/$defs/colour",
+          "description": "The colour it turns, pulsing, at or under `low` (health, lives, timer, meter)."
+        },
+        "low": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Danger from this share of full down (absent: 0.34)."
+        },
+        "zones": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "to": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "colour": {
+                "$ref": "#/$defs/colour"
+              }
+            }
+          },
+          "description": "A meter's danger zones: a band of the bar; the fill takes the zone's colour and pulses inside it."
+        },
+        "count_up": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Seconds a number takes to roll up to a new one."
+        },
+        "pop": {
+          "type": "boolean",
+          "description": "A number that grows pops."
+        },
+        "on": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "enum": [
+              "fire",
+              "hit",
+              "kill",
+              "pickup",
+              "hurt",
+              "prompt_good",
+              "prompt_perfect",
+              "prompt_miss"
+            ]
+          },
+          "description": "A pop-up's happenings: it rises from where each happened (absent: kill)."
+        },
+        "rise": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000,
+          "description": "A pop-up rises this far, px."
+        },
+        "life_s": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 10,
+          "description": "A pop-up lasts this long."
+        },
+        "picture": {
+          "$ref": "#/$defs/id",
+          "description": "Pips, hearts, lives: frame 0 full, frame 1 empty."
         }
       }
     },
@@ -2193,6 +2352,93 @@
             "wipe",
             "iris"
           ]
+        },
+        "squash": {
+          "type": "boolean",
+          "description": "Squash and stretch on hits."
+        },
+        "blink": {
+          "type": "boolean",
+          "description": "The player blinks while it cannot be hurt."
+        },
+        "popups": {
+          "type": "boolean",
+          "description": "Pop-up words."
+        },
+        "trails": {
+          "type": "boolean",
+          "description": "Things' trails."
+        },
+        "count_up": {
+          "type": "boolean",
+          "description": "Numbers roll up."
+        },
+        "pulse": {
+          "type": "boolean",
+          "description": "Danger pulses; a changed number pops."
+        },
+        "shake_amount": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "1 = as designed."
+        },
+        "hit_stop_frames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "transition_s": {
+          "type": "number",
+          "minimum": 0.02,
+          "maximum": 4
+        },
+        "crt_strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "bursts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kill": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "A particle's id, a preset (spark, smoke, debris, glow), or none."
+            },
+            "hurt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "A particle's id, a preset (spark, smoke, debris, glow), or none."
+            },
+            "pickup": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "A particle's id, a preset (spark, smoke, debris, glow), or none."
+            },
+            "hit": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "A particle's id, a preset (spark, smoke, debris, glow), or none."
+            },
+            "fire": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "A particle's id, a preset (spark, smoke, debris, glow), or none."
+            },
+            "boss": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "A particle's id, a preset (spark, smoke, debris, glow), or none."
+            }
+          }
         }
       }
     },
@@ -2675,6 +2921,102 @@
       "required": [
         "outcomes"
       ]
+    },
+    "particle": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "PAD-1666: a particle burst or trail, from a preset with what it changes.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "preset": {
+          "enum": [
+            "spark",
+            "smoke",
+            "debris",
+            "glow"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "speed": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 12000
+          }
+        },
+        "direction": {
+          "type": "number",
+          "minimum": -360,
+          "maximum": 360
+        },
+        "spread": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360
+        },
+        "life_s": {
+          "type": "number",
+          "minimum": 0.02,
+          "maximum": 10
+        },
+        "size": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 512
+        },
+        "size_end": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 512
+        },
+        "gravity": {
+          "type": "number",
+          "minimum": -57000,
+          "maximum": 57000
+        },
+        "drag": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "colour": {
+          "$ref": "#/$defs/colour"
+        },
+        "colour_end": {
+          "$ref": "#/$defs/colour"
+        },
+        "blend": {
+          "enum": [
+            "normal",
+            "add"
+          ]
+        },
+        "glow": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "streak": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "picture": {
+          "$ref": "#/$defs/id"
+        }
+      }
     }
   }
 }

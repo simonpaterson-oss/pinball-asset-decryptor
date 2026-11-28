@@ -77,9 +77,9 @@ def test_format_2_reads_format_1_unchanged_but_its_number():
     with open(os.path.join(FIXTURES, "format_1.json"), encoding="utf-8") as f:
         raw = json.load(f)
     doc = vm.migrate(raw)
-    assert doc["format"] == 2 and vm.FORMAT == 2
+    assert doc["format"] == vm.FORMAT and vm.FORMAT >= 2     # PAD-1666 took format 3; 1 still reads on through 2
     raw2 = copy.deepcopy(raw)
-    raw2["format"] = 2
+    raw2["format"] = vm.FORMAT
     assert doc == raw2
     assert vm.check(doc) == []
 
@@ -184,7 +184,8 @@ def test_golden_runs_kept_their_play_only_the_cues_changed():
     with open(os.path.join(GOLDEN, "golden.json"), encoding="utf-8") as f:
         runs = json.load(f)["runs"]
     assert (runs["night_harbour_bot"]["steps"], runs["night_harbour_bot"]["outcome"],
-            runs["night_harbour_bot"]["score"]) == (3101, 1, 33000)
+            runs["night_harbour_bot"]["score"]) == (3141, 1, 33000)   # PAD-1666: 40 steps more of hit-stop
+    # (the comic preset holds 4 frames on a hit, not 3, and a hurt holds too); the same win and score
 
 
 # ---- the machine ---------------------------------------------------------------------------------------------------------
