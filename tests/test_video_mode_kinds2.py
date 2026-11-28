@@ -249,6 +249,19 @@ def test_the_machine_has_its_measured_sound_calibration():
     assert "vm_set_audio_offset(e, VM_SOUND_AUDIO_OFFSET_MS)" in h
 
 
+@pytest.mark.parametrize("kind", ["tug", "rhythm", "sequence", "dodge", "shield"])
+def test_the_editors_scrub_sees_a_button_kind_as_played(kind):
+    """PAD-1664's timeline scrub: the WebAssembly side jumps between snapshots of the play state, the native one
+    plays each time from the phase's start. Back and forth over a button kind's phase they draw the same, so the
+    kind's own state (its beat, its notes, its grab) is part of the snapshot."""
+    p = pack(kind)
+    at = "60,400,250,900,30,700"
+    a = te.run(te.native(), p, "--seek", 0, "--at", at, "--endless").stdout
+    b = te.run(te.wasm(), p, "--seek", 0, "--at", at, "--endless").stdout
+    da = [x for x in a.splitlines() if x.startswith("D ")]
+    assert len(da) == 6 and da == [x for x in b.splitlines() if x.startswith("D ")]
+
+
 def test_tug_needs_the_named_flipper_held():
     """Mashing Action alone pulls nothing; with the named flipper held it pulls."""
     def mutate(doc):

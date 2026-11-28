@@ -210,9 +210,36 @@ static int check_doc(const vm_doc *d)
         if (p->win0 < 0 || p->nwin < 0 || p->win0 + p->nwin > d->ncond) return 1;
         if (p->lose0 < 0 || p->nlose < 0 || p->lose0 + p->nlose > d->ncond) return 1;
         if (p->ramp_from <= 0 || p->ramp_to <= 0 || p->ramp_from > DEG(16) || p->ramp_to > DEG(16)) return 1;
+        if (p->track0 < 0 || p->ntrack < 0 || p->track0 + p->ntrack > d->ntrack) return 1;
+        if (p->tsnd0 < 0 || p->ntsnd < 0 || p->tsnd0 + p->ntsnd > d->ntsnd) return 1;
+        for (j = 0; j < p->ntrack; j++) if (!IDX(d->track[p->track0 + j].place, p->nplace)) return 1;
     }
+    for (i = 0; i < d->ntrack; i++) {
+        const vm_track *t = &d->track[i];
+        int32_t k, lo = -DEG(d->stage_w) - MARGIN, hi = DEG(2 * d->stage_w) + MARGIN;
+        if (!RANGE(t->prop, VM_TK_MOTION, VM_TK_TINT) || t->nkey < 1 || t->key0 < 0 || t->key0 + t->nkey > d->nkey) return 1;
+        for (k = 0; k < t->nkey; k++) {
+            const vm_key *y = &d->key[t->key0 + k];
+            if (y->at < 0 || (k > 0 && y->at <= d->key[t->key0 + k - 1].at) || !RANGE(y->ease, 0, 7) || !OPT(y->curve, d->ncurve))
+                return 1;
+            if (t->prop == VM_TK_MOTION) {
+                if (!RANGE(y->a, lo, hi) || !RANGE(y->b, -DEG(d->stage_h) - MARGIN, DEG(2 * d->stage_h) + MARGIN)) return 1;
+                if (!RANGE(y->ox, -DEG(8192), DEG(8192)) || !RANGE(y->oy, -DEG(8192), DEG(8192))
+                    || !RANGE(y->ix, -DEG(8192), DEG(8192)) || !RANGE(y->iy, -DEG(8192), DEG(8192))) return 1;
+            } else if (t->prop == VM_TK_SCALE) { if (!RANGE(y->a, 0, DEG(16))) return 1; }
+            else if (t->prop == VM_TK_TURN) { if (!RANGE(y->a, -DEG(3600), DEG(3600))) return 1; }
+            else if (t->prop == VM_TK_ALPHA) { if (!RANGE(y->a, 0, ONE)) return 1; }
+        }
+    }
+    for (i = 0; i < d->ncurve; i++)
+        for (j = 0; j < VM_CURVE_PTS; j++) if (!RANGE(d->curve[i].y[j], -2 * ONE, 3 * ONE)) return 1;
+    for (i = 0; i < d->ntsnd; i++) if (d->tsnd[i].at < 0 || !IDX(d->tsnd[i].sound, d->nsounds)) return 1;
     for (i = 0; i < d->nlayer; i++) if (!IDX(d->layer[i].picture, d->npic) || !RANGE(d->layer[i].alpha, 0, 255)) return 1;
-    for (i = 0; i < d->nplace; i++) if (!IDX(d->place[i].kind, d->nkind) || d->place[i].scale <= 0) return 1;
+    for (i = 0; i < d->nplace; i++) {    /* a place is on the stage or near it: a thing starts inside the engine's bounds */
+        const vm_place *q = &d->place[i];
+        if (!IDX(q->kind, d->nkind) || q->scale <= 0 || !RANGE(q->x, -DEG(d->stage_w) - MARGIN, DEG(2 * d->stage_w) + MARGIN)
+            || !RANGE(q->y, -DEG(d->stage_h) - MARGIN, DEG(2 * d->stage_h) + MARGIN)) return 1;
+    }
     for (i = 0; i < d->nspawn; i++) {
         const vm_spawn *s = &d->spawn[i];
         if (!IDX(s->kind, d->nkind) || s->at < 0 || s->every < 0 || s->count < 0 || s->spread < 0
@@ -303,7 +330,7 @@ int vm_load(vm_engine *e, const uint8_t *pack, uint32_t len)
     d->nkind = table(&r, d->kind, VM_MAX_KINDS, 15);
     d->nmover = table(&r, d->mover, VM_MAX_MOVERS, 10);
     d->npath = table(&r, d->path, VM_MAX_PATHPTS, 3);
-    d->nphase = table(&r, d->phase, VM_MAX_PHASES, 20);
+    d->nphase = table(&r, d->phase, VM_MAX_PHASES, 24);
     d->nlayer = table(&r, d->layer, VM_MAX_LAYERS, 5);
     d->nplace = table(&r, d->place, VM_MAX_PLACES, 7);
     d->nspawn = table(&r, d->spawn, VM_MAX_SPAWNS, 9);
@@ -314,6 +341,10 @@ int vm_load(vm_engine *e, const uint8_t *pack, uint32_t len)
     d->ncard = table(&r, d->card, VM_MAX_CARDS, 6);
     d->nhud = table(&r, d->hud, VM_MAX_HUD, 12);
     d->ncue = table(&r, d->cue, VM_MAX_CUES, 3);
+    d->ntrack = table(&r, d->track, VM_MAX_TRACKS, 4);          /* PAD-1664 */
+    d->nkey = table(&r, d->key, VM_MAX_KEYS, 9);
+    d->ncurve = table(&r, d->curve, VM_MAX_CURVES, VM_CURVE_PTS);
+    d->ntsnd = table(&r, d->tsnd, VM_MAX_TSOUNDS, 2);
     d->nnote = table(&r, d->note, VM_MAX_NOTES, 3);
     if (!r.err && (uint32_t)word(&r) != 0x21444e45u) r.err = VM_ERR_SHORT;   /* "END!" */
     if (!r.err && r.at != len) r.err = VM_ERR_SHORT;
@@ -393,6 +424,7 @@ static int32_t spawn(vm_engine *e, int32_t kind, int32_t x, int32_t y, int32_t m
     t->alive = 1; t->kind = kind; t->team = k->team; t->serial = e->serial++;
     t->vx = t->vy = 0; t->scale = k->scale; t->turn = 0; t->depth = k->depth; t->hidden = 0;
     t->health = k->health > 0 ? k->health : 1; t->age = 0; t->blink = 0; t->role = VM_ROLE_NONE;
+    t->place = -1; t->alpha = 255; t->tint = -1; t->keyed = 0;
     t->mover = mover >= 0 ? mover : k->mover;
     t->heading = t->mover >= 0 ? e->doc.mover[t->mover].dir : 0;
     t->target = -1;
@@ -529,6 +561,82 @@ static int32_t weak_open(const vm_engine *e, int32_t i)
 }
 int vm_weak_open(const vm_engine *e, int32_t i) { return IDX(i, e->doc.nweak) ? weak_open(e, i) : 0; }
 
+/* PAD-1664, the timeline: each track of the phase puts one property of its placed thing where its keys say at
+ * this step of the play. Before the first key it holds the first; after the last, the last. */
+static int32_t key_ease(const vm_doc *d, const vm_key *k, int32_t u)
+{
+    if (k->curve >= 0) {               /* a baked curve: 32 even steps across, straight between them */
+        const int32_t *y = d->curve[k->curve].y;
+        int32_t at = clampi(u, 0, ONE) * (VM_CURVE_PTS - 1), i = at >> 16, f = at & 0xffff;
+        if (i >= VM_CURVE_PTS - 1) return y[VM_CURVE_PTS - 1];
+        return y[i] + (int32_t)(((int64_t)(y[i + 1] - y[i]) * f) >> 16);
+    }
+    return vm_ease(k->ease, u);
+}
+static int32_t lerp(int32_t a, int32_t b, int32_t w) { return (int32_t)(a + ((((int64_t)b - a) * w) >> 16)); }
+static int32_t bezier(int32_t p0, int32_t p1, int32_t p2, int32_t p3, int32_t w)
+{
+    int32_t m = ONE - w, m2 = vm_fxmul(m, m), w2 = vm_fxmul(w, w);
+    int64_t v = (int64_t)vm_fxmul(m2, m) * p0 + (int64_t)3 * vm_fxmul(m2, w) * p1 + (int64_t)3 * vm_fxmul(m, w2) * p2
+                + (int64_t)vm_fxmul(w2, w) * p3;
+    return (int32_t)(v >> 16);
+}
+static void tracks(vm_engine *e)
+{
+    const vm_doc *d = &e->doc;
+    const vm_phase *p = &d->phase[e->phase];
+    int32_t i;
+    for (i = 0; i < p->ntrack; i++) {
+        const vm_track *tr = &d->track[p->track0 + i];
+        const vm_key *k = &d->key[tr->key0];
+        int32_t slot = e->place_th[tr->place], s = 0, w = 0, n = tr->nkey, a, b;
+        vm_thing *t;
+        if (slot < 0) continue;
+        t = &e->th[slot];
+        if (!t->alive || t->place != tr->place) continue;
+        if (e->t >= k[n - 1].at) s = n - 1;
+        else if (e->t > k[0].at) {
+            for (s = 0; s < n - 2 && k[s + 1].at <= e->t; s++) {}
+            w = clampi(key_ease(d, &k[s], (int32_t)(((int64_t)(e->t - k[s].at) << 16) / (k[s + 1].at - k[s].at))), -ONE, 2 * ONE);
+        }
+        if (s == n - 1 || w == 0) { a = k[s].a; b = k[s].b; }
+        else if (tr->prop == VM_TK_MOTION) {
+            /* a key without a handle on this side has it a third of the way along the line to the other key, so a
+             * segment with none is straight and even, and its ease alone says how it moves along it */
+            int32_t ox = k[s].ox, oy = k[s].oy, ix = k[s + 1].ix, iy = k[s + 1].iy;
+            int32_t dx = k[s + 1].a - k[s].a, dy = k[s + 1].b - k[s].b;
+            if (!ox && !oy) { ox = dx / 3; oy = dy / 3; }
+            if (!ix && !iy) { ix = -dx / 3; iy = -dy / 3; }
+            a = bezier(k[s].a, k[s].a + ox, k[s + 1].a + ix, k[s + 1].a, w);
+            b = bezier(k[s].b, k[s].b + oy, k[s + 1].b + iy, k[s + 1].b, w);
+        } else if (tr->prop == VM_TK_TINT) {
+            int32_t c, sh;
+            a = 0; b = 0;
+            for (sh = 0; sh < 32; sh += 8) {
+                c = lerp((int32_t)(((uint32_t)k[s].a >> sh) & 0xff), (int32_t)(((uint32_t)k[s + 1].a >> sh) & 0xff), w);
+                a = (int32_t)((uint32_t)a | ((uint32_t)clampi(c, 0, 255) << sh));
+            }
+        } else { a = lerp(k[s].a, k[s + 1].a, w); b = 0; }
+        switch (tr->prop) {
+        case VM_TK_MOTION:     /* an overshooting ease or handle may not carry it out of the engine's bounds */
+            t->x = clampi(a, -DEG(d->stage_w) - MARGIN, DEG(2 * d->stage_w) + MARGIN);
+            t->y = clampi(b, -DEG(d->stage_h) - MARGIN, DEG(2 * d->stage_h) + MARGIN);
+            break;
+        case VM_TK_SCALE: t->scale = vm_fxmul(d->kind[t->kind].scale, clampi(a, 0, DEG(16))); break;
+        case VM_TK_TURN: t->turn = a; break;
+        case VM_TK_ALPHA: t->alpha = clampi((int32_t)(((int64_t)a * 255 + ONE / 2) >> 16), 0, 255); break;
+        default: t->tint = a; break;
+        }
+    }
+}
+static void timed_sounds(vm_engine *e)
+{
+    const vm_phase *p = &e->doc.phase[e->phase];
+    int32_t i;
+    for (i = 0; i < p->ntsnd; i++)
+        if (e->doc.tsnd[p->tsnd0 + i].at == e->t - 1) sound(e, e->doc.tsnd[p->tsnd0 + i].sound, VM_SND_PLAY, 0, 0);
+}
+
 static void phase_begin(vm_engine *e)
 {
     const vm_phase *p = &e->doc.phase[e->phase];
@@ -539,6 +647,7 @@ static void phase_begin(vm_engine *e)
     e->nthings = 0;
     for (i = 0; i < VM_MAX_KINDS; i++) { e->kills[i] = 0; e->pickups[i] = 0; }
     for (i = 0; i < VM_MAX_SPAWNS; i++) e->spawned[i] = 0;
+    for (i = 0; i < VM_MAX_PLACES; i++) e->place_th[i] = -1;
     for (i = 0; i < VM_MAX_WEAKPTS; i++) e->weak_hits[i] = i < e->doc.nweak ? e->doc.weak[i].hits : 0;
     e->kills_all = e->pickups_all = e->hits = e->misses = e->shots = 0;
     e->boss_down = e->goal_hit = e->crashed = e->stage_no = 0;
@@ -549,10 +658,12 @@ static void phase_begin(vm_engine *e)
     e->rng = (uint32_t)e->doc.seed * 2654435761u ^ (uint32_t)(e->phase + 1) * 40503u ^ (p->layout ? 0u : e->play_seed);
     if (!e->rng) e->rng = 1;
     for (i = 0; i < e->doc.nvalue; i++) if (e->doc.value[i].type == 0) e->values[i] = e->doc.value[i].start;
-    for (i = 0; i < p->nplace; i++) {
+    for (i = 0; i < p->nplace && i < VM_MAX_PLACES; i++) {
         const vm_place *pl = &e->doc.place[p->place0 + i];
         int32_t k = spawn(e, pl->kind, pl->x, pl->y, -1);
+        e->place_th[i] = k;
         if (k < 0) continue;
+        e->th[k].place = i;
         e->th[k].scale = vm_fxmul(e->th[k].scale, pl->scale);
         e->th[k].turn = pl->turn; e->th[k].hidden = pl->hidden;
         if (pl->depth != NONE) e->th[k].depth = pl->depth;
@@ -592,6 +703,12 @@ static void phase_begin(vm_engine *e)
     }
     if (p->kind == VM_K_MASH || p->kind == VM_K_ALTERNATE) e->values[s[0]] = e->doc.value[s[0]].start;
     bk_begin(e);
+    for (i = 0; i < p->ntrack; i++) {
+        const vm_track *tr = &e->doc.track[p->track0 + i];
+        int32_t k = e->place_th[tr->place];
+        if (tr->prop == VM_TK_MOTION && k >= 0) { e->th[k].keyed = 1; e->th[k].mover = -1; }
+    }
+    tracks(e);   /* the first step shows each keyed thing where its keys start */
 }
 static void go_card(vm_engine *e, int32_t c);
 static void phase_start(vm_engine *e, int32_t phase, int32_t try_no)
@@ -647,7 +764,7 @@ void vm_start(vm_engine *e, uint32_t play_seed, int32_t level)
 {
     int32_t i;
     if (!e->loaded) return;
-    e->play_seed = play_seed; e->level = level < 0 ? 0 : level;
+    e->play_seed = play_seed; e->level = level < 0 ? 0 : level; e->edit_flags = 0;
     e->speed_pct = 100 + e->doc.speed_step_pct * e->level;
     e->score = 0; e->flawless = 1; e->outcome = -1; e->step_no = 0;
     e->in = e->in_prev = e->pressed = e->released = 0;
@@ -899,7 +1016,7 @@ static void move_things(vm_engine *e)
         }
         default: break;
         }
-        if (t->alive && t->role == VM_ROLE_NONE
+        if (t->alive && t->role == VM_ROLE_NONE && !t->keyed
             && (t->x < -MARGIN || t->x > DEG(e->doc.stage_w) + MARGIN || t->y < -MARGIN || t->y > DEG(e->doc.stage_h) + MARGIN)) {
             if (t->team == VM_TEAM_PICKUP) e->misses++;
             t->alive = 0;
@@ -1296,9 +1413,10 @@ static void build_list(vm_engine *e)
             f = d->frame[a->first + no];
         }
         if (f >= p->frames) f = p->frames - 1;
-        if (t->blink > 0 && ((t->blink >> 2) & 1)) alpha = 70;
+        alpha = t->alpha;
+        if (t->blink > 0 && ((t->blink >> 2) & 1)) alpha = (alpha * 70) / 255;
         quad(e, p->atlas, k->blend, p->sx0 + (f % p->cols) * p->w, p->sy0 + (f / p->cols) * p->h, p->w, p->h,
-             t->x, t->y, p->ax, p->ay, vm_fxmul(t->scale, p->texel), t->turn, 0xffffffffu, alpha, t->depth);
+             t->x, t->y, p->ax, p->ay, vm_fxmul(t->scale, p->texel), t->turn, (uint32_t)t->tint, alpha, t->depth);
     }
     if (d->phase[e->phase].kind == VM_K_BOSS && e->boss >= 0) {
         const int32_t *s = S(e);
@@ -1348,6 +1466,42 @@ int vm_edit_still(vm_engine *e, int32_t phase, int32_t flags)
     e->nevents = 0; e->ncues = 0;
     return 1;
 }
+static void advance(vm_engine *e, uint32_t input);
+/* PAD-1664: the state "Start here" on the phase's card leaves after its title card with nothing pressed (vm_start,
+ * then the title's 90 steps, whose only lasting work is a white flash gone by their end), without stepping them */
+int vm_edit_seek_begin(vm_engine *e, int32_t phase, int32_t flags)
+{
+    int32_t i, keep;
+    if (!e->loaded || phase < 0 || phase >= e->doc.nphase) return 0;
+    for (i = 0; i < e->doc.ncard; i++) if (e->doc.card[i].type == VM_CARD_PHASE && e->doc.card[i].a == phase) break;
+    keep = e->doc.start_card;
+    if (i < e->doc.ncard) e->doc.start_card = i;
+    e->edit_flags = 0;
+    vm_start(e, 1, 0);
+    e->doc.start_card = keep;
+    if (e->phase != phase || e->state != VM_ST_TITLE) phase_start(e, phase, 0);   /* no card plays it */
+    e->state = VM_ST_PLAY; e->state_t = 0; e->callout = -1; e->callout_t = 0;
+    e->flash_a = 0; e->step_no = TITLE_STEPS; e->held_events = 0;
+    e->in = e->in_prev = e->pressed = e->released = 0;
+    e->nevents = 0; e->ncues = 0;
+    e->edit_flags = flags;
+    return 1;
+}
+void vm_edit_seek_step(vm_engine *e)
+{
+    if (!e->loaded) return;
+    advance(e, 0);
+    sort_things(e);              /* what build_list keeps up every step: the draw order */
+    e->step_no++;
+}
+void vm_edit_seek_draw(vm_engine *e)
+{
+    uint32_t keep = e->step_no;
+    if (!e->loaded) return;
+    e->step_no = keep ? keep - 1 : 0;   /* the list is the step just played */
+    build_list(e);
+    e->step_no = keep;
+}
 
 /* the canonical words of the draw list: header 8, quad 12, box 6 */
 typedef struct { int32_t *out; uint32_t cap, n; uint64_t *h; } wr;
@@ -1393,10 +1547,9 @@ uint32_t vm_list_words(const vm_engine *e, int32_t *out, uint32_t cap)
 }
 
 /* ---- one step ---------------------------------------------------------------------- */
-int vm_step(vm_engine *e, uint32_t input)
+static void advance(vm_engine *e, uint32_t input)
 {
     int32_t i;
-    if (!e->loaded) return 0;
     if (!e->held_events) { e->nevents = 0; e->ncues = 0; e->events_dropped = 0; e->song_steps++; }
     e->held_events = 0;
     e->in_prev = e->in; e->in = input;
@@ -1425,7 +1578,9 @@ int vm_step(vm_engine *e, uint32_t input)
         e->t++;
         play_kind(e);
         spawns(e);
+        timed_sounds(e);
         move_things(e);
+        tracks(e);
         collide(e);
         for (i = 0; i < e->doc.nvalue; i++) {   /* meters drain by themselves, but not one a kind drives */
             const vm_value *v = &e->doc.value[i];
@@ -1435,11 +1590,12 @@ int vm_step(vm_engine *e, uint32_t input)
         }
         if (e->combo_t > 0 && --e->combo_t == 0) e->combo = 0;
         if (e->callout_t > 0) e->callout_t--;
-        judge(e);
+        if (!(e->edit_flags & VM_SEEK_ENDLESS)) judge(e);
         break;
     case VM_ST_OUTRO:
         if (e->callout_t > 0) e->callout_t--;
         move_things(e);   /* the world keeps drifting under the result */
+        tracks(e);
         if (e->state_t >= OUTRO_STEPS) {
             const vm_card *c = &e->doc.card[e->card];
             if (e->phase_result) go_card(e, c->next);
@@ -1459,6 +1615,12 @@ int vm_step(vm_engine *e, uint32_t input)
         if ((e->step_no & 1) == 0) e->shake--;
     } else e->shake_x = e->shake_y = 0;
     if (e->flash_a > 0) e->flash_a = e->flash_a > 255 / TRANS_STEPS ? e->flash_a - 255 / TRANS_STEPS : 0;
+}
+int vm_step(vm_engine *e, uint32_t input)
+{
+    int32_t i;
+    if (!e->loaded) return 0;
+    advance(e, input);
     build_list(e);
     {
         wr w;
