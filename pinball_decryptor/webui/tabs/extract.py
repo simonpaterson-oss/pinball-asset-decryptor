@@ -1743,7 +1743,12 @@ class ExtractTab(TabService):
         card = self._card_path()
         if not folder or not card or self.window._is_running():
             return False
-        folder = os.path.normpath(folder)
+        self._start_existing_check(card, os.path.normpath(folder))
+        return True
+
+    def _start_existing_check(self, card, folder):
+        """Check *folder* against *card* on a worker (:func:`existing_extract.check`); the
+        box says what it is doing meanwhile (reading a card takes a while: card_hash)."""
         self._existing_seq += 1
         seq = self._existing_seq
         self.set(existing={"card": card, "folder": folder, "state": "checking",
@@ -1755,10 +1760,13 @@ class ExtractTab(TabService):
         def _game_of(f):
             return (H.project_details(f, mfrs, mfr) or {}).get("game") or ""
 
+        def _say(text):
+            self.ctx.loop.post(self._existing_saying, seq, text)
+
         def _work():
             from ...core import existing_extract as EE
             try:
-                verdict = EE.check(card, folder, _game_of)
+                verdict = EE.check(card, folder, _game_of, _say)
             except Exception:                           # noqa: BLE001
                 log.exception("existing extraction: check")
                 verdict = {"kind": EE.NONE, "folder": folder}
@@ -1766,15 +1774,23 @@ class ExtractTab(TabService):
                                EE.message(verdict, caption))
 
         threading.Thread(target=_work, daemon=True, name="extract-existing").start()
-        return True
+
+    def _existing_saying(self, seq, text):
+        cur = self.get("existing") or {}
+        if seq == self._existing_seq and cur.get("state") == "checking":
+            self.set(existing=dict(cur, text=text))
 
     def _existing_checked(self, seq, card, picked, verdict, text):
         from ...core import existing_extract as EE
         if seq != self._existing_seq or _same(self._card_path()) != _same(card):
             return
         if verdict.get("kind") not in EE.VIABLE:
+            # "open": the folder is the project already open (Project > Open, PAD-421's
+            # follow), so the box cannot say PAD is not using it
             self.set(existing={"card": card, "folder": picked, "state": "bad",
-                               "text": text, "changes": ""})
+                               "text": text, "changes": "",
+                               "open": _same(self._project_folder()) == _same(
+                                   verdict.get("folder") or picked)})
             return
         folder = verdict.get("folder") or picked
         if _same(self._project_folder()) != _same(folder):
@@ -1825,10 +1841,14 @@ class ExtractTab(TabService):
         d = details or {}
         cur = self.get("existing") or {}
         if card and d.get("card_rel") in EE.VIABLE:
-            verdict = {"kind": d.get("card_rel"), "game": d.get("game") or "",
-                       "source_name": d.get("source_name") or "",
-                       "extracted": d.get("extracted") or ""}
-            self._existing_viable(card, folder, EE.message(verdict))
+            same = (_same(cur.get("card")) == _same(card)
+                    and _same(cur.get("folder")) == _same(folder))
+            if same and cur.get("state") == "viable":
+                self._existing_viable(card, folder, cur.get("text") or "")   # recount
+            elif not (same and cur.get("state") in ("checking", "bad")):
+                # the same checks as a folder picked in the box (Simon: "Yes, tighten it"):
+                # a name-and-size match is read by content before the box says viable
+                self._start_existing_check(card, os.path.normpath(folder))
             return
         if not cur:
             return
