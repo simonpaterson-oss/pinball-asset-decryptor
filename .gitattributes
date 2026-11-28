@@ -58,3 +58,7 @@ pinball_decryptor/resources/remote/build.sh text eol=lf
 # programs, never line-ending converted
 pinball_decryptor/resources/remote/padgrow/resize2fs binary
 pinball_decryptor/resources/remote/padgrow/e2fsck binary
+
+# the video mode engine's compiled module and test recordings (PAD-1657)
+*.wasm binary
+*.inputs binary
