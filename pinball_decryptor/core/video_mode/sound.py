@@ -308,8 +308,11 @@ def decode(path):
     except (wave.Error, EOFError, struct.error):
         pass
     rate = 11025
-    r = subprocess.run([_ffmpeg(), "-v", "error", "-i", path, "-ac", "1", "-ar", str(rate), "-f", "s16le", "-"],
-                       capture_output=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        r = subprocess.run([_ffmpeg(), "-v", "error", "-i", path, "-ac", "1", "-ar", str(rate), "-f", "s16le", "-"],
+                           capture_output=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ValueError("the sound could not be read: it is not a WAV and ffmpeg could not run (%s)" % e)
     if r.returncode != 0 or not r.stdout:
         raise ValueError("the sound could not be read: %s" % (r.stderr.decode("utf-8", "replace").strip()[-200:] or "no audio"))
     raw = r.stdout[:len(r.stdout) // 2 * 2]
@@ -471,6 +474,29 @@ def _write_wav(path, samples, rate):
         w.writeframes(struct.pack("<%dh" % len(samples), *[max(-32767, min(32767, int(v * 32767))) for v in samples]))
 
 
+def _write_machine_wav(path, samples, rate, out_rate=48000):
+    """The machine's 48 kHz stereo 16-bit WAV of mono ``samples`` at ``rate``, resampled here (linear) - what
+    :func:`machine_files` writes when ffmpeg is missing or fails, so the machine still gets the format it plays."""
+    n = len(samples)
+    if rate == out_rate or n < 2:
+        res = list(samples)
+    else:
+        m = max(1, int(round(n * out_rate / float(rate))))
+        step = (n - 1) / float(max(1, m - 1))
+        res = []
+        for j in range(m):
+            x = j * step
+            i = int(x)
+            f = x - i
+            res.append(samples[i] if i + 1 >= n else samples[i] * (1.0 - f) + samples[i + 1] * f)
+    pcm = [max(-32767, min(32767, int(v * 32767))) for v in res]
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(out_rate)
+        w.writeframes(struct.pack("<%dh" % (2 * len(pcm)), *[v for v in pcm for _ in (0, 1)]))
+
+
 def machine_files(doc, mode_dir, out_dir, machine=DEFAULT, placeholder=None):
     """Write the machine's sound files for a video mode into ``out_dir``: a 48 kHz stereo WAV for each sound the
     plan carries (a sound without its file: its placeholder), each sound at its own ``volume``, each bed baked
@@ -501,12 +527,15 @@ def machine_files(doc, mode_dir, out_dir, machine=DEFAULT, placeholder=None):
         mono = os.path.join(out_dir, "_mono_" + name)
         _write_wav(mono, samples, rate)
         out = os.path.join(out_dir, name)
-        r = subprocess.run([ff, "-v", "error", "-y", "-i", mono, "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", out],
-                           capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        if r.returncode == 0:
-            os.remove(mono)
-        else:
-            os.replace(mono, out)
+        try:
+            r = subprocess.run([ff, "-v", "error", "-y", "-i", mono, "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le",
+                                out], capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            done = r.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            done = False
+        os.remove(mono)
+        if not done:
+            _write_machine_wav(out, samples, rate)
         return name
 
     fields = {"music": "", "beds": {}, "calls": {}}
