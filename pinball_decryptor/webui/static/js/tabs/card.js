@@ -116,7 +116,10 @@ function ExistingBox({ s, ps }) {
         title=${EXISTING_TIP}>Browse…<//>
     </div>
     ${state === "checking" ? html`<div class="row small muted"><${Spinner} />${e.text}</div>`
-      : state === "bad" ? html`<div class="x-badge"><${Icon} name="warn" /><span>${e.text}</span></div>`
+      : state === "bad" ? html`<div class="c-viable c-notviable" role="status">
+          <div class="c-viable-hd"><${Icon} name="warn" /><span>Not viable: PAD is not using this folder</span></div>
+          <div class="small">${e.text}</div>
+        </div>`
       : state === "viable" ? html`<div class="c-viable" role="status">
           <div class="c-viable-hd"><${Icon} name="check" /><span>Viable: PAD is using this extraction${ps ? html` (project <${Chip} kind="acc" title=${ps.folder}>${ps.name}<//>)` : ""}</span></div>
           <div class="small">${e.text}</div>

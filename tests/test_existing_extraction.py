@@ -64,6 +64,11 @@ def test_another_card_of_the_same_game_says_so(tmp_path):
     v = EE.check(card, folder, lambda f: "Godzilla LE 1.16")
     assert v["kind"] == EE.OTHER
     assert "a different card of the same game" in EE.message(v, "Godzilla LE 1.16")
+    # Simon's screenshot: the folder said "Godzilla", the card's chip "Godzilla LE"
+    v["game"] = "Godzilla"
+    assert "a different card of the same game" in EE.message(v, "Godzilla LE")
+    v["game"] = "Godzilla 2"
+    assert "same game" not in EE.message(v, "Godzilla LE")
 
 
 def test_extraction_without_a_source_record(tmp_path):
