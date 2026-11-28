@@ -26,9 +26,15 @@ import time
 
 from .. import compat
 from .base import TabService, rpc
+from ...core.video_mode import sound as SND
 
 INTRO = ("Small games played on the screen with the flipper buttons and Action while the ball is held. Bring in "
          "their pictures here and see what they cost on the machine.")
+#: PAD-1667: the sound files a video mode takes (Web Audio plays them in the app; the build makes the machine's WAVs)
+SOUND_TYPES = [("Sounds", "*.wav *.ogg *.mp3 *.flac *.m4a *.aac *.opus"), ("All files", "*.*")]
+#: a sound longer than this comes in as music, a shorter one as an effect
+MUSIC_FROM_S = 8.0
+UNDO_MAX = 100
 ART_TYPES = [("Pictures, GIFs and videos", "*.png *.jpg *.jpeg *.bmp *.gif *.apng *.webp *.tif *.tiff *.mp4 *.mov "
               "*.m4v *.mkv *.avi *.webm *.wmv *.mpg *.mpeg"), ("All files", "*.*")]
 REPLAYS = "replays"       # a mode's input recordings (PAD-1659)
@@ -56,9 +62,14 @@ class VideoModesTab(TabService):
         self._draft_id = 0
         self._pack_id = 0
         self._tmp = None
+        self._undo, self._redo = [], []   # PAD-1667: the file's text before each change, and after each undo
+        self._peaks = {}                  # (path, mtime) -> {"seconds", "peaks"}
+        self._beat_busy = set()
         self.set(project="", available=False, why="", intro=INTRO, modes=[], slug="", title="", problems=[],
                  pictures=[], phases=[], draft=None, machine="spike2", machines=[], report=None, packing=False,
-                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000", play_mem=None)
+                 written="", kinds=[], bg_kinds=[], running=False, stage_bg="#000000", play_mem=None,
+                 sounds=[], cues=[], cue_on=[], sound_plan=None, music_phases=[], peaks={}, can_undo=False,
+                 can_redo=False, beat_busy=[])
         self._play_id = 0
 
     # -- the project -------------------------------------------------------------------------------------------
@@ -126,8 +137,10 @@ class VideoModesTab(TabService):
         self._open(slug)
         return True
 
-    def _open(self, slug):
+    def _open(self, slug, keep_history=False):
         _, _, D, _ = _mods()
+        if not keep_history or slug != self._slug:
+            self._undo, self._redo = [], []
         self._slug = slug
         self._doc = None
         problems = []
@@ -136,7 +149,8 @@ class VideoModesTab(TabService):
                 self._doc = D.load(self._doc_path())
             except (OSError, ValueError) as e:
                 problems = list(getattr(e, "problems", None) or [str(e)])
-        self.set(slug=slug, title=(self._doc or {}).get("title", ""), problems=problems, report=None, written="")
+        self.set(slug=slug, title=(self._doc or {}).get("title", ""), problems=problems, report=None, written="",
+                 can_undo=bool(self._undo), can_redo=bool(self._redo))
         self._paint()
 
     @rpc
@@ -168,15 +182,49 @@ class VideoModesTab(TabService):
     def _save(self, what=""):
         _, _, D, _ = _mods()
         try:
+            with open(self._doc_path(), encoding="utf-8") as f:
+                before = f.read()
+        except OSError:
+            before = None
+        try:
             D.save(self._doc_path(), self._doc)
         except ValueError as e:
             # the change is not kept: read the file back as it is on disk
-            self._open(self._slug)
+            self._open(self._slug, keep_history=True)
             compat.messagebox.showerror("Video modes", "Not saved: %s" % e)
             return False
-        self.set(report=None, written="")
+        if before is not None:                          # PAD-1667: every change of the tab can be undone
+            self._undo = (self._undo + [before])[-UNDO_MAX:]
+            self._redo = []
+        self.set(report=None, written="", can_undo=bool(self._undo), can_redo=bool(self._redo))
         self._paint()
         return True
+
+    def _step_history(self, take, give):
+        if not take or self._doc is None:
+            return False
+        try:
+            with open(self._doc_path(), encoding="utf-8") as f:
+                now = f.read()
+            text = take.pop()
+            with open(self._doc_path(), "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+        except OSError as e:
+            compat.messagebox.showerror("Video modes", "Could not undo: %s" % e)
+            return False
+        give.append(now)
+        self._open(self._slug, keep_history=True)
+        return True
+
+    @rpc
+    def undo(self):
+        """PAD-1667: the video mode's file as it was before the last change made here (Ctrl+Z)."""
+        return self._step_history(self._undo, self._redo)
+
+    @rpc
+    def redo(self):
+        """The change undone last, made again (Ctrl+Y / Ctrl+Shift+Z)."""
+        return self._step_history(self._redo, self._undo)
 
     def _picture(self, pid):
         for p in (self._doc or {}).get("assets", {}).get("pictures") or []:
@@ -227,6 +275,259 @@ class VideoModesTab(TabService):
                            "layers": [dict(lay, kind=A.layer_kind(lay)) for lay in ph.get("background") or []]})
         self.set(pictures=pics, phases=phases, title=doc.get("title", ""),
                  stage_bg=(doc.get("stage") or {}).get("background") or "#000000")
+        self._paint_sounds()
+
+    # -- sounds (PAD-1667) -------------------------------------------------------------------------------------
+    def _sound(self, sid):
+        for x in (self._doc or {}).get("assets", {}).get("sounds") or []:
+            if x.get("id") == sid:
+                return x
+        return None
+
+    def _paint_sounds(self):
+        """The Sounds card: each sound with its settings, what plays it, its file's waveform (made off the page's
+        thread, once per file), the cues, the music of each phase, and how it all goes on the machine."""
+        from ...core.video_mode import compiler as C
+        doc, md = self._doc, self._mode_dir()
+        plan = SND.machine_plan(doc, self.get("machine") or SND.DEFAULT)
+        on_machine = {r["id"]: r for r in plan["calls"] + plan["beds"] + ([plan["music"]] if plan["music"] else [])}
+        duck = SND.ducks(doc)
+        rows, want = [], []
+        for n, x in enumerate(SND.sounds(doc)):
+            path = SND.file_of(md, x)
+            missing = not path
+            if missing:                                 # its placeholder: heard, and its waveform drawn, as it plays
+                path = self._placeholder_sound(x, n)
+            mtime = int(os.path.getmtime(path)) if path else 0
+            key = "%s|%d" % (path, mtime) if path else ""
+            if key and key not in self._peaks:
+                want.append((key, path))
+            sid = x.get("id")
+            phases = [ph.get("title") or ph.get("id") for ph in doc.get("phases") or [] if SND.phase_music(ph) == sid]
+            cues = [c.get("on") for c in doc.get("cues") or [] if c.get("sound") == sid]
+            m = on_machine.get(sid)
+            rows.append({"id": sid, "role": x.get("role"), "file": x.get("file", ""), "path": path, "v": mtime,
+                         "missing": missing, "peaks_key": key, "volume": float(x.get("volume", 1.0)),
+                         "loop": bool(x.get("loop", False)), "loop_start_s": x.get("loop_start_s"),
+                         "fade_s": SND.fade_s(x), "has_fade": "fade_s" in x, "grid": SND.sound_grid(x),
+                         "tempo_bpm": x.get("tempo_bpm"), "beat_offset_s": x.get("beat_offset_s"),
+                         "beats_per_bar": x.get("beats_per_bar"), "phases": phases, "cues": cues,
+                         "duck": bool(duck.get(sid)), "machine": m["name"] if m else "",
+                         "priority": m.get("priority") if m else None, "index": n})
+        music_phases = [{"id": ph.get("id"), "title": ph.get("title") or ph.get("id"), "kind": ph.get("kind"),
+                         "music": SND.phase_music(ph) or "", "from_settings": not ph.get("music") and bool(SND.phase_music(ph))}
+                        for ph in doc.get("phases") or []]
+        cues = [{"on": c.get("on"), "sound": c.get("sound"), "duck_music": bool(c.get("duck_music"))}
+                for c in doc.get("cues") or []]
+        self.set(sounds=rows, cues=cues, cue_on=list(C.CUE_ON), sound_plan=plan, music_phases=music_phases)
+        if want:
+            def work(todo=tuple(want)):
+                got = {}
+                for key, path in todo:
+                    try:
+                        got[key] = SND.peaks(path, 600)
+                    except (ValueError, OSError, Exception):    # noqa: BLE001 - no waveform, the row says so
+                        got[key] = {"seconds": 0.0, "peaks": [], "error": True}
+
+                def done():
+                    self._peaks.update(got)
+                    self.set(peaks={k: v for k, v in self._peaks.items()})
+                self.ctx.loop.post(done)
+            for key, _p in want:
+                self._peaks.setdefault(key, None)
+            threading.Thread(target=work, daemon=True, name="vmodes-peaks").start()
+
+    @rpc
+    def add_sound(self):
+        """Choose a sound file: it is copied into the mode's sound/ folder and added (music when it is long)."""
+        _, _, D, _ = _mods()
+        if self._doc is None:
+            return False
+        start = self.window.last_browse_dir("vmodes_sound") if hasattr(self.window, "last_browse_dir") else ""
+        got = compat.filedialog.askopenfilename(title="Bring a sound into the video mode", filetypes=SOUND_TYPES,
+                                                initialdir=start if start and os.path.isdir(start) else "")
+        path = got[0] if isinstance(got, (list, tuple)) and got else got
+        if not path:
+            return False
+        return self.add_sound_file(os.path.normpath(path))
+
+    @rpc
+    def add_sound_file(self, path):
+        if self._doc is None or not os.path.isfile(str(path or "")):
+            return False
+        if hasattr(self.window, "remember_browse_dir"):
+            self.window.remember_browse_dir("vmodes_sound", os.path.dirname(path))
+        secs = SND.seconds(path)
+        if secs <= 0:
+            compat.messagebox.showerror("Video modes", "%s does not read as a sound." % os.path.basename(path))
+            return False
+        base = os.path.basename(path)
+        stem = re.sub(r"[^0-9A-Za-z_.-]+", "_", os.path.splitext(base)[0])[:40] or "sound"
+        ext = os.path.splitext(base)[1].lower()
+        folder = os.path.join(self._mode_dir(), "sound")
+        os.makedirs(folder, exist_ok=True)
+        name, k = stem + ext, 2
+        while os.path.exists(os.path.join(folder, name)):
+            name = "%s_%d%s" % (stem, k, ext)
+            k += 1
+        shutil.copyfile(path, os.path.join(folder, name))
+        sounds = self._doc.setdefault("assets", {}).setdefault("sounds", [])
+        taken = {x.get("id") for x in sounds}
+        sid = re.sub(r"[^a-z0-9_]+", "_", stem.lower()).strip("_") or "sound"
+        if not sid[0].isalpha():
+            sid = "s_" + sid
+        sid, base_id, k = sid[:40], sid[:36], 2
+        while sid in taken:
+            sid = "%s_%d" % (base_id, k)
+            k += 1
+        row = {"id": sid, "file": "sound/" + name, "role": "music" if secs >= MUSIC_FROM_S else "effect", "volume": 1.0}
+        if row["role"] == "music":
+            row["loop"] = True
+        sounds.append(row)
+        return self._save()
+
+    @rpc
+    def set_sound(self, sid, changes):
+        """A sound's settings: role, volume, loop, loop_start_s, fade_s, tempo_bpm, beat_offset_s, beats_per_bar
+        (None takes a field off), or a new id (every use follows)."""
+        x = self._sound(sid)
+        if x is None:
+            return False
+        ch = dict(changes or {})
+
+        def num(k, lo, hi, nd=3):
+            v = ch[k]
+            if v is None or v == "":
+                x.pop(k, None)
+                return
+            x[k] = round(min(hi, max(lo, float(v))), nd)
+        if "role" in ch and ch["role"] in ("music", "effect", "callout"):
+            x["role"] = ch["role"]
+            if x["role"] != "music":
+                for k in ("fade_s", "tempo_bpm", "beat_offset_s", "beats_per_bar"):
+                    x.pop(k, None)
+        try:
+            if "volume" in ch:
+                num("volume", 0, 1)
+            if "loop" in ch:
+                x["loop"] = bool(ch["loop"])
+            if "loop_start_s" in ch:
+                num("loop_start_s", 0, 600)
+            for k, lo, hi in (("fade_s", 0, 10), ("tempo_bpm", 30, 300), ("beat_offset_s", 0, 60)):
+                if k in ch:
+                    num(k, lo, hi)
+            if "beats_per_bar" in ch:
+                if ch["beats_per_bar"] in (None, ""):
+                    x.pop("beats_per_bar", None)
+                else:
+                    x["beats_per_bar"] = int(min(16, max(1, int(float(ch["beats_per_bar"])))))
+        except (TypeError, ValueError):
+            return False
+        if x.get("role") == "music" and "tempo_bpm" not in x:
+            x.pop("beat_offset_s", None)
+            x.pop("beats_per_bar", None)
+        if "id" in ch and ch["id"] != sid:
+            new = re.sub(r"[^a-z0-9_]+", "_", str(ch["id"]).lower()).strip("_")[:40]
+            if not new or not new[0].isalpha():
+                return False
+            if self._sound(new) is not None:
+                compat.messagebox.showerror("Video modes", 'There is a sound "%s" already.' % new)
+                return False
+            for ph in self._doc.get("phases") or []:
+                if ph.get("music") == sid:
+                    ph["music"] = new
+                st = ph.get("settings") or {}
+                if ph.get("kind") == "rhythm" and st.get("music") == sid:
+                    st["music"] = new
+            for c in self._doc.get("cues") or []:
+                if c.get("sound") == sid:
+                    c["sound"] = new
+            x["id"] = new
+        return self._save()
+
+    @rpc
+    def remove_sound(self, sid):
+        x = self._sound(sid)
+        if x is None:
+            return False
+        uses = ['phase "%s"' % ph.get("id") for ph in self._doc.get("phases") or [] if SND.phase_music(ph) == sid]
+        uses += ['the cue on %s' % c.get("on") for c in self._doc.get("cues") or [] if c.get("sound") == sid]
+        if uses:
+            compat.messagebox.showerror("Video modes", 'Sound "%s" is played by %s; take it off there first.'
+                                        % (sid, ", ".join(uses)))
+            return False
+        self._doc["assets"]["sounds"].remove(x)
+        return self._save()
+
+    @rpc
+    def find_beat(self, sid):
+        """Find a music bed's tempo and first beat from its file (a worker); they are set on it, as one change."""
+        x = self._sound(sid)
+        path = SND.file_of(self._mode_dir(), x) if x else ""
+        if not path or sid in self._beat_busy:
+            return False
+        self._beat_busy.add(sid)
+        self.set(beat_busy=sorted(self._beat_busy))
+        slug = self._slug
+
+        def work():
+            try:
+                got = SND.beat_of(path)
+            except (ValueError, OSError, Exception):    # noqa: BLE001
+                got = None
+
+            def done():
+                self._beat_busy.discard(sid)
+                self.set(beat_busy=sorted(self._beat_busy))
+                if slug != self._slug:
+                    return
+                if not got:
+                    compat.messagebox.showerror("Video modes", "No steady beat found in %s." % os.path.basename(path))
+                    return
+                self.set_sound(sid, {"tempo_bpm": got["bpm"], "beat_offset_s": got["offset_s"]})
+            self.ctx.loop.post(done)
+        threading.Thread(target=work, daemon=True, name="vmodes-beat").start()
+        return True
+
+    @rpc
+    def set_phase_music(self, phase_id, sid):
+        """The music a phase plays ("" = none). A rhythm phase's is its settings.music, which its beat grid reads."""
+        for ph in (self._doc or {}).get("phases") or []:
+            if ph.get("id") != phase_id:
+                continue
+            if sid and (self._sound(sid) or {}).get("role") != "music":
+                return False
+            if ph.get("kind") == "rhythm":
+                if not sid:
+                    return False                              # a rhythm phase plays to its music
+                ph.setdefault("settings", {})["music"] = sid
+                ph.pop("music", None)
+            elif sid:
+                ph["music"] = sid
+            else:
+                ph.pop("music", None)
+            return self._save()
+        return False
+
+    @rpc
+    def set_cues(self, cues):
+        """The sounds on events, as a list [{on, sound, duck_music}] (the page edits a copy and hands it back)."""
+        from ...core.video_mode import compiler as C
+        if self._doc is None:
+            return False
+        out = []
+        for c in cues or []:
+            if not isinstance(c, dict) or c.get("on") not in C.CUE_ON or self._sound(c.get("sound")) is None:
+                continue
+            row = {"on": c["on"], "sound": c["sound"]}
+            if c.get("duck_music"):
+                row["duck_music"] = True
+            out.append(row)
+        if out:
+            self._doc["cues"] = out
+        else:
+            self._doc.pop("cues", None)
+        return self._save()
 
     # -- bringing art in ---------------------------------------------------------------------------------------
     @rpc
@@ -465,6 +766,8 @@ class VideoModesTab(TabService):
         _, B, _, _ = _mods()
         if key in B.MACHINES:
             self.set(machine=key, report=None, written="")
+            if self._doc is not None:
+                self._paint_sounds()                   # PAD-1667: the sounds count against this machine's route
         return True
 
     @rpc
@@ -570,6 +873,22 @@ class VideoModesTab(TabService):
                         "team": teams.get(pid, "scenery")})
         return out
 
+    def _placeholder_sound(self, snd, index):
+        """The stand-in WAV of a sound whose file is not there yet (core.video_mode.sound.placeholder_wav), made once
+        per look of it in the tab's own temp folder. "" when it could not be written."""
+        import hashlib
+        key = hashlib.sha1(json.dumps([snd, index], sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        path = os.path.join(self._tmpdir(), "sounds", "%s_%s.wav" % (re.sub(r"[^0-9A-Za-z_-]", "_", str(snd.get("id", "s")))[:24], key))
+        if not os.path.isfile(path):
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path + ".part", "wb") as f:
+                    f.write(SND.placeholder_wav(snd, index))
+                os.replace(path + ".part", path)
+            except OSError:
+                return ""
+        return path
+
     @rpc
     def play_open(self):
         """Compile the mode for the player. Returns what it needs to play, or {"problems": [...]}: the pack (base64),
@@ -588,13 +907,23 @@ class VideoModesTab(TabService):
         def files(kind, ids):
             by_id = {a["id"]: a for a in assets.get(kind) or []}
             out = []
-            for i in ids:
+            for n, i in enumerate(ids):
                 a = by_id.get(i) or {}
                 path = os.path.join(md, *str(a.get("file") or "").split("/")) if a.get("file") else ""
-                out.append({"id": i, "path": path if path and os.path.isfile(path) else "", "file": a.get("file", ""),
-                            "loop": bool(a.get("loop", False)), "volume": float(a.get("volume", 1.0)),
-                            "role": a.get("role", ""), "loop_start_s": float(a.get("loop_start_s", 0) or 0)})
+                row = {"id": i, "path": path if path and os.path.isfile(path) else "", "file": a.get("file", ""),
+                       "loop": bool(a.get("loop", False)), "volume": float(a.get("volume", 1.0)),
+                       "role": a.get("role", ""), "loop_start_s": float(a.get("loop_start_s", 0) or 0)}
+                if kind == "sounds":
+                    # PAD-1667: a sound without its file yet plays a placeholder made here, as a picture without one is
+                    # drawn as a placeholder; and how long each plays (the machine's one voice skips an effect still
+                    # sounding, so the player needs it)
+                    if not row["path"]:
+                        row["path"], row["placeholder"] = self._placeholder_sound(a, n), True
+                    row["seconds"] = round(SND.seconds(row["path"]), 4) if row["path"] else 0.0
+                    row["duck"] = bool(duck.get(i))
+                out.append(row)
             return out
+        duck = SND.ducks(doc)
         phases = {ph["id"]: ph for ph in doc.get("phases") or []}
         cards = []
         for c in (doc.get("flow") or {}).get("cards") or []:

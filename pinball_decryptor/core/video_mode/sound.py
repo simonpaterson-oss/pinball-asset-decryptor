@@ -50,8 +50,11 @@ VOICE_FADE_S = 0.03
 PRIORITY = {"effect": 3, "callout": 4}
 #: what each machine's mode sound route carries for one mode
 MACHINES = {
-    "spike2": {"label": "Spike 2", "calls": 16, "beds": 6,
-               "how": "its own calls on the voice bus and its own music beds (pad_mode_assets.h)"},
+    "spike2": {"label": "Spike 2", "calls": 16, "beds": 6},
+    "spike3": {"label": "Spike 3", "calls": 16, "beds": 6},      # the same mode runtime and sound route
+    "jjp": {"label": "Jersey Jack", "calls": None, "beds": None},
+    "spooky": {"label": "Spooky", "calls": None, "beds": None},
+    "dots": {"label": "dot-matrix screens", "calls": None, "beds": None},
 }
 DEFAULT = "spike2"
 #: a call or bed name on the machine (code_modes.CUE_RE)
@@ -170,10 +173,10 @@ def machine_plan(doc, machine=DEFAULT):
     plan["unused"] = [sid for sid in by_id if sid not in music and sid not in other]
     nc, nb = len(plan["calls"]), len(plan["beds"])
     plan["count"] = {"calls": nc, "calls_max": m["calls"], "beds": nb, "beds_max": m["beds"]}
-    if nc > m["calls"]:
+    if m["calls"] is not None and nc > m["calls"]:
         plan["problems"].append("%d effects and callouts are cued: %s plays %d a mode. Cue fewer sounds (one sound "
                                 "can serve several events)." % (nc, m["label"], m["calls"]))
-    if nb > m["beds"]:
+    if m["beds"] is not None and nb > m["beds"]:
         plan["problems"].append("%d pieces of music: %s plays its own music and %d more beds a mode. Let phases "
                                 "share music." % (nb + 1, m["label"], m["beds"]))
     plan["words"] = plan_words(plan)
@@ -184,6 +187,9 @@ def plan_words(plan):
     """The plan in one line for the page: what it uses and what is left."""
     c = plan["count"]
     music = (1 if plan["music"] else 0) + c["beds"]
+    if c["calls_max"] is None:
+        return ("%d sounds (effects and callouts) and %d music beds. How many a mode can carry on %s is set when "
+                "video modes come to it." % (c["calls"], music, plan["label"]))
     left_c, left_b = max(0, c["calls_max"] - c["calls"]), max(0, c["beds_max"] - c["beds"])
     return ("On %s: %d of %d sounds (effects and callouts) and %d of %d music beds (its own and %d more); "
             "%d sounds and %d more beds left." % (plan["label"], c["calls"], c["calls_max"], music, c["beds_max"] + 1,
@@ -342,3 +348,79 @@ def file_of(mode_dir, snd):
         return ""
     p = os.path.join(mode_dir, *str(f).split("/"))
     return p if os.path.isfile(p) else ""
+
+
+# ---- the beat -------------------------------------------------------------------------------------
+ENV_HZ = 200
+
+
+def find_beat(samples, rate, lo=60.0, hi=200.0):
+    """The beat of a piece of music: ``{"bpm", "offset_s", "confidence"}`` (confidence 0..1, how much the beat stands
+    out), or None when it is too short or has no beat to find.  The onsets (rises in loudness) are matched against
+    themselves one beat later for every tempo from ``lo`` to ``hi`` a minute, in tenths; a tempo and its double score
+    alike, so the one nearer 120 is kept; the first beat is where the onsets line up best with that grid."""
+    hop = max(1, int(rate / ENV_HZ))
+    fr = rate / float(hop)                        # the envelope's own rate (22050 / 110 is 200.45, not 200)
+    win = max(hop, int(rate * 0.023))
+    # the loudness of the change from sample to sample (a percussive hit stands out, a bass note's own wave does not),
+    # over 23 ms windows every 5 ms
+    acc, run = [0.0], 0.0
+    for i in range(1, len(samples)):
+        run += abs(samples[i] - samples[i - 1])
+        acc.append(run)
+    env = [(acc[i + win] - acc[i]) / win for i in range(0, len(acc) - win, hop)]
+    if len(env) < fr * 3:
+        return None
+    ons = [0.0] + [max(0.0, env[i] - env[i - 1]) for i in range(1, len(env))]
+    mean = sum(ons) / len(ons)
+    ons = [max(0.0, o - mean) for o in ons]
+    total = sum(o * o for o in ons)
+    if total <= 0:
+        return None
+
+    def score(bpm):
+        lag = 60.0 * fr / bpm
+        s = 0.0
+        for k in (1, 2, 4, 8):
+            L = lag * k
+            a, f = int(L), L - int(L)
+            n = len(ons) - a - 1
+            if n <= 0:
+                continue
+            s += sum(ons[i] * (ons[i + a] * (1 - f) + ons[i + a + 1] * f) for i in range(n)) / n
+        return s
+    cands = [(score(b / 10.0), b / 10.0) for b in range(int(lo * 10), int(hi * 10) + 1, 5)]
+    best_s, best = max(cands)
+    # a tempo and its half / double line up alike: keep the one nearer 120 when it scores nearly as well
+    for alt in (best / 2, best * 2):
+        if lo <= alt <= hi:
+            s = score(alt)
+            if s >= 0.85 * best_s and abs(alt - 120) < abs(best - 120):
+                best, best_s = alt, s
+    fine = [(score(best + d / 100.0), best + d / 100.0) for d in range(-60, 61, 2)]
+    best_s, best = max(fine)
+    whole = float(round(best))                    # most music is a whole number a minute
+    if abs(whole - best) <= 0.5 and score(whole) >= 0.97 * best_s:
+        best = whole
+    period = 60.0 * fr / best
+    phases = []
+    for p in range(int(period)):
+        k, s = 0, 0.0
+        while p + k * period < len(ons):
+            s += ons[int(p + k * period)]
+            k += 1
+        phases.append((s, p))
+    top, p = max(phases)
+    avg = sum(s for s, _ in phases) / len(phases)
+    conf = max(0.0, min(1.0, (top - avg) / top)) if top > 0 else 0.0
+    # a window's loudness rises from when it first takes the hit in: the hit is half a window on
+    off = (p + win / 2.0 / hop) % period / fr
+    if off > period / fr - 0.02:                  # a hair before the next beat is the beat at 0
+        off = max(0.0, off - period / fr)
+    return {"bpm": round(best, 2), "offset_s": round(off, 3), "confidence": round(conf, 2)}
+
+
+def beat_of(path):
+    """:func:`find_beat` of a sound file (the first 60 s)."""
+    samples, rate = decode(path)
+    return find_beat(samples[:int(rate * 60)], rate)
