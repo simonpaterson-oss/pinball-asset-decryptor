@@ -514,7 +514,7 @@ const T = {
   fps: "How often the screen is drawn. The engine always steps 60 times a second; a real Spike 2 draws about 29 frames a second, so the same steps are shown about every other one.",
   rec: "Every play keeps the buttons it was given, step by step. Save keeps this one beside the mode (its replays folder) with the run's draw list hash.",
   replay: "Play the buttons of this play (or the recording picked) again from the same start. It must end on the same draw list hash: the engine is the same code as the machine's, so the native build gives that hash too.",
-  hits: "Show what collides: each thing's hit box in its team's colour (H)",
+  hits: "Show what collides: each thing's hit box in its team's color (H)",
   sound: "Sounds play through this computer's speakers. Off until you turn them on.",
   step_cost: "What one engine step costs on this computer, and drawing a frame. The machine's own step budget is in the plan's budgets.",
 };

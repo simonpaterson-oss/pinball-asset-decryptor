@@ -159,7 +159,7 @@ def from_numbered(path, fps=DEFAULT_FPS, loop=True):
     s = Sprite(uniform(frames), fps=float(fps), loop=bool(loop),
                source="%s .. %s (%d files)" % (_name(files[0]), _name(files[-1]), len(files)))
     if len({f.size for f in frames}) > 1:
-        s.notes.append("The files are not all one size; each is centred on the largest.")
+        s.notes.append("The files are not all one size; each is centered on the largest.")
     return s
 
 
@@ -290,7 +290,7 @@ def from_sheet_auto(path, tolerance=8, min_gap=1, fps=DEFAULT_FPS, loop=True):
     s = Sprite(uniform(frames), fps=float(fps), loop=bool(loop),
                source="%s, %d frames found at its gutters" % (_name(path), len(boxes)))
     if len({(w, h) for _, _, w, h in boxes}) > 1:
-        s.notes.append("The frames found are not all one size; each is centred on the largest.")
+        s.notes.append("The frames found are not all one size; each is centered on the largest.")
     return s
 
 
@@ -298,7 +298,7 @@ def from_sheet_auto(path, tolerance=8, min_gap=1, fps=DEFAULT_FPS, loop=True):
 def parse_colour(text):
     t = (text or "").strip().lstrip("#")
     if not re.fullmatch(r"[0-9a-fA-F]{6}", t):
-        raise ArtError("A key colour is written #rrggbb, not %r." % (text,))
+        raise ArtError("A key color is written #rrggbb, not %r." % (text,))
     return tuple(int(t[i:i + 2], 16) for i in (0, 2, 4))
 
 
@@ -378,7 +378,7 @@ def from_video(path, start=0.0, length=2.0, fps=DEFAULT_FPS, cut="key", key="#00
     if math.ceil(length * fps) > MAX_FRAMES:
         raise ArtError("%g seconds at %g a second is more than %d frames." % (length, fps, MAX_FRAMES))
     if cut not in ("key", "alpha", "none"):
-        raise ArtError("A video is cut out by a key colour, by its own alpha, or not at all.")
+        raise ArtError("A video is cut out by a key color, by its own alpha, or not at all.")
     keyrgb = parse_colour(key) if cut == "key" else None
     try:
         ff = FC._ffmpeg(ffmpeg)
@@ -412,7 +412,7 @@ def from_video(path, start=0.0, length=2.0, fps=DEFAULT_FPS, cut="key", key="#00
     if cut == "key":
         frames = [Image.fromarray(key_out(f, keyrgb, tolerance, softness), "RGBA") for f in frames]
     elif cut == "alpha" and all(f.getchannel("A").getextrema()[0] == 255 for f in frames):
-        notes.append("This video carries no see-through parts; try a key colour instead.")
+        notes.append("This video carries no see-through parts; try a key color instead.")
     _check_frames(frames, _name(path))
     s = Sprite(frames, fps=fps, loop=bool(loop),
                source="%s, %s for %gs" % (_name(path), FC.format_time(start), length), notes=notes)

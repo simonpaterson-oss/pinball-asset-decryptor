@@ -742,7 +742,12 @@ costs memory. It kept 48 MB and 2048 x 2048. PAD-1679 packed the worked example 
 Harbour) in the Video modes tab, wrote its atlas as a `.padgfx` with PAD-1655's writer and loaded
 it on Godzilla Premium 1.16 in the emulator: the report said 8,388,608 bytes of memory and the
 runtime "8192 KB of pictures on GL" (0% apart); the report's card bytes were the file's 8,388,672
-plus the font tables the file will carry (0.04%). **The other columns are placeholders** until each
+plus the font tables the file will carry (0.04%). PAD-1655's frame costs are here too (time on
+the game's GL thread, the list build on the tick, pictures sent a frame, sets at once); "things
+alive" and "engine step" are the engine's own (PAD-1657 on the desk, PAD-1660 on Spike 2), and what the emulator cannot see
+is the real GPU's fill (PAD-575): 1500 quads draw about 6.8 screens of pixels a frame, so the
+runtime's budget line ("frames went to the glass") is the meter on a real machine. **The other
+columns are placeholders** until each
 platform ticket measures its own and replaces its column; PAD-1658's cost report and PAD-1669's
 budget meter read this table through `budgets.py`, and `tests/test_video_mode_pack.py` keeps the
 two in step (memory, largest atlas, card space, texel format, how the card holds an atlas).
@@ -756,6 +761,10 @@ two in step (memory, largest atlas, card space, texel format, how the card holds
 | Things alive at once | 300 | 500 | 400 | 400 | 100 | desk measured (PAD-1657: 306 alive, ~33 us a step on x86); then each platform |
 | Quads drawn a frame (things + glyphs + particles) | 1500 | 3000 | 2000 | 2000 | 400 | Spike 2 measured (1500 at 30 a second); same |
 | Draw calls a frame (one per atlas and blend run) | 16 | 32 | 24 | 24 | n/a | Spike 2 measured (4 to 6 for packed art, 512 still held); same |
+| Drawing's part of a frame (the game's GL thread, average) | 0.3 ms | to measure | to measure | to measure | to measure | Spike 2 measured (0.1 ms at 300 quads, 0.1 to 0.3 at 1500); PAD-1673 / 1674 / 1675 / 1676 |
+| Draw list build on the tick | 0.75 ms | to measure | to measure | to measure | to measure | Spike 2 measured (0.12 to 0.15 ms at 300 quads, 0.55 to 0.75 at 1500); same |
+| Pictures sent to the GPU a frame (a set loads over several) | 6 MB | to measure | to measure | to measure | to measure | Spike 2 measured (a 12 MB set took 2 frames, the worst 22 ms); same |
+| Picture sets loaded at once | 8, up to 96 MB a set | to measure | to measure | to measure | to measure | Spike 2: the runtime's own limits (PAD-1655); same |
 | Engine step on the machine's CPU | 2 ms | 1 ms | 2 ms | 2 ms | 2 ms | PAD-1660 on Spike 2 (desk: ~300 us on emulated ARM); then each platform |
 | Card space for one video mode (pictures, sounds, clips) | 128 MB | 256 MB | 256 MB | 256 MB | 16 MB | PAD-1658 / each platform |
 | Sounds | 16 sounds, 6 music beds (today's mode cap) | as Spike 2 | per runtime | per runtime | per runtime | PAD-1667 |
@@ -900,11 +909,11 @@ Status is kept current here as tickets land.
 
 | Wave | Ticket | What | Waits on | Status |
 |---|---|---|---|---|
-| 0 | PAD-1654 | This plan, the format and its schema, the design language and mock-ups | - | this branch |
-| 1 | PAD-1655 | Spike 2: a mode draws moving pictures on the glass every frame (the risk of the epic; measures the Spike 2 budgets) | - | queued |
+| 0 | PAD-1654 | This plan, the format and its schema, the design language and mock-ups | - | released (v1.641.0) |
+| 1 | PAD-1655 | Spike 2: a mode draws moving pictures on the glass every frame (the risk of the epic; measures the Spike 2 budgets) | - | released (v1.645.0; its budgets are in section 5) |
 | 1 | PAD-1656 | Mode SDK: held buttons, mash and alternate rates; screen-game state | - | queued |
-| 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | on its branch |
-| 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | this branch |
+| 1 | PAD-1657 | The engine: one C core, native and WebAssembly; the compiler from this format | PAD-1654 | released (v1.646.0) |
+| 1 | PAD-1658 | Pictures: sprite sheets, animations, backgrounds, atlases, the cost report | PAD-1654 | released (v1.643.0; Spike 2 card cost checked by PAD-1679, v1.644.0) |
 | 2 | PAD-1659 | In the app: play it at 60 fps with keyboard or gamepad | PAD-1657, 1658 | on its branch |
 | 2 | PAD-1660 | Spike 2: a video mode plays inside a real game | PAD-1655, 1656, 1657, 1658 | queued |
 | 3 | PAD-1661 | Editor: the stage, the layers and the inspector | PAD-1659 | queued |
