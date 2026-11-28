@@ -88,6 +88,17 @@ def test_changes_line():
     assert EE.changes_line([]) == "0 changes since it was extracted."
     assert EE.changes_line([("Replaced images", 12), ("Scenes edits", 3)]) == (
         "Changed since it was extracted: 12 replaced images, 3 scenes edits.")
+    assert EE.changes_line([("Replaced videos", 1)]) == (
+        "Changed since it was extracted: 1 replaced video.")
+
+
+def test_box_checks_only_a_typed_path():
+    # Simon, 2026-11-28: a Browse… pick went back to the earlier typed path on blur
+    js = open(os.path.join(ROOT, "pinball_decryptor", "webui", "static", "js", "tabs",
+                           "card.js"), encoding="utf-8").read()
+    box = js[js.index("function ExistingBox"):js.index("// ------------------------------------------------------------ the glass")]
+    assert "onBlur" not in box and "onCommit" not in box
+    assert "useEffect(() => { setTyped(null); }, [shown]);" in box
 
 
 def test_changes_counts_an_untouched_extraction_as_none(tmp_path):

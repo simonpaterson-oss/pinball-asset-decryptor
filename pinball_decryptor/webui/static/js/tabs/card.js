@@ -6,7 +6,7 @@
 // preview and the details are the card namespace.  The Python half is
 // webui/tabs/card.py.
 
-import { html, useEffect, useState, Button, Card, Chip, Field, Icon, PageHead, Seg, Spinner, call, cx, mediaUrl, tip } from "../core/ui.js";
+import { html, useEffect, useState, Button, Card, Chip, Icon, PageHead, Seg, Spinner, call, cx, mediaUrl, tip } from "../core/ui.js";
 import { useNs } from "../core/store.js";
 import { WHAT, needOf, tabLock } from "../core/locks.js";
 import { Booting } from "../core/booting.js";
@@ -92,13 +92,26 @@ const EXISTING_TIP = { head: "Already have this card extracted?",
 function ExistingBox({ s, ps }) {
   const e = s.existing && s.existing.card === s.input ? s.existing : null;
   const shown = e ? e.folder : "";
-  const check = (v) => { if (v && v.trim() && v.trim() !== shown) call("extract.check_existing", v.trim()); };
+  // Simon, 2026-11-28: a Browse… pick read as viable, then the box went back to the path
+  // typed before it and checked that again ("no viable extraction").  The box follows what
+  // was checked whenever that changes, and only a path TYPED here (Enter) is checked.
+  const [typed, setTyped] = useState(null);
+  useEffect(() => { setTyped(null); }, [shown]);
+  const check = () => {
+    const v = (typed || "").trim();
+    setTyped(null);
+    if (v && v !== shown) call("extract.check_existing", v);
+  };
   const state = e ? e.state : "";
   return html`<div class="stack x-sec c-existing">
     <label class="lbl" for="c-existing" ...${tip(EXISTING_TIP)}>Existing extraction <span class="dim">(optional)</span></label>
     <div class="row x-pathrow" data-drop>
-      <${Field} id="c-existing" value=${shown} mono cls="grow" onChange=${() => {}} onCommit=${check}
-        placeholder="Already have this card extracted? Select the folder" title=${shown || EXISTING_TIP} />
+      <div class="field mono grow" ...${tip(shown || EXISTING_TIP)}>
+        <input id="c-existing" type="text" spellcheck="false" value=${typed != null ? typed : shown}
+          placeholder="Already have this card extracted? Select the folder"
+          onInput=${(ev) => setTyped(ev.target.value)}
+          onKeyDown=${(ev) => { if (ev.key === "Enter") check(); if (ev.key === "Escape") setTyped(null); }} />
+      </div>
       <${Button} drop disabled=${state === "checking"} onClick=${() => call("extract.browse_existing")}
         title=${EXISTING_TIP}>Browse…<//>
     </div>
